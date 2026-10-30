@@ -115,46 +115,71 @@ def _disambiguate_20(own: str, desc: str, others_text: str,
     return f"{picks[0]}的{head}" if head else f"{picks[0]}的人物"
 
 
+def _collides_others(phrase: str, others_text: str) -> bool:
+    """这句指认里的特征在**同画面别人**的描述里**全都**出现过 → 指不出是谁。
+
+    `_disambiguate_20` 会尽量换一个只属于他的特征；换不出来时它原样返回，
+    这时候就靠这里判「还是撞车」，让调用方退回方位档。
+    """
+    if not phrase or not others_text:
+        return False
+    used = [x for x in re.split(r"、", phrase) if x.strip()] or [phrase]
+    # 🩸 末段常带「的男性/的人物」这类人称中心词（`_feat_phrase` 拼的），
+    # 而别人的盘点描述里特征是**逗号分句**，不会原样带这个尾巴 ——
+    # 不剥掉就永远比不中，撞车永远判不出来。
+    used = [re.sub(r"的(男性|女性|男子|女子|男生|女生|人物|男孩|女孩|老人|少年|人)$",
+                   "", x) for x in used]
+    used = [x for x in used if x]
+    return bool(used) and all(f in others_text for f in used)
+
+
 def sd20_locator(per: dict | None, pool: list[dict] | None = None) -> str:
     """2.0 认人用的**唯一**函数：编译器写什么，闸就判什么，不许两套。
 
-    三档（2026-10-27 主人拍板）：
+    三档（2026-10-30 主人拍板：方位由「优先」降为「兜底」）：
       ① 画面里只有 TA 一个 → 不写定位词（调用方早退，见 `_sd20_person_tags`）；
-      ② 盘点给的**方位在画面里唯一** → 「画面中央的人物」；
-      ③ 方位取不到或和别人撞车 → 才补能区分他的**最短特征**
-        （`_landmark_phrase` → `_feat_phrase`（发型/配饰，`cloth=False`）
-         → 都没有再带服装）。
+      ② **特征能唯一指认他** → 特征短语（官方 `:95` 的定义形状，
+        如「短卷发男性」「东亚男性」）。判据 = 这句话里的特征在同画面
+        **别人**的描述里不成立（`_collides_others`）；
+      ③ 特征取不到、或跟别人撞成一句 → 才用盘点给的**方位**
+        「画面中央的人物」（官方 `:153`）。
 
-    🩸 2026-10-27（主人：「我们要换的人他有可能不在中间，有可能不在左边，
-    那我们怎么能让模型知道到底换谁」）：方位**不是我们假设的中心**，是盘点
-    逐条看画面给出的；所以"方位唯一"本身就是官方 `:153`
-    「@图片2 中的女生**位于画面左侧**」那种定位手段，而且是全场最短的一句
-    （主人「越简单越好」）。以前这里只认特征（2026-10-26 22:xx 那版），
-    理由是"盘点说错就指错人"—— 代价是把能唯一指认的短句换成特征串，
-    而 20:13 / 20:20 两次「长特征串直接塞进宾语」正是没换脸的那两条。
+    🩸 2026-10-30 为什么换先后（主人：「方位优先你自己都说了是很多人，
+    到底多少人才算多人」）：
+      旧顺序的触发条件是「画面 ≥2 人」（`edit_spec._multi`），2 个人和 8 个人
+      一条规则不分档 —— 于是 `ff561d97`（1 男 1 女，一眼能分）被写成
+      「画面中央的人物」，而 `686dc`（8 人、三个方向都有人）反倒因为方位撞车
+      掉到特征档。全库实测正好是反的：8 人那条 2/2 换上（best 0.547 / 0.645），
+      2 人那条 2/2 只换衣服不换脸（0.228 / 0.239，share 0.0）。
+      现在改按「特征能不能唯一指认」分，不再按人数拍一个阈值：
+      特征能指认就不写方位（和官方 `:95` 的定义形状一致），
+      指认不了才用方位 —— 10-27 主人「要换的人不一定在中间」的诉求仍然成立，
+      因为那种场合本来就没法用特征指认。
 
     ③ 档最后做**唯一性**检查：这句话里的每个特征在**同画面别人**的描述里
     都出现过，说明它也能指别人（等于没指认），改用只属于他的那个特征。
     """
-    if pool:
-        _pos = _uniq_pos(per, pool)
-        if _pos:
-            # 🩸 2026-10-30（`ff561d97` 只换衣服没换脸）：只写「画面中央**的人物**」时
-            # 这句定义认不出是谁 —— 真机换成功那条（`686dc`）写的是「东亚男性」。
-            # 方位仍是主指认手段（10-27 主人定的），后面补一个盘点现成的短特征。
-            # 只动 `<主体N>` 定义句这一处，宾语、标签、兜底包一律不动。
-            _f = _feat_phrase(str((per or {}).get("desc_zh") or ""),
-                              cloth=False, sd20=True)
-            return f"{_pos}的{_f}" if _f else f"{_pos}的人物"
     desc = str((per or {}).get("desc_zh") or "")
-    own = _landmark_phrase_20(desc)
-    if not own:
-        own = _feat_phrase(desc, cloth=False) or _feat_phrase(desc, cloth=True)
     others_text = " ".join(
         re.sub(r"[\r\n\t]+", " ", str(p.get("desc_zh") or ""))
         for p in (pool or [])
         if p and _present(p)
         and str(p.get("id") or "") != str((per or {}).get("id") or ""))
+    if pool:
+        # ② 特征档：能唯一指认就到此为止，**不写方位**
+        _f = (_feat_phrase(desc, cloth=False, sd20=True)
+              or _feat_phrase(desc, cloth=True, sd20=True))
+        if _f:
+            _f = _disambiguate_20(_f, desc, others_text, cloth=False)
+            if not _collides_others(_f, others_text):
+                return _f
+        # ③ 方位档：特征指认不了才用它
+        _pos = _uniq_pos(per, pool)
+        if _pos:
+            return f"{_pos}的人物"
+    own = _landmark_phrase_20(desc)
+    if not own:
+        own = _feat_phrase(desc, cloth=False) or _feat_phrase(desc, cloth=True)
     # 🩸 2026-10-29（D71）：这段原来用 `_split_feats(own)` 取"这句用了哪些特征"，
     #   而它对没有「的X」结尾的描述返回空列表 ⇒ 唯一性修正从来没触发过。
     #   逻辑收进 `_disambiguate_20`，多人标签路径（`_orig_feat_20`）共用同一份。
@@ -180,32 +205,27 @@ def _orig_feat_20(people: list[dict] | None, i: int,
     🩸 2026-10-28 从 `edit_spec.py` 搬来（原本叫 `_sd20_orig_feat`，
     但 2.5 的换人句一直在借它 —— 两家的指认尺不许互借，各留一份）。
 
-    三档（2026-10-27 主人拍板）：
-      · 方位在画面里**唯一** → 「画面中央的人物」（官方 `:153` 的定位写法）；
-      · 方位取不到或和别人**撞车** → `:95` 的特征短语
-        （「留短黑发、佩戴黑框眼镜的男性」）。
+    三档（2026-10-30 主人拍板，与 `sd20_locator` 同一把尺、同一先后）：
+      · **特征能唯一指认他** → `:95` 的特征短语（「短卷发男性」「东亚男性」）；
+      · 特征取不到、或跟同画面别人撞成一句 → 方位在画面里**唯一**才用
+        「画面中央的人物」（官方 `:153`）；
+      · 两样都没有 → 空串（调用方跳过这个人）。
 
     出处：`sd20-guide:95`「2–3 个清晰、稳定的静态特征…确保唯一可识别性」；
     `sd2-pe:72` 把"多人未指明谁在左/右"列为关键歧义；`:153` 的写法是
     「@图片2 中的女生**位于画面左侧**」；`:164`「强方位约束」。
 
-    🩸 三档的来历（两天内正反各翻一次）：2026-10-24 只写方位 → 两人同标
-    center 时谁也没指认（`3949eb3f` 整片没换）；10-26 17:xx 改成方位+特征
-    叠加；10-26 22:xx 去掉方位只留特征 → 长特征串塞进宾语没换脸；
-    10-27 主人问「要换的人不一定在中间/左边」→ 方位是**盘点看画面给的**，
-    不是我们猜的中心，唯一时一句就够，撞车才退回特征。三档定死。
+    🩸 先后翻过几次，每次都记在案：2026-10-24 只写方位 → 两人同标 center
+    时谁也没指认（`3949eb3f` 整片没换）；10-26 17:xx 方位+特征叠加；
+    10-26 22:xx 去掉方位只留特征（当时是**长特征串**塞进宾语，没换脸，
+    现在 `_feat_phrase` 已封顶 2 个特征）；10-27 方位优先；
+    10-30 方位降为兜底 —— 见 `sd20_locator` 里那条实测。
     """
     ppl = people or []
     per = ppl[i] if i < len(ppl) else None
     if not per or not _present(per):
         return ""
-    # 分母必须是**整个画面**（`pool`）：生产里 `people` 只含勾选的人，
-    # 拿它数方位，每个方位天然"唯一"，两个人都在 center 时会照写「画面中央」。
-    pos = _uniq_pos(per, pool if pool else ppl)
-    if pos:
-        return f"{pos}的人物"
     desc = str(per.get("desc_zh") or "")
-    base = _feat_phrase(desc, cloth=cloth, sd20=True)
     # 🩸 2026-10-29（D71）：这句会和同画面别人撞成一句时，换成只属于他的特征
     #   （否则两个 `<主体N>` 的定义句一字不差，模型分不清谁是谁）。
     #   判定材料 = **同画面别人**的描述，不是全片。
@@ -213,7 +233,17 @@ def _orig_feat_20(people: list[dict] | None, i: int,
         re.sub(r"[\r\n\t]+", " ", str(p.get("desc_zh") or ""))
         for p in (pool if pool else ppl)
         if p and _present(p) and str(p.get("id") or "") != str(per.get("id") or ""))
-    return _disambiguate_20(base, desc, others, cloth=cloth)
+    base = _feat_phrase(desc, cloth=cloth, sd20=True)
+    if base:
+        base = _disambiguate_20(base, desc, others, cloth=cloth)
+        if not _collides_others(base, others):
+            return base
+    # 分母必须是**整个画面**（`pool`）：生产里 `people` 只含勾选的人，
+    # 拿它数方位，每个方位天然"唯一"，两个人都在 center 时会照写「画面中央」。
+    pos = _uniq_pos(per, pool if pool else ppl)
+    if pos:
+        return f"{pos}的人物"
+    return ""
 
 
 def sd20_multi_locator(per: dict | None, pool: list[dict] | None = None) -> str:
@@ -274,6 +304,11 @@ class _CL20(Dialect):
                   pool: list[dict] | None = None, cloth: bool = True) -> str:
         return _orig_feat_20(people, i, pool=pool, cloth=cloth)
 
+    def feat_fallback(self, src: str) -> str:
+        """`_head_noun` 之前先试封顶特征短语（产品线封顶 2）。
+        见 `base.Dialect.feat_fallback` 的出处说明。"""
+        return _feat_phrase(src, cloth=False, sd20=True)
+
     def wardrobe_verb(self) -> str:
         return "换成"
 
@@ -296,12 +331,20 @@ class _CL20(Dialect):
             「妆造参考@图片1中的人物」与「…的服装换成@图片2中的服装」**同句
             语义冲突**（官方 `sd20-guide:121` 点名）⇒ 这个人在换装名单里时，妆造句不写。
         """
-        _duty = (f"{rtag}的面部特征参考{pic}" if rtag
-                 else f"面部特征参考{pic}中的人物")
-        if not in_wardrobe:
-            _duty += (f"，妆造参考{pic}" if rtag
-                      else f"，妆造参考{pic}中的人物")
-        return "；" + _duty
+        # 🩸🩸 2026-10-30（主人：「是提示词排顺序错误，还是某个关键词导致的用了
+        #   别的模型关键词」）：**顺序错了**。官方 `guide.md:59-65`「组合任务」的
+        #   推荐句式是
+        #       「参考<图片/视频N>的[参考维度]，严格编辑<视频X>，[具体编辑内容]」
+        #   ⇒ **参考分句必须在「严格编辑」之前**。
+        #   以前这句是接在替换句尾巴上的（「…替换为<主体1>；<主体1>的面部特征
+        #   参考@图片1，妆造参考@图片1」），排在编辑动作**之后**，顺序反了。
+        #   现在独立成句、以「参考@图…」开头 —— 编译器顶层会把这类分句提到
+        #   「严格编辑」前面（`_compile` 里的 `_lead`），而主体定义句仍排在
+        #   它们之前（官方 `:110` 先定义再描述）。
+        #   `参考维度` 取官方 `:139`/`:317` 的原词「面部特征」「妆造」，
+        #   没有新造词。
+        _who = rtag or "人物"
+        return f"参考{pic}中{_who}的面部特征" + ("" if in_wardrobe else "和妆造")
 
     def keep_others(self, names: list[str]) -> str:
         # LAS `las_cn.md:385` 官方原句的后半句（`general` 模板）。
@@ -436,6 +479,22 @@ def _person_tags_20(c: dict, idx: dict[str, int], channel: str,
 
     编号：原片侧从 `<主体1>` 起。参考图侧不发标签（见函数内 18:xx 注释）。
     """
+    # 🩸🩸 2026-10-30 停用（主人：「是不是主体问题？有没有必要说主体」）：
+    #   **一换一不发任何 `<主体N>` 定义**。
+    #   依据：
+    #     · 官方「编辑视频」章节（`sd20-guide:31-43`）的三条推荐句式**一条主体定义
+    #       都没有**，只有「严格编辑<视频N>，将其中的<原特征>修改为<新特征>」；
+    #     · 定义主体在 `sd20-guide:88-124`「进阶公式」，示例是**生成**任务
+    #       （「高个子男人定义为警察，矮个子定义为小偷，两人在人群里追」）——
+    #       那是"同时调度两个人演戏"，我们做的是"把 A 换成 B"，是两回事；
+    #     · 定义句「将@视频1中短卷发男性定义为<主体2>」等于额外告诉模型
+    #       「这个人有短卷发」，替换时模型会顺手把这个特征**保留**下来 ——
+    #       正好抵消换脸。2026-10-26 三次实测都是这个现象（衣服换、脸不换）。
+    #   ⇒ 宾语退回官方 `:126` 的图内对象「@图片N中的人物」，指认靠方位/发型
+    #     短语直接写进「将其中的…」那位（`sd20_locator` 那一套仍在，是闸在用）。
+    #   保留整个函数体：以后要恢复标签体系，注释里有全部历史依据。
+    return [], {}, ""
+
     ppl = people or []
     # 🩸 「在场几个人」必须按**整个画面**数。生产形状（`video_edit._span_people`）
     # 里 `people` 只含这一刀勾选的人：只换两个人中的一个时它长度为 1，

@@ -91,9 +91,24 @@ def r04_asset_id(p, ctx):
 
 
 def r05_multi_label(p, ctx):
-    """官方 :109 存在多个主体时必须分别定义并用标签区分。"""
-    if (ctx.get("n_targets") or 0) >= 2 and "<主体" not in p:
-        return [f"点名 {ctx['n_targets']} 个换人对象，无 <主体N>"]
+    """官方 `sd20-guide:109`：「当视频中存在多个主体时，**需要**分别定义，并使用标签区分。」
+
+    🩸 2026-10-30 降级（红 → 黄）并放宽手段（主人拍板：「有没有必要说主体 →
+    就这样来」）：
+      · 原文是「需要」不是「必须」，而**官方自己的编辑示例一个标签都没有**
+        （`sd20-guide:941`「将视频1中的香水替换成图片1中的面霜」）——
+        按本尺子的分档原则（红 = 官方明令 **且官方自己的示例也遵守**），
+        它本来就该是黄。
+      · 「指代不混乱」这个**意图**照样守：点名 ≥2 个换人对象时，要么用 `<主体N>`，
+        要么每个替换句的宾语各自带一个能指认的短语；**两句都写裸「人物」不行**。
+    """
+    n = ctx.get("n_targets") or 0
+    if n < 2 or "<主体" in p:
+        return []
+    objs = [x.strip() for x in re.findall(r"将其中的(.{1,40}?)替换为", p)]
+    vague = [o for o in objs if o in ("人物", "")]
+    if vague or len(objs) < n:
+        return [f"点名 {n} 个换人对象，既无 <主体N>，宾语也指认不了"]
     return []
 
 
@@ -152,7 +167,7 @@ def r07_label_consistency(p, ctx):
     # 🩸 宾语里**允许有逗号**：旧换装句的宾语就是一整段外观描述
     # （「体型偏胖的男子，黑色头发束成发髻，身着浅青绿色古装的服装」）。
     # 第一版把逗号排除了，坏样本因此哑火（非贪婪 + 停在第一个动词上即可）。
-    for m in re.finditer(r"将其中的\s*(.{1,60}?)\s*(?:替换为|换成|改成|修改为)", p):
+    for m in re.finditer(r"将其中的\s*(.{1,60}?)\s*(?:完整)?(?:替换为|换成|改成|修改为)", p):
         obj = m.group(1).strip()
         if obj.startswith("<主体"):
             continue
@@ -221,7 +236,7 @@ def r09_object_unique(p, ctx):
         if k:
             pos_count[k] = pos_count.get(k, 0) + 1
     bad = []
-    for m in re.finditer(r"将其中的\s*(.{0,26}?)\s*(?:替换为|换成|改成|修改为)", p):
+    for m in re.finditer(r"将其中的\s*(.{0,26}?)\s*(?:完整)?(?:替换为|换成|改成|修改为)", p):
         obj = m.group(1).strip()
         # 纯泛称（方位/特征一律没有）在 ≥2 人画面里没有唯一解。
         # 换装句的宾语是「<谁>的服装」，把后缀摘掉再看剩下的是不是纯泛称。
@@ -447,7 +462,7 @@ def r26_others_contradiction(p, ctx):
                   if re.search(r"人物|男子|女子|男人|女人|男生|女生|男性|女性",
                                m.group(1))}
         for lab in people:
-            if re.search(r"将其中的\s*<" + re.escape(lab) + r">\s*替换为", p):
+            if re.search(r"将其中的\s*<" + re.escape(lab) + r">\s*(?:完整)?替换为", p):
                 moved.add("人物")
                 break
 
@@ -479,10 +494,10 @@ def r27_empty_object(p, ctx):
     """
     bad = []
     for pat, why in (
-        (r"将其中的(?=替换为|换成|改成|修改为)", "宾语为空：指示词直接接动词"),
+        (r"将其中的(?=(?:完整)?(?:替换为|换成|改成|修改为))", "宾语为空：指示词直接接动词"),
         (r"将其中的[的，,、]", "空宾语（多字）：不止一个「的」或直接跟标点"),
         (r"的的", "双「的」—— 名词短语有一侧是空串"),
-        (r"把(?=替换为|换成|改成|修改为)", "宾语为空：「把」后面直接是动词"),
+        (r"把(?=(?:完整)?(?:替换为|换成|改成|修改为))", "宾语为空：「把」后面直接是动词"),
         (r"替换为(?:@图片\d+)?中的(?=[，。；、]|$)", "目标名词短语为空"),
         (r"@图片\d+中的(?=[，。；、]|$)", "@图片N 后缺名词隔断"),
     ):
@@ -577,7 +592,7 @@ RULES = [
     ("R02", "黄", "编辑任务宜含编辑意图词", "sd20-guide:39（推荐句式）", r02_edit_verb),
     ("R03", "红", "编辑任务是一段式，不许分块标题", "sd2-pe:118", r03_no_blocks),
     ("R04", "红", "不得裸写 Asset ID", "sd20-guide:120 · sd2-pe:16", r04_asset_id),
-    ("R05", "红", "多主体必须分别定义标签", "sd20-guide:109", r05_multi_label),
+    ("R05", "黄", "多主体分别指代（标签或各自能指认的宾语）", "sd20-guide:109", r05_multi_label),
     ("R06", "黄", "标签定义要带 2–3 个静态特征", "sd20-guide:95", r06_label_feature),
     ("R07", "红", "已定义标签后必须持续用同一标签", "sd20-guide:119", r07_label_consistency),
     # 🩸 2026-10-28 出处核对：官方 `:121` 只写「描述尽量简洁，避免冗余，
@@ -798,7 +813,7 @@ def calib() -> int:
         st[2] += len(red)
         n_red += len(red)
         if vs:
-            print(f"\n[guide:{ln}][{g}] {p[:60]}…（适用 {n_app}/{len(RULES)} 条）")
+            print(f"\n[sd20-guide:{ln}][{g}] {p[:60]}…（适用 {n_app}/{len(RULES)} 条）")
             for v in vs:
                 mark = "红" if v[1] == "红" else "黄"
                 print(f"   {mark} {v[0]} {v[2]} ← {v[4][0] if v[4] else ''}")
@@ -829,8 +844,10 @@ PROBES = [
     ("R04", "严格编辑@视频1，把 asset-20261025-abc 中的人物替换为@图片1中的人物。"
             "电影质感，面部稳定不变形，保持无字幕，不要生成水印，不要生成 Logo",
      GOOD_BASE),
-    ("R05", "严格编辑@视频1，将其中的体型偏胖的男子替换为@图片1中的人物；"
-            "将其中的年轻女子替换为@图片2中的人物。电影质感，面部稳定不变形，"
+    # 🩸 2026-10-30：R05 放宽成"不接受两句都写裸「人物」"后，坏样本也要跟着换
+    #   —— 旧坏样本（两句各带指认短语、只是没标签）在新口径下本来就是**对的**。
+    ("R05", "严格编辑@视频1，将其中的人物替换为@图片1中的人物；"
+            "将其中的人物替换为@图片2中的人物。电影质感，面部稳定不变形，"
             "保持无字幕，不要生成水印，不要生成 Logo", GOOD_BASE),
     # 🩸 2026-10-27：坏样本换成**原片侧光写「人物」**（图片侧零特征已放行）
     ("R06", "将@视频1中的人物定义为<主体1>。严格编辑@视频1，将其中的<主体1>"
@@ -1220,8 +1237,11 @@ def _sd_invariants(p: str, frame: list[dict], picked: list[dict]) -> list[str]:
         # 只看**换人**那一句（替换目标是「@图片N中的人物」），产品/场景不归 A1 管。
         # 替换目标现在有两种合法写法：图内对象 `@图片N中的人物`（`:126`），
         # 或**参考图那个人的标签** `<主体N>`（`:95/:119`，它自己有定义句）。
+        # 🩸 2026-10-30：2.0 换人句改成官方「完整替换为」（`las_cn.md:405`），
+        #   动词前缀「完整」**不属于宾语**，正则里要吃掉它，否则宾语会被抓成
+        #   「<主体2>完整」→ 被判"指认不了"，而这是句式改动带的假红。
         _objs = [m.group(1) for m in re.finditer(
-            r"将其中的(.{1,40}?)替换为(?:@图片\d+中的人物|<主体\d+>)", p)]
+            r"将其中的(.{1,40}?)(?:完整)?替换为(?:@图片\d+中的人物|<主体\d+>)", p)]
         if not _objs:
             bad.append("A1 多人换人却没有替换句")
         _defined = set(re.findall(r"定义为(<主体\d+>)", p))
@@ -1231,7 +1251,15 @@ def _sd_invariants(p: str, frame: list[dict], picked: list[dict]) -> list[str]:
                 if _o not in _defined:
                     bad.append(f"A1 宾语 {_o} 没有定义句（sd20-guide:109 先定义再引用）")
                 continue
-            if _o == "人物" or not _PERSONISH.search(_o):
+            # 🩸 2026-10-30：`<主体N>` 停用后，宾语在描述取不到具体人称词时
+            #   写成「<2 个特征>的人物」（`_feat_phrase` 的兜底）。这是**有指认**
+            #   的写法 —— 官方 `:95` 明确把「服饰」列为合法静态特征，`:126` 自己
+            #   就用「人物」这个词。以前 `_PERSONISH` 只认「男性/女子/…」收尾，
+            #   把「橙色连帽拉链外套、左胸带有白色品牌标识的人物」判成指认不了，
+            #   那是尺子比编译器严（`_clauses` 的方位兜底「画面中央的人物」同形）。
+            #   仍然拒绝**裸**「人物」（一个字都不能指认）。
+            if _o == "人物" or not (_PERSONISH.search(_o)
+                                    or re.fullmatch(r".+的人物", _o)):
                 bad.append(f"A1 宾语「{_obj}」指认不了（得是一个人称名词 · sd20-guide:95）")
     # A2 单人画面：原片侧最多一个定义；参考图主体必须前置且编号 `<主体1>`。
     # 🩸 2026-10-26 19:xx：原判据是「单人画面出现 <主体N> 就红」——
@@ -2100,7 +2128,10 @@ def _d8_ablation() -> list[tuple[str, bool, str]]:
         ("extra 补充说明", dict(extra="背景里加一只橘猫"), True, ""),
         ("keep_off 六项全关", dict(keep_off=True), True, ""),
         ("picks 全换", dict(picks=(0, 1)), True, ""),
-        ("pos 方位缺失", dict(pos="missing"), True, ""),
+        # 🩸 2026-10-30 方位降为兜底后，这条挪到循环外单独测 —— 见下面
+        # `pos 方位缺失（特征指认不了时）`。基线那 5 条描述互不相同，特征
+        # 就能指认，方位本来就不该出现在提示词里，拿它测方位等于测一个
+        # 不该存在的变量。
         ("audio_ref 音轨真喂", dict(audio="tts", audio_ref=True), True, ""),
         ("lines 台词", dict(audio="tts", audio_ref=True, lines=L1), True, ""),
         ("audio=tts 与默认一致", dict(audio="tts"), False,
@@ -2129,6 +2160,23 @@ def _d8_ablation() -> list[tuple[str, bool, str]]:
                     f"期望{'变' if should_change else '不变'}，实际"
                     f"{'变了' if changed else '没变'}：{p[:120]}"
                     + (f"（合法不变：{why}）" if not changed else "")))
+    # 🩸 2026-10-30：方位档现在是**兜底**（`sd20_locator` 三档，主人拍板
+    # 「方位只能给特征指认不了的场合用」）。所以要测方位有没有落点，必须
+    # 造「特征指认不了」的场合 = 同框两人描述**一模一样**。
+    # 造样本时不能拿「不一样的描述 + 方位缺失」去比 —— 那测的是特征档。
+    _same = "留短黑发的男性"
+    _b2 = _sd_case("b2", n=2, pos="unique", picks=(0,), zh=[_same, _same])[1]
+    _m2 = _sd_case("m2", n=2, pos="missing", picks=(0,), zh=[_same, _same])[1]
+    out.append(("pos 方位缺失（特征指认不了时）", _m2 != _b2,
+                "" if _m2 != _b2 else
+                f"期望变，实际没变：{_m2[:120]}"
+                "（描述完全相同、方位是唯一指认手段，缺了它提示词必须变）"))
+    # 反向对照：特征能指认时，方位**不该**改变输出（这正是这次的改动本身）
+    _b3 = _sd_case("b3", n=2, pos="unique", picks=(0,))[1]
+    _m3 = _sd_case("m3", n=2, pos="missing", picks=(0,))[1]
+    out.append(("pos 方位缺失（特征能指认时·不该变）", _m3 == _b3,
+                "" if _m3 == _b3 else
+                f"特征已经能指认，方位却还在改提示词：{_m3[:120]}"))
     # 单人路径：带切点**必须**声明范围，而且要用官方的词（「视频全程」）
     a = _sd_case("s", n=1, pos="unique")[1]
     b = _sd_case("s", n=1, pos="unique", cuts=[3.0])[1]
@@ -2202,21 +2250,25 @@ def _d12_desc_shapes() -> list[tuple[str, bool, str]]:
         except Exception as e:  # noqa: BLE001
             rows.append((label, False, f"编译器崩了：{e}"))
             continue
-        defs = re.findall(r"将@视频\d+中(.{1,160}?)定义为<主体\d+>", p)
-        if not defs:
-            rows.append((label, False, "没有原片侧定义句（人丢了）"))
+        # 🩸 2026-10-30：`<主体N>` 定义句停用（`_person_tags_20`）⇒ 特征串现在只
+        #   出现在**替换句宾语**里（「将其中的<特征>替换为@图片N中的人物」）。
+        #   判据跟着搬到宾语；「人丢了」= 一条换人句都没写出来。
+        objs = [x.strip() for x in re.findall(
+            r"将其中的(.{1,40}?)(?:完整)?替换为@图片\d+中的人物", p)]
+        if not objs:
+            rows.append((label, False, "没有换人句（人丢了）"))
             continue
-        bad = [x for x in defs if len(x.split("、")) > cap]
+        bad = [x for x in objs if len(x.split("、")) > cap]
         rows.append((label, not bad,
-                     f"特征 {len(max(defs, key=lambda s: len(s.split('、'))).split('、'))} 个"
+                     f"特征 {max(len(x.split('、')) for x in objs)} 个"
                      f"（上限 {cap}）" if not bad else
                      f"超上限：{bad[0]!r}"))
 
     # ② 鉴别力自证：这条是**手写的坏提示词**，判据必须抓得到
-    bad_prompt = ("将@图片1中的人物定义为<主体1>，"
-                  "将@视频1中留短发、戴眼镜、穿蓝外套、绿长裤、白球鞋的男性定义为<主体2>。"
-                  "严格编辑@视频1，将其中的<主体2>替换为<主体1>。")
-    _bad_defs = re.findall(r"将@视频\d+中(.{1,160}?)定义为<主体\d+>", bad_prompt)
+    bad_prompt = ("严格编辑@视频1，将其中的留短发、戴眼镜、穿蓝外套、绿长裤、白球鞋"
+                  "的男性替换为@图片1中的人物。")
+    _bad_defs = re.findall(
+        r"将其中的(.{1,40}?)(?:完整)?替换为@图片\d+中的人物", bad_prompt)
     caught = any(len(x.split("、")) > 2 for x in _bad_defs)
     rows.append(("鉴别力自证（5特征坏样本必须被抓，产品线 2）", caught,
                  "抓到" if caught else "放过了 → 整组判据无鉴别力，全绿作废"))
@@ -2224,47 +2276,69 @@ def _d12_desc_shapes() -> list[tuple[str, bool, str]]:
 
 
 def _d13_position_matrix() -> list[tuple[str, bool, str]]:
-    """D13 方位唯一性矩阵（官方 `:153` 方位定位 / `:164` 强方位 / `:109` 标签唯一）。
+    """D13 指认档顺序矩阵（官方 `:153` 方位定位 / `:95` 特征定义 / `:109` 标签唯一）。
 
-    为什么单独成组：D1 的 `pos` 维度只有 unique/clash/missing 三档，且**只对 n=2**
-    跑过。3–4 人同框时方位会互相挤占（`_uniq_pos` 的分母是整个画面），
-    这层从来没被单独验过。
+    🩸 2026-10-30 主人拍板：**方位由「优先」降为「兜底」**。原来的判据是
+    「方位唯一 → 指认里必须带方位词」，那等于把方位钉成第一手段；现在改成
+    两档**分别**验，两边都得有落点：
 
-    判据（每条都能被坏样本打掉）：
-      ① **两个人不能拿到同一句指认** —— 撞车的方位词指不出人（`:109` 唯一性）；
-      ② 方位唯一时，指认里必须真的带那个方位词（`:153`）；
-      ③ 盘点没给方位时不许写出半截句（「画面的人物」/「的人物」）。
+      A 组（特征能唯一指认：默认 5 条描述互不相同）
+        ① 定义句用特征，**不许**退回裸方位句；
+        ② 两个人不许拿到同一句指认。
+      B 组（特征指认不了：同框描述一模一样）
+        ③ 方位唯一 → **必须**写那个方位词（兜底档真的接得住）；
+        ④ 方位撞车/缺失 → 不许写出会指错人的方位。
     """
     rows: list[tuple[str, bool, str]] = []
+    _POS_RE = r"^画面(左上|上方|右上|左侧|中央|右侧|左下|下方|右下)的人物$"
+
+    # 🩸 2026-10-30：`<主体N>` 定义句停用 ⇒ 指认现在只体现在**替换句宾语**里。
+    #   判据从"每个原片侧主体有定义"改成"每条换人句的宾语怎么写的"。
+    def _objs(p: str) -> list[str]:
+        return [x.strip() for x in re.findall(
+            r"将其中的(.{1,40}?)(?:完整)?替换为@图片\d+中的人物", p)]
+
+    # A 组：特征能唯一指认 → 用特征、不写方位
     for n in (2, 3, 4):
-        for mode, want_pos in (("unique", True), ("clash", False), ("missing", False)):
+        want = n  # 勾选了 n 个人，就该有 n 条换人句
+        try:
+            # 🩸 必须勾 ≥2 个人：`picks=(0,)`（默认）会走「只换一个」早退分支。
+            p = _sd_case(f"D13-A-{n}", n=n, pos="unique",
+                         picks=tuple(range(want)))[1]
+        except Exception as e:  # noqa: BLE001
+            rows.append((f"A 特征可分 n={n}", False, f"编译器崩了：{e}"))
+            continue
+        objs = _objs(p)
+        has_pos = [bool(re.match(_POS_RE, x)) for x in objs]
+        ok = (len(objs) == want and len(objs) == len(set(objs))
+              and not any(has_pos))
+        rows.append((f"A 特征可分 n={n}（用特征·不写方位）", ok,
+                     f"{len(objs)}/{want} 条宾语：{objs}"
+                     + ("" if ok else " → 特征已经能指认却还在用方位/写成同一句")))
+
+    # B 组：特征指认不了（同框描述一模一样）→ 方位兜底
+    same = "留短黑发的男性"
+    for n in (2, 3, 4):
+        for mode in ("unique", "clash", "missing"):
             try:
-                # 🩸 必须勾 ≥2 个人：`picks=(0,)`（默认）会走「只换一个」早退分支，
-                # 只定义 1 个人 → 撞车永远测不到，整组是空集恒真。
-                _, p, frame, _, _, _ = _sd_case(f"D13-{n}-{mode}", n=n, pos=mode,
-                                                picks=tuple(range(min(n, 2))))
+                p = _sd_case(f"D13-B-{n}-{mode}", n=n, pos=mode,
+                             picks=tuple(range(min(n, 2))),
+                             zh=[same] * n)[1]
             except Exception as e:  # noqa: BLE001
-                rows.append((f"n={n} {mode}", False, f"编译器崩了：{e}"))
+                rows.append((f"B 特征不可分 n={n} {mode}", False, f"编译器崩了：{e}"))
                 continue
-            defs = re.findall(r"将@视频\d+中(.{1,160}?)定义为<主体\d+>", p)
-            tag = f"n={n} {mode}"
-            if not defs:
-                rows.append((tag, False, "没有原片侧定义句"))
-                continue
-            dup = len(defs) != len(set(defs))
-            half = [x for x in defs if x.strip() in ("人物", "") or x.strip().endswith("的人物")
-                    and not re.match(r"^画面[^的]*的?的人物$", x.strip())]
-            has_pos = [bool(re.match(r"^画面(左上|上方|右上|左侧|中央|右侧|左下|下方|右下)的人物$", x))
-                       for x in defs]
-            if dup:
-                rows.append((tag, False, f"两个人拿到了同一句指认：{defs}"))
-            elif mode == "unique" and not all(has_pos):
-                rows.append((tag, False, f"方位唯一却没写方位：{defs}"))
-            elif mode != "unique" and all(has_pos):
-                rows.append((tag, False, f"方位撞车/缺失仍写了方位（会指错人）：{defs}"))
+            objs = _objs(p)
+            has_pos = [bool(re.match(_POS_RE, x)) for x in objs]
+            if mode == "unique":
+                ok = len(objs) >= 1 and all(has_pos)
+                rows.append((f"B 特征不可分 n={n} 方位唯一（必须写方位）", ok,
+                             f"{len(objs)} 条宾语：{objs}"
+                             + ("" if ok else " → 特征指认不了、方位也唯一，却没写方位")))
             else:
-                rows.append((tag, True,
-                             f"{len(defs)} 条定义 · 指认不重复"))
+                ok = not any(has_pos)
+                rows.append((f"B 特征不可分 n={n} 方位{mode}（不许写方位）", ok,
+                             f"{len(objs)} 条宾语：{objs}"
+                             + ("" if ok else " → 方位撞车/缺失仍写了方位（会指错人）")))
     # 鉴别力自证：手写「两人同一句指认」的坏样本，判据必须抓得到
     bad = ("将@视频1中画面中央的人物定义为<主体2>，"
            "将@视频1中画面中央的人物定义为<主体3>。")
@@ -2387,9 +2461,13 @@ def _d16_unspeakable() -> list[tuple[str, bool, str]]:
             slots=["person", "person2"])
     except Exception as e:  # noqa: BLE001
         return rows + [("对照两人：编译不崩", False, f"{type(e).__name__}: {e}")]
-    n_rep = len(re.findall(r"将其中的<主体\d+>替换为<主体\d+>", p3))
+    # 🩸 2026-10-30：`<主体N>` 定义句停用后，替换句两侧都不再有标签
+    #   （宾语 = 原片侧指认短语，替换目标 = `@图片N中的人物`，官方 `:126`）。
+    #   判据改数**宾语非裸「人物」**的替换句：两个认得出来的人 ⇒ 必须两条都具名。
+    _reps = re.findall(r"将其中的(.{1,40}?)替换为@图片\d+中的人物", p3)
+    n_rep = sum(1 for x in _reps if x.strip() != "人物")
     rows.append(("对照两人：仍发 2 条具名替换（有鉴别力）", n_rep == 2,
-                 f"只发了 {n_rep} 条"))
+                 f"只发了 {n_rep} 条：{_reps}"))
     return rows
 
 
@@ -2501,8 +2579,10 @@ def _d19_wardrobe_target() -> list[tuple[str, bool, str]]:
         model=SD_M, source_people=fr, frame_people=fr,
         desc_by_id={"P1": {"zh": "体型偏胖的男子", "en": ""}},
         slots=["person"])
+    # 🩸 2026-10-30：职责句改成前置的「参考@图片N中…的面部特征和妆造」
+    #   （官方 `sd20-guide:59-65` 组合任务句式：参考分句在「严格编辑」之前）。
     rows.append(("纯换人：妆造句仍在（对照，有鉴别力）",
-                 "妆造参考" in p_pure, p_pure[:120]))
+                 "的面部特征和妆造" in p_pure, p_pure[:120]))
     p_w = _es.compile_prompt(
         "volc", _es.normalize({"person": True, "person_ids": ["P1"],
                                "wardrobe": True, "wardrobe_ids": ["P1"],
@@ -2511,9 +2591,9 @@ def _d19_wardrobe_target() -> list[tuple[str, bool, str]]:
         desc_by_id={"P1": {"zh": "体型偏胖的男子", "en": ""}},
         slots=["person", "wardrobe"])
     rows.append(("换人+换装：妆造句让位，不同句给两个服装答案",
-                 "妆造参考" not in p_w and "米色风衣" in p_w, p_w[:160]))
+                 "和妆造" not in p_w and "米色风衣" in p_w, p_w[:160]))
     rows.append(("换人+换装：面部特征仍指换人图",
-                 "面部特征参考" in p_w, p_w[:160]))
+                 "的面部特征" in p_w and "@图片1中人物的面部特征" in p_w, p_w[:160]))
     return rows
 
 
@@ -2614,9 +2694,12 @@ def _d21_real_shape() -> list[tuple[str, bool, str]]:
               "wardrobe_ids": [P1["id"], P2["id"]]},
              ["wardrobe", "wardrobe2"])
     rows.append(("两人换装：不出现「的的」", "的的" not in p_w, p_w[:130]))
+    # 🩸 2026-10-30：抓取宽度原来写死 `.{2,10}`，只够「画面中央的人物」这种
+    # 短指认；方位降为兜底后这里是**特征短语**（「左胸带有白色标识、短发的人物」），
+    # 一超 10 字就抓不到 ⇒ set 只剩 1 个 ⇒ 报红。放宽到 40，判的仍是「两句不同」。
     rows.append(("两人换装：两个人各有独立指认",
                  p_w.count("的服装换成") == 2
-                 and len(set(re.findall(r"将其中的(.{2,10}?)的服装", p_w))) == 2,
+                 and len(set(re.findall(r"将其中的(.{2,40}?)的服装", p_w))) == 2,
                  p_w[:160]))
 
     # ② 说话人指认（第二个人不是被换的那个）
@@ -2624,13 +2707,18 @@ def _d21_real_shape() -> list[tuple[str, bool, str]]:
                {"speaker": P2["id"], "text": "为什么？", "lang": "zh"}]]
     p_l = _c({"person": True, "person_ids": [P1["id"]], "audio": "tts"},
              ["person"], shot_lines=_lines)
+    # 🩸 2026-10-30：原来这条查全文里有没有「@图片1中的人物说」——
+    #   **第一句本来就该是它**（P1 被换成 @图片1，换人后他就是这张脸，
+    #   官方 `:119` 要求同一个人持续用同一指代），于是误报了。
+    #   真正要防的是**第二个人**（没被换的 P2）被写成参考图的人。
     rows.append(("说话人：第二个人指代不能是「@图片1中的人物」",
-                 "@图片1中的人物说" not in p_l, p_l[:220]))
+                 not re.search(r"@图片1中的人物[^。；]*说\{为什么", p_l), p_l[:220]))
     rows.append(("说话人：第二个人有独立指认（不是裸动词）",
                  bool(re.search(r"@视频1中[^，。；]{2,}说\{为什么", p_l)), p_l[:220]))
-    # 对照：第一个人仍用已定义的标签（别把这条一并删了）
-    rows.append(("说话人：被换的人仍用 <主体N>",
-                 bool(re.search(r"<主体\d+>说\{你站住", p_l)), p_l[:220]))
+    # 对照：被换的人说话用**参考图**指代（`<主体N>` 定义句已停用，见
+    # `_person_tags_20` 的停用说明；换人后他 = 参考图那个人）
+    rows.append(("说话人：被换的人用参考图指代说第一句",
+                 bool(re.search(r"@图片1中的人物说\{你站住", p_l)), p_l[:220]))
 
     return rows
 
@@ -2684,8 +2772,13 @@ def _d15_indistinct() -> list[tuple[str, bool, str]]:
         except Exception as e:  # noqa: BLE001
             rows.append((label, False, f"编译器崩了：{e}"))
             continue
-        defs = re.findall(r"将@视频\d+中(.{1,160}?)定义为<主体\d+>", p)
-        separable = len(defs) == len(set(defs))
+        # 🩸 2026-10-30：`<主体N>` 定义句停用 ⇒ 判「分不分得开」要看**替换句宾语**
+        #   （那就是编译器实际写出来的指认）。空集恒真的坑仍在：一条都没写出来时
+        #   `len==len(set)` 会让两个 0 相等被当成「分得开」。
+        objs = [x.strip() for x in re.findall(
+            r"将其中的(.{1,40}?)(?:完整)?替换为@图片\d+中的人物", p)]
+        separable = (len(objs) == 2 and len(set(objs)) == 2
+                     and all(o != "人物" for o in objs))
         g = _gate(fr, ["P1", "P2"])
         rows.append((label, _ok(separable, g),
                      f"{'分得开' if separable else '分不开'} / 闸 {g}"

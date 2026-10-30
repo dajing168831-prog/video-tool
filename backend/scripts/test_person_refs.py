@@ -101,9 +101,10 @@ def main() -> int:
         check("2.0 只有一个槽位", slots, ["person"])
         check_true("发的就是原图（不自动裁大头照）", Path(paths[0]) == orig, str(paths[0]))
         p20 = prompt_for("volc", slots)
+        # 🩸 2026-10-30：职责句改成**前置**的一整句「参考@图片N中…的面部特征和妆造」
+        #   （官方 `sd20-guide:59-65` 组合任务句式：参考分句排在「严格编辑」之前）。
         check_true("2.0 一张图时面部与妆造都指图片1",
-                   "面部特征参考@图片1中的人物" in p20
-                   and "妆造参考@图片1中的人物" in p20, p20)
+                   "参考@图片1中人物的面部特征和妆造" in p20, p20)
         check_true("2.0 不出现第二张人物图", "@图片2" not in p20, p20)
 
     if sel == "volc25":
@@ -172,10 +173,10 @@ def main() -> int:
 
         seg1 = _duty(pr5, "@图片1")
         check_true("第 1 位：面部与妆造都→图片1",
-                   bool(re.search(r"面部特征参考@图片1(?!\d).*妆造参考@图片1(?!\d)", seg1)), pr5)
+                   bool(re.search(r"参考@图片1中[^，]*的面部特征和妆造", seg1)), pr5)
         seg2 = _duty(pr5, "@图片2")
         check_true("第 2 位：面部与妆造都→图片2",
-                   bool(re.search(r"面部特征参考@图片2(?!\d).*妆造参考@图片2(?!\d)", seg2)), pr5)
+                   bool(re.search(r"参考@图片2中[^，]*的面部特征和妆造", seg2)), pr5)
         check_true("双人：不出现第三张图", "@图片3" not in pr5, pr5)
 
         # 🩸 2026-10-26 19:xx：原来这三条锁的是

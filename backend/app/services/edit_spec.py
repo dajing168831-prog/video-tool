@@ -677,8 +677,17 @@ def _feat_phrase(desc: str, cloth: bool = True, sd20: bool = False) -> str:
         parts = _segs
     m = re.search(r"的([^，；,;的]{1,4})$", parts[-1])
     head = m.group(1) if (m and _PERSON_HEAD.search(m.group(1))) else ""
-    # 末段扣掉「的X」之后剩下的那半句也是特征（通常是服饰），别整段扔了
-    tail = parts[-1][:m.start()].strip() if (head and m) else ""
+    # 末段扣掉「的X」之后剩下的那半句也是特征（通常是服饰），别整段扔了。
+    # 🩸 2026-10-30：末段**没有人称中心词**时以前整段被扔掉 ——
+    #   `['橙色连帽拉链外套', '左胸带有白色品牌标识']` 只取到第一段，
+    #   拼出「橙色连帽拉链外套的人物」，官方 `:95` 要的「2–3 个静态特征」只剩 1 个。
+    #   现在没有中心词时末段整段算一个特征（它有中心词时仍然是「的」前那半句）。
+    if head and m:
+        tail = parts[-1][:m.start()].strip()
+    elif not head:
+        tail = parts[-1]
+    else:
+        tail = ""
     feats = parts[:-1] + ([tail] if tail else [])
     if not cloth:
         # 只留**人和身上的配饰**（发型/眼镜/胡须…），服装分句整段丢掉
@@ -1041,7 +1050,12 @@ def _clauses(channel: str, c: dict, idx: dict[str, int], *,
                 # 出片**真的就是这么发出去的**（`triage/request_001.json` 原文），
                 # 这两次的结果正是"没换脸 / 换成路人脸"。
                 # ⇒ 取出空串时必须落到下面的 `人物` 兜底，不许把残句发出去。
-                obj = _head_noun(src)
+                # 🩸 2026-10-30：`_head_noun` **只取第一个逗号前**，整句用顿号时
+                #   那一段就是全串 —— 3–6 个特征原样进宾语，绕过官方 `:95` 的
+                #   「2–3 个」和产品线的封顶 2（D12 当场抓到
+                #   「戴黑色前进帽、穿蓝色外套、绿色卷边长裤的男性」3 个全发）。
+                #   先过一遍 `_feat_phrase`（同一把尺、封顶 2），抽不出才退回它。
+                obj = dialect.feat_fallback(src) or _head_noun(src)
             else:
                 # 🩸 2026-10-27（真实盘点 `2ddd8959` 暴露）：**多人画面里连
                 # 方位和特征都拿不到的人，不许退化成裸「人物」**。
@@ -1054,12 +1068,22 @@ def _clauses(channel: str, c: dict, idx: dict[str, int], *,
                 # 避免指代混乱」要防的东西。
                 # 跳过比写错好：用户勾了却认不出时，宁可少换这一个，
                 # 也不要让模型拿这句话去猜（猜错就是画面里凭空多/少一张脸）。
-                # 只在**已经给 ≥2 个人具名定义过**时才跳过：
-                # 那种提示词里「人物」= 在一堆 `<主体N>` 中指谁都不知道。
-                # 一个人都没定义出来（老调用方不传 `source_people`、盘点全缺）
-                # 时，整份提示词本来就没有标签体系，裸「人物」是唯一写法 ——
+                # 只在**别人写得出具名宾语**时才跳过：
+                # 那种提示词里「人物」= 在另一个具名的人旁边指谁都不知道。
+                # 一个人都认不出来（老调用方不传 `source_people`、盘点全缺）
+                # 时，整份提示词本来就没有具名指认，裸「人物」是唯一写法 ——
                 # 这时跳过会让图白传（D10「每张图都被引用」当场判红）。
-                if multi and len(orig_tags or {}) >= 2:
+                # 🩸 2026-10-30：条件原来是 `len(orig_tags) >= 2`（原片侧定义过
+                #   ≥2 个 `<主体N>`）。定义句已停用（`_person_tags_20`），这个数
+                #   恒为 0 ⇒ 群体项（`多名…普通民众`）不再被跳过，写出
+                #   「将其中的人物替换为@图片3中的人物」（D16 当场报红）。
+                #   改问**同一把尺**：名单里别人能不能被指认出来。
+                _named_others = any(
+                    (dialect.orig_feat(people, _k, pool=frame_people or people,
+                                       cloth=False)
+                     or _head_noun(_inline(str((_p or {}).get("desc_zh") or ""))))
+                    for _k, _p in enumerate(people) if _k != i)
+                if multi and _named_others:
                     continue
                 # 官方 2.5 指南的换人原句就是「把 @video1 的人物修改为 @image1」；
                 # sd2-pe 是「严格编辑 @视频N，将其中的<原特征>修改为<新特征>」。
@@ -1113,9 +1137,13 @@ def _clauses(channel: str, c: dict, idx: dict[str, int], *,
                     str(x) for x in (c.get("wardrobe_ids") or [])}
             _duty = dialect.person_duty(pic=pic, rtag=_rtag,
                                         in_wardrobe=_in_wardrobe)
-            if _duty:
-                s += _duty
             out.append(s)
+            # 🩸 2026-10-30：职责分句**独立成句**，不再接在替换句尾巴上 ——
+            #   官方 `sd20-guide:59-65` 的组合任务句式要求参考分句排在「严格编辑」
+            #   **之前**。2.0 的编译器会把以「参考@图…」开头的分句提到前面
+            #   （`volc20_compile._compile` 的 `_lead`）。同一个图号只写一次。
+            if _duty and _duty not in out:
+                out.append(_duty)
             wrote += 1
         if not wrote:
             # 没参考图：目标只能是文字描述，别拿"原片里那个人"当目标

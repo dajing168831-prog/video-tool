@@ -146,7 +146,13 @@ def _volc_h3_clauses(ch: str, model: str, n: int, ppl: list[dict],
     # 前面那句定义里（「将@视频1中画面中央的人物定义为<主体1>」）。拿换人句的
     # 字面去量"有没有定位词"只会恒假 —— 火山的这两个形状由
     # `ruler_sd20/sd25 --sweep` 各自守着。
-    return [_strip_ids(x) for x in cl[:n]], None
+    # 🩸 2026-10-30：职责分句（「参考@图片N中…的面部特征和妆造」）现在是
+    #   `_clauses` 里的**独立一项**（官方 `sd20-guide:59-65` 要求参考分句
+    #   排在「严格编辑」之前），而它以前是拼在换人句尾巴上的。
+    #   ⇒ `cl[:n]` 会截到职责句而不是换人句，`_strip_ids` 洗掉图号后几条职责句
+    #     长得一样 → 被误判成"输出重复"。这里先把职责句滤掉，只量换人句本身。
+    _cl = [x for x in cl if not x.startswith("参考@图片")]
+    return [_strip_ids(x) for x in _cl[:n]], None
 
 
 def _still_clauses(n: int, ppl: list[dict]) -> list[str]:

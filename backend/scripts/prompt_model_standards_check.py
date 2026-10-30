@@ -75,9 +75,11 @@ def phase_20() -> None:
         # 🩸 有音频参考时，官方**组合任务**公式（`seedance-20-guide.md:65`）要求
         # 在编辑句前面加「参考<…>的[参考维度]，」—— 参考维度取音频参考那一行
         # （同文件 :28「参考<音频N>中的音色」）。两种开头都合规。
-        chk(f"[{tag}] 2.0 以「严格编辑@视频1」为编辑句开头",
-            p.startswith("严格编辑@视频1")
-            or p.startswith("参考@音频1中的音色，严格编辑@视频1"), p[:40])
+        # 🩸 2026-10-30：官方 `sd20-guide:59-65` 的组合任务句式允许「参考@素材」
+        #   分句排在「严格编辑」**之前**（参考维度：音频音色 / 图的面部特征与妆造）。
+        #   要守的不变式是「编辑句以严格编辑@视频1起头」，而不是"整条提示词第一句"。
+        chk(f"[{tag}] 2.0 编辑句以「严格编辑@视频1」起头（参考分句可在其前）",
+            "严格编辑@视频1" in p, p[:60])
         # 2.0 官方「强制约束」：稳定包 + 水印/Logo 兜底
         chk(f"[{tag}] 2.0 挂稳定包+水印兜底", "不要生成水印" in p)
         # 🩸 D6（2026-10-23）：本夹具是**单人**换人。官方是
@@ -202,8 +204,21 @@ def common(tag: str, p: str) -> None:
         chk(f"[{tag}] 不带 2.0 的「将其中的」", "将其中的" not in p, p[:120])
         chk(f"[{tag}] 原对象前不带 @视频1", "把@视频1中" not in p, p[:120])
     else:
+        # 🩸 2026-10-30 撤回同一轮的两次尝试，回到官方 `sd2-pe:126` 原句式：
+        #   ① 「完整替换 + 使用目标人物的脸、发型、体型、服装和配饰」——
+        #      出处是 `las_cn.md:405`，那是 **LAS 算子**的 `user_prompt`（服务端
+        #      还要再做 VLM/关键帧重绘/提示词组装），不是 Seedance 原生提示词；
+        #      原生提示词里没有这个示例。搬过来属于跨链路。
+        #   ② 本次真机（`6d26558d` / `ff561d97`）加了它仍然是 not_swapped。
         chk(f"[{tag}] 换人句用 2.0 句式（将其中的X…）",
             "将其中的人物替换为@图片1中的人物" in p, p[:120])
+        # 职责句（面部特征/妆造）必须以「参考@图…」开头、排在「严格编辑」之前
+        # （官方 `sd20-guide:59-65` 组合任务句式）。
+        chk(f"[{tag}] 图职责句前置成「参考@图片N中…的面部特征和妆造」",
+            "参考@图片1中人物的面部特征和妆造" in p, p[:160])
+        _pre = p.split("严格编辑@视频1")[0] if "严格编辑@视频1" in p else p
+        chk(f"[{tag}] 所有「参考@图N」都在「严格编辑」之前",
+            "参考@图片1中人物的面部特征和妆造" in _pre, p[:160])
         chk(f"[{tag}] 不带 2.5 的「把@视频1中…」",
             "把@视频1中的人物" not in p, p[:120])
     # 🩸 单人画面不许把原片人物的衣服写进替换句（2026-10-22 只换衣服的根因）
@@ -288,8 +303,19 @@ def phase_positions(sel: str) -> None:
     if sel == "volc20":
         p20 = edit_spec.compile_prompt("volc", s, model=V20[0], slots=slots,
                                        source_people=ppl, desc_by_id=d)
-        chk("2.0 多人写方位（sd2-pe:153）",
-            "画面左侧" in p20 and "画面右侧" in p20, p20[:160])
+        # 🩸 2026-10-30 主人拍板：**方位由「优先」降为「兜底」**（`sd20_locator` 三档）。
+        # 两人描述互不相同 ⇒ 特征就能指认，这时不该再写方位（官方 `:95` 的定义形状）。
+        chk("2.0 特征可分 → 用特征、不写方位（sd2-pe:95）",
+            "画面左侧" not in p20 and "画面右侧" not in p20
+            and "穿蓝衣的男人" in p20 and "戴帽子的女人" in p20, p20[:160])
+        # 兜底档：描述一模一样 ⇒ 特征指认不了，方位**必须**写（官方 `:153`）
+        same20 = "留短黑发的男性"
+        ppl20 = [dict(p, desc_zh=same20) for p in ppl]
+        d20 = {p["id"]: {"zh": same20, "en": p["desc_en"]} for p in ppl20}
+        p20b = edit_spec.compile_prompt("volc", s, model=V20[0], slots=slots,
+                                        source_people=ppl20, desc_by_id=d20)
+        chk("2.0 特征不可分 → 方位兜底（sd2-pe:153）",
+            "画面左侧" in p20b and "画面右侧" in p20b, p20b[:160])
     elif sel == "volc25":
         p25 = edit_spec.compile_prompt("volc", s, model=V25, slots=slots,
                                        source_people=ppl, desc_by_id=d)
@@ -311,8 +337,18 @@ def phase_positions(sel: str) -> None:
     if sel == "volc20":
         ptb = edit_spec.compile_prompt("volc", s, model=V20[0], slots=slots,
                                        source_people=tb, desc_by_id=dtb)
-        chk("上下分屏：2.0 写画面上方/下方",
-            "画面上方" in ptb and "画面下方" in ptb, ptb[:160])
+        # 特征可分（浅棕短发 / 浅银白短发）⇒ 用特征、不写方位（2026-10-30 方位降兜底）
+        chk("上下分屏：2.0 特征可分 → 用特征、不写方位",
+            "画面上方" not in ptb and "画面下方" not in ptb
+            and "浅棕色短发男性" in ptb and "浅银白短发男性" in ptb, ptb[:160])
+        # 兜底档：两人描述一样 ⇒ 只剩方位能分，必须写画面上方/下方
+        same_tb = "短发男性"
+        tb2 = [dict(p, desc_zh=same_tb) for p in tb]
+        dtb2 = {x["id"]: {"zh": same_tb, "en": x["desc_en"]} for x in tb2}
+        ptb2 = edit_spec.compile_prompt("volc", s, model=V20[0], slots=slots,
+                                        source_people=tb2, desc_by_id=dtb2)
+        chk("上下分屏：2.0 特征不可分 → 方位兜底写画面上方/下方",
+            "画面上方" in ptb2 and "画面下方" in ptb2, ptb2[:160])
     elif sel == "h3":
         htb = edit_spec.compile_prompt("minimax", s, model=H3, slots=slots,
                                        source_people=tb, desc_by_id=dtb)

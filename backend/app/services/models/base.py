@@ -146,7 +146,10 @@ class Dialect:
     def wardrobe_verb_text(self) -> str:
         return "修改为"
 
-    #: 换人句后面要不要追加职责分句（`；面部特征参考…，妆造参考…`）。
+    #: 换人句的职责分句（`面部特征参考…，妆造参考…`）。
+    #: 🩸 2026-10-30：它现在是一个**独立的前置参考句**（以「参考@图…」开头），
+    #:   不是接在替换句尾巴上的 `；…` —— 官方 `sd20-guide:59-65` 的组合任务句式是
+    #:   「参考<图片N>的[参考维度]，严格编辑<视频X>，[具体编辑内容]」。
     def person_duty(self, *, pic: str, rtag: str, in_wardrobe: bool) -> str:
         return ""
 
@@ -155,6 +158,14 @@ class Dialect:
     #: 不是共用工具（哪怕两家当前算法一样，也不许互借）。
     def orig_feat(self, people: list[dict], i: int,
                   pool: list[dict] | None = None, cloth: bool = True) -> str:
+        return ""
+
+    #: 指认短语取不出、方位也用不了时，还试不试**封顶后的特征短语**当宾语。
+    #: 🩸 2026-10-30：`_head_noun` 只取第一个逗号前，整句用顿号时那就是全串，
+    #:   3–6 个特征原样进宾语（绕过官方 `sd20-guide:95` 的「2–3 个」）。
+    #:   2.0 有自己的封顶尺（产品线 2），在这里再抽一次；**别家返回空** ——
+    #:   各家的封顶口径不同，不许借用（一轮一个型号，2.5/H3 还没轮到）。
+    def feat_fallback(self, src: str) -> str:
         return ""
 
     #: `其他…保持不变` 这半句（LAS 官方原句的后半截）。
