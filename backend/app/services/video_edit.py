@@ -2505,13 +2505,11 @@ def _write_request(work: Path, n: int, *, ch: str, plan: dict, dur: float,
                 "ref_sha1": ref_sha,
                 # 身份锚点：这句描述是不是真的写进了提示词、写的是哪一段
                 "subject_look": {
-                    # 只认「真出现在最终提示词里」，不认「准备过」——
-                    # H3 现在一律不写外观（2026-10-24 实测反证），
-                    # 再按"有没有读到描述"记就会记成已使用，复盘时会看错。
-                    "used": bool((look.get("en") or look.get("zh") or "").strip()
-                                 and (look.get("en") or look.get("zh") or "").strip()
-                                 in prompt),
-                    "text": (look.get("en") or look.get("zh") or "")[:300],
+                    # 只认「真出现在最终提示词里」，不认「准备过」。
+                    # 🩸 2026-10-30：原来写 `(en or zh) in prompt` —— 有英文就只查英文，
+                    # 中文提示词里永远查不到 ⇒ **这盏灯恒为 false**（我照着它下过错误结论）。
+                    "used": _look_used(look, prompt),
+                    "text": (look.get("zh") or look.get("en") or "")[:300],
                 },
                 "audio": bool(has_audio),
                 # 风格参考视频（A9）：送的是哪一段、内容哈希多少
@@ -2520,6 +2518,31 @@ def _write_request(work: Path, n: int, *, ch: str, plan: dict, dur: float,
             }, ensure_ascii=False, indent=1), encoding="utf-8")
     except Exception as e:  # noqa: BLE001
         log.warning("请求快照写入失败：%s", e)
+
+
+def _look_used(look: dict, prompt: str) -> bool:
+    """参考图那个人的外观描述**到底有没有真的进提示词**（不是"读到过"）。
+
+    🩸 2026-10-30（主人：「为什么只换了衣服没换脸！」）：原来写的是
+    `(en or zh) in prompt` —— 有英文时只查英文，而提示词是中文，
+    **永远查不到 ⇒ 恒 false**，我照着这盏坏灯下过一次错误结论（"描述被丢了"）。
+    现在中英都查；2.0 定义句用的是从 zh 抽出来的**短特征短语**（子串），
+    所以那句也得查一遍，否则描述真写进去了它还报 false。
+    """
+    zh = str((look or {}).get("zh") or "").strip()
+    en = str((look or {}).get("en") or "").strip()
+    probes = [x for x in (zh, en) if x]
+    if zh:
+        try:
+            from app.services.edit_spec import _feat_phrase
+
+            p = _feat_phrase(zh, cloth=False, sd20=True)
+            if p:
+                probes.append(p)
+        except Exception:  # noqa: BLE001
+            pass
+    txt = prompt or ""
+    return any(x in txt for x in probes)
 
 
 def _ref_sig(x) -> str:

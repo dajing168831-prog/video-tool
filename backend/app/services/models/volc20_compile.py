@@ -139,7 +139,13 @@ def sd20_locator(per: dict | None, pool: list[dict] | None = None) -> str:
     if pool:
         _pos = _uniq_pos(per, pool)
         if _pos:
-            return f"{_pos}的人物"
+            # 🩸 2026-10-30（`ff561d97` 只换衣服没换脸）：只写「画面中央**的人物**」时
+            # 这句定义认不出是谁 —— 真机换成功那条（`686dc`）写的是「东亚男性」。
+            # 方位仍是主指认手段（10-27 主人定的），后面补一个盘点现成的短特征。
+            # 只动 `<主体N>` 定义句这一处，宾语、标签、兜底包一律不动。
+            _f = _feat_phrase(str((per or {}).get("desc_zh") or ""),
+                              cloth=False, sd20=True)
+            return f"{_pos}的{_f}" if _f else f"{_pos}的人物"
     desc = str((per or {}).get("desc_zh") or "")
     own = _landmark_phrase_20(desc)
     if not own:
