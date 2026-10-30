@@ -105,7 +105,7 @@ def _card(data) -> dict:
         "rules": data.get("rules") or 0,
         "format": data.get("format") or "",
         "note": data.get("note") or "",
-        "noteOpen": False,
+        "noteOpen": True,
     }
 
 

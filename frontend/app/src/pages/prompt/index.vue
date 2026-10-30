@@ -114,10 +114,11 @@
               </view>
 
               <!-- 官方要求的「优化问题」：我们替你定了什么、改了什么。
-                   灰字、可折叠，**不进提示词**，复制也带不走。 -->
+                   灰字、**默认展开**（2026-10-30 主人：「这里也别隐藏，放开来吧」），
+                   仍可点标题收起。**不进提示词**，复制也带不走。 -->
               <view v-if="m.data.note" class="prompt-note" @click="m.data.noteOpen = !m.data.noteOpen">
                 <text class="note-head">
-                  {{ m.data.noteOpen ? '收起说明 ▲' : '我替你定了什么 ▾' }}
+                  {{ m.data.noteOpen ? '我替你定了什么 ▲' : '我替你定了什么 ▾' }}
                 </text>
                 <text v-if="m.data.noteOpen" class="note-body" user-select selectable>{{ m.data.note }}</text>
               </view>
@@ -410,7 +411,8 @@ export default {
             rules: d.rules || 0,
             format: d.format || '',
             note: d.note || '',        // 官方 Step 4「优化问题」：说明 + 改了什么
-            noteOpen: false,           // 默认收起，不抢提示词的位置
+            noteOpen: true,            // 🩸 2026-10-30 主人：「这里也别隐藏，放开来吧！」
+                                       //    说明是给顾客看"我替你定了什么"的，默认展开
           }
           if (ai.data.prompt) this.lastPrompt = ai.data.prompt
         }
@@ -808,8 +810,14 @@ export default {
       return first ? first.text.slice(0, 24) : '未命名对话'
     },
     async stash() {
-      // 没有实质内容就不存（避免点两下多出几条空记录）
-      const keep = this.msgs.filter((m) => !m.loading && (m.text || (m.images || []).length))
+      // 没有实质内容就不存（避免点两下多出几条空记录）。
+      // 🩸 2026-10-30 主人：「回看历史又没有了吗？」—— AI 那一条 `text` 是空的
+      // （内容在 `data.prompt` / `data.question` 里），老过滤条件只看 `text`，
+      // 于是**每一轮的答案都被当垃圾扔了**，历史里只剩顾客自己说的话。
+      // 判「有没有实质内容」要按角色分开看。
+      const keep = this.msgs.filter((m) => !m.loading && (m.role === 'ai'
+        ? !!(m.data || m.error)
+        : !!(m.text || (m.images || []).length)))
       if (!keep.length) return
       const now = new Date()
       const p = (n) => String(n).padStart(2, '0')
@@ -839,7 +847,7 @@ export default {
             rules: m.data.rules || 0,
             format: m.data.format || '',
             note: m.data.note || '',
-            noteOpen: false,
+            noteOpen: true,
           } : null,
           error: m.error || '',
         })),
@@ -914,7 +922,7 @@ export default {
                  blocks, prompt: d.prompt || '', red: d.red || [],
                  yellow: d.yellow || [], warnings: d.warnings || [],
                  tries: d.tries || 1, chars: d.chars || 0, rules: d.rules || 0,
-                 format: d.format || '', note: d.note || '', noteOpen: false }
+                 format: d.format || '', note: d.note || '', noteOpen: true }
       }
       this.msgs = (s.msgs || []).map((m) => ({
         id: ++this.seq,
