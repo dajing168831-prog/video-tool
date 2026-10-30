@@ -35,6 +35,7 @@ from app.services import h3_convert_route as conv_route
 from app.services import h3_direct
 from app.services import h3_skill
 from app.services import sd20_skill
+from app.services import sd25_skill
 from app.services import skill_agent
 from app.services.models import h3_base as rules
 from app.services.models.h3_common import MAX_SOURCE_CHARS, ROLE_DESC, guess_kind
@@ -444,11 +445,12 @@ class ChatIn(BaseModel):
         default_factory=list,
         description="完整对话历史 [{role: 'user'|'assistant', content}]，前端持有")
     duration: float = Field(
-        0.0, description="目标片长，官方 4–15 秒；**0 = 还没定，由模型在对话里问**")
+        0.0, description="目标片长，**各家不同**（2.0 4–15 秒、2.5 4–30 秒）；"
+                         "**0 = 还没定，由模型在对话里问**")
     model: str = Field("", description="理解模型：lite / pro / deepseek，留空 = pro")
     target: str = Field(
-        "", description="写给哪家模型：h3 / sd20。**没有默认，必须顾客自己选** —— "
-                        "两家平级，不排强弱（2026-10-30 主人定）")
+        "", description="写给哪家模型：h3 / sd20 / sd25。**没有默认，必须顾客自己选** —— "
+                        "三家平级，不排强弱（2026-10-30 主人定）")
     assets: list[ConvertAssetIn] = Field(
         default_factory=list, description="顾客声明的参考素材；一样不传 = 文生视频")
     images: list[str] = Field(
@@ -471,8 +473,27 @@ ROLE_DESC_SD20 = {
 #: 2.0 单段时长 —— 工程口径 **4–15 秒**（2026-10-30 主人拍板取 4 作下限）。
 SD20_LO, SD20_HI = 4.0, 15.0
 
-#: 一轮对话最多带几张附件图（多模态输入上限，不是 2.0 的素材上限）。
+#: 一轮对话最多带几张附件图（多模态输入上限，不是任何一家的素材上限）。
 IMAGE_CAP = 4
+
+#: 2.5 的素材用途说明。标签同样是 `@图片N`，但官方要求**逐份**写「用于…不采用…」
+#: （`sd25-pe:567/:72`），所以这里的措辞带上了"不采用"的边界。
+ROLE_DESC_SD25 = {
+    "first_frame": "作为首帧（锁定开场构图、主体位置和画幅；首尾帧应用相同画幅）",
+    "last_frame": "作为尾帧（锁定收尾画面）",
+    "reference_image": "用于主体外貌、场景或道具的结构/材质/光线",
+    "reference_video": "用于动作、运镜、节奏或时间线；编辑任务里它是唯一编辑母版",
+    "reference_audio": "用于指定说话人的音色、台词，或环境声/音效/音乐",
+}
+
+#: 2.5 单段时长 —— 官方「支持最长 30 秒」（`skill-sd25-pe.md:500`）；
+#: 下限沿用工程口径 4 秒（`models/volc25.py` 的 `min_dur` 同值）。
+SD25_LO, SD25_HI = 4.0, 30.0
+
+#: 2.5 的素材硬上限（`skill-sd25-pe.md:112-115`）：
+#: 图 ≤30 张 / 视频 ≤10 段（总 ≤30 秒）/ 音频 ≤10 段（总 ≤30 秒）/ **合计 ≤50 份**。
+#: 🩸 跟 2.0（图 9 / 视频 3 / 音频 3）不是一个量级，别拿一家的值套另一家。
+MAX_IMG_25, MAX_VID_25, MAX_AUD_25, MAX_ALL_25 = 30, 10, 10, 50
 
 
 def _chat_turn_sd20(body: ChatIn, msgs: list[dict]) -> dict:
@@ -583,6 +604,110 @@ def _fixed_duration_sd20(dur: float, lo: float, hi: float) -> str:
     return f"片长还没定（2.0 单段 {lo:g}–{hi:g} 秒）—— 该问的时候问顾客。"
 
 
+def _fixed_duration_sd25(dur: float, lo: float, hi: float) -> str:
+    """片长写进固定条件。0 = 还没定，让模型该问的时候自己问。
+
+    只交代**事实**（2.5 单段多长），不复述官方能力说明 —— 那些模型读完
+    `skill-sd25-pe.md:498-542`「长视频与时间段」自己会用。
+    """
+    if dur:
+        return f"目标片长：{dur:g} 秒（2.5 单段 {lo:g}–{hi:g} 秒）"
+    return f"片长还没定（2.5 单段 {lo:g}–{hi:g} 秒）—— 该问的时候问顾客。"
+
+
+def _chat_turn_sd25(body: ChatIn, msgs: list[dict]) -> dict:
+    """Seedance 2.5 那一支。与 2.0 / H3 平级并列，素材规则/判据/时长各按各家。"""
+    dur = float(body.duration or 0)
+    note = ""
+    if dur:
+        if dur < SD25_LO or dur > SD25_HI:
+            dur = float(max(SD25_LO, min(SD25_HI, dur)))
+            note = f"片长超出范围（{SD25_LO:g}–{SD25_HI:g} 秒），已按 {dur:g} 秒处理"
+
+    # 编号顺序 = 顾客上传的顺序：本轮附件先占 @图片1..@图片N，素材面板接着往下编。
+    imgs = [u for u in (body.images or []) if u][:IMAGE_CAP]
+
+    seen = {"image": len(imgs), "video": 0, "audio": 0}
+    pairs = []
+    for a in body.assets:
+        if a.kind not in seen:
+            raise sd25_skill.SkillError(f"素材类型只认 image/video/audio，收到 {a.kind!r}")
+        seen[a.kind] += 1
+        pairs.append({
+            "label": {"image": "@图片", "video": "@视频", "audio": "@音频"}[a.kind]
+                     + str(seen[a.kind]),
+            "role": a.role,
+            "role_desc": ROLE_DESC_SD25.get(a.role, ""),
+            "note": a.note,
+        })
+    # 官方硬上限（`sd25-pe:112-115`）：图 30 / 视频 10 / 音频 10 / 合计 50。
+    # 超了就不写 —— 写出模型收不到的编号，等于让顾客白等。
+    total = sum(seen.values())
+    over = [f"{k} {seen[k]} 样" for k, cap in
+            (("image", MAX_IMG_25), ("video", MAX_VID_25), ("audio", MAX_AUD_25))
+            if seen[k] > cap]
+    if total > MAX_ALL_25:
+        over.append(f"合计 {total} 份")
+    if over:
+        raise sd25_skill.SkillError(
+            f"素材超过 2.5 官方上限（图 30 / 视频 10 / 音频 10 / 合计 50）：{'、'.join(over)}")
+
+    key = body.model or ark_chat.DEFAULT_MODEL
+
+    fixed = [_fixed_duration_sd25(dur, SD25_LO, SD25_HI)]
+    if pairs:
+        fixed.append("顾客声明的参考素材（标签就用这套，别自己编新的）：\n" + "\n".join(
+            f"{a['label']} —— {a.get('role_desc') or a.get('role')}"
+            f"；{a.get('note') or '（顾客没写是什么）'}" for a in pairs))
+    else:
+        fixed.append("顾客没有声明参考素材。如果这一轮他传了图，那些图就是参考素材，"
+                     "按上传顺序是 @图片1 / @图片2 …")
+    if imgs:
+        fixed.append(f"顾客这一轮传了 {len(imgs)} 张图（挂在这条消息上），"
+                     f"按上传顺序是 @图片1 … @图片{len(imgs)}。"
+                     "先判断这是参考素材还是成片截图，再动手。")
+
+    try:
+        got = sd25_skill.run(msgs, model=key, fixed=fixed, images=imgs)
+    except skill_agent.AgentError as e:
+        raise sd25_skill.SkillError(str(e)) from e
+
+    run_log.write("sd25", model=key, result=got, messages=msgs, fixed=fixed)
+
+    out = {
+        "target": "sd25",
+        "action": got.action,
+        "format": "官方 skill 直出",
+        "tries": got.steps,
+        "asked": sum(1 for m in msgs if (m or {}).get("role") == "assistant"),
+        "warnings": ([note] if note else []) + ([got.truncated] if got.truncated else []),
+        "model": ark_chat.resolve(key),
+        "trace": got.trace,
+        "reads": got.reads,
+        "calls": got.calls,
+        "tokens": got.tokens,
+    }
+    if got.action == "ask":
+        out["question"] = got.question
+        return out
+
+    prompt = got.prompt
+    # 黄条也如实带出去：2.5 的尺子只有 2 条黄，不值得为它反复烧钱再跑一轮。
+    ctx = sd25_skill.ruler_sd25.ctx_for(prompt, genre=sd25_skill._genre_of(prompt))
+    rows = sd25_skill.ruler_sd25.check(prompt, ctx)
+    out.update({
+        "prompt": prompt,
+        "note": got.note or "",
+        "chars": len(prompt),
+        "duration": dur,
+        "rules": len(sd25_skill.ruler_sd25.RULES),
+        "red": [f"{x[0]} {x[1]}：{x[3]}" for x in (got.red or [])],
+        "yellow": [x[0] for x in rows if x[1] == "黄"],
+        "genre": sd25_skill._genre_of(prompt),
+    })
+    return out
+
+
 def _chat_turn(body: ChatIn) -> dict:
     msgs = [m for m in (body.messages or []) if isinstance(m, dict)]
     if not msgs:
@@ -593,8 +718,11 @@ def _chat_turn(body: ChatIn) -> dict:
     target = (body.target or "").strip().lower()
     if target == "sd20":
         return _chat_turn_sd20(body, msgs)
+    if target == "sd25":
+        return _chat_turn_sd25(body, msgs)
     if target != "h3":
-        raise h3_direct.DirectError("还没选写给哪个模型 —— 先选 H3 或 Seedance 2.0 再发")
+        raise h3_direct.DirectError(
+            "还没选写给哪个模型 —— 先选 H3、Seedance 2.0 或 Seedance 2.5 再发")
 
     try:
         assets = [conv_route.Asset(a.kind, a.role, a.seconds) for a in body.assets]
@@ -714,7 +842,10 @@ async def chat_turn(body: ChatIn):
             lambda b: _run(_chat_turn, b,
                            user_text=_last_user(b.messages)[:2000],
                            target=(b.target or "").strip().lower()), body))
-    except (h3_direct.DirectError, sd20_skill.SkillError) as e:
+    # 🩸 三家各抛各的 `SkillError`，这里必须**逐家列全**：漏一家就掉进下面的
+    #   兜底 `except Exception`，顾客看到「提示词对话异常：SkillError: …」，
+    #   日志里还多一份 traceback（2.5 接入时漏过一次，被 p25_check 10b 抓到）。
+    except (h3_direct.DirectError, sd20_skill.SkillError, sd25_skill.SkillError) as e:
         return fail(f"提示词对话失败：{e}")
     except Exception as e:                             # noqa: BLE001
         log.exception("提示词对话异常")

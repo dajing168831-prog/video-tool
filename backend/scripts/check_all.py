@@ -111,6 +111,11 @@ EXTRA = {
     "volc20": [
         ("提示词优化·2.0 接口层", "p20_check.py", (), True, False),
     ],
+    # 2.5 的接口层自己一套：素材上限 30/10/10/50、**禁止**画质兜底、
+    # 结构化五段 —— 每一条都和 2.0 相反，断言不能共用。
+    "volc25": [
+        ("提示词优化·2.5 接口层", "p25_check.py", (), True, False),
+    ],
     "h3": [
         ("尺子·创作模式自证", "ruler_h3_base.py", ("--probes",), False, False),
         ("尺子·创作模式校准", "ruler_h3_base.py", ("--calib",), False, False),
@@ -138,6 +143,8 @@ NOT_INCLUDED = [
     ("work_p1_check.py", "要真实任务数据，找不到任务就退出"),
     ("test_pipeline.py / test_render.py / test_auto_render.py / test_contact_sheet.py",
      "要样本片 + 长跑 ffmpeg，单独跑，不进一键自检"),
+    ("real_accept_sd20.py / real_accept_sd25.py",
+     "真打方舟、**花真钱**，要主人点头才跑（文件名故意不带 _check，防被一键自检扫进来）"),
 ]
 
 

@@ -228,10 +228,11 @@ const MODELS = [
   { key: 'deepseek', name: 'DeepSeek' },
 ]
 
-// 写给哪家视频模型。🩸 **两家平级，没有默认、不排强弱**（2026-10-30 主人）：
-// 初始不预选，顾客点一下才走；后端也不给默认值。
+// 写给哪家视频模型。🩸 **三家平级，没有默认、不排强弱**（2026-10-30 主人）：
+// 初始不预选，顾客点一下才走；后端也不给默认值。2.5 与 2.0 是两代，各按各家官方标准。
 const TARGETS = [
   { key: 'sd20', name: 'Seedance 2.0' },
+  { key: 'sd25', name: 'Seedance 2.5' },
   { key: 'h3', name: 'H3' },
 ]
 
@@ -283,7 +284,7 @@ export default {
       // 现在空着 = 还没选，第一次发送前必须选；选过记在本机，下次不用再选。
       model: '',
       models: MODELS,
-      target: '',        // 写给哪家：''（还没选）/ sd20 / h3 —— 平级，不预选
+      target: '',        // 写给哪家：''（还没选）/ sd20 / sd25 / h3 —— 平级，不预选
       targets: TARGETS,
       assets: [],
       showAssets: false,
@@ -387,7 +388,8 @@ export default {
       // 否则「已 40 秒」本身也像个坏掉的计数器。
       // 带图不再等于「改稿」：第一次给参考图出稿也带图，但那时没有稿可改。
       const base = imgs.length ? (this.lastPrompt ? '正在看图改稿' : '正在看图') : '正在写'
-      const why = this.target === 'h3' ? '，模型在读官方 skill 包，这是正常的' : ''
+      // 三家现在都是 agent 读 skill 包，慢是正常的，别让顾客以为卡死
+      const why = this.target ? '，模型在读官方 skill 包，这是正常的' : ''
       this.loadingText = base + '…'
       clearInterval(this.timer)
       this.timer = setInterval(() => {
@@ -457,15 +459,15 @@ export default {
      * 粘稿一律走对话路，顾客原话原样发过去，不替他加任何一句。
      */
     route(text, imgs, history) {
-      // Seedance 2.0 一支：**全部走对话**。2.0 官方 skill 自带「已有提示词就重写」
-      // 和「按复杂度分路径 A/B」的判断，不需要我们再分转换/修订两条老路。
+      // Seedance 2.0 / 2.5 两支：**全部走对话**。官方 skill 自带「已有提示词就重写」
+      // 和任务路由判断（2.5 还有画幅/时长兼容性闸门），不需要我们再分转换/修订两条老路。
       // 截图直接挂在对话里给模型看（H3 那条路才用 /prompt/revise）。
-      if (this.target === 'sd20') {
+      if (this.target === 'sd20' || this.target === 'sd25') {
         return promptChat({
           messages: history,
           duration: 0,
           model: this.model,
-          target: 'sd20',
+          target: this.target,
           images: imgs,
           assets: this.buildAssets(),
           sid: this.sid,
@@ -508,11 +510,12 @@ export default {
       return o ? o.name : a.role
     },
     addAsset() {
-      // 🩸 两家的总数上限不一样，别拿一家的套另一家：
-      //   H3 —— 「混合输入的总上限是 12 个文件」（官方 `manual:38`），确实有总数限制；
+      // 🩸 三家的总数上限都不一样，别拿一家的套另一家：
+      //   H3  ——「混合输入的总上限是 12 个文件」（官方 `manual:38`），确实有总数限制；
       //   2.0 —— 只给了**分类型**上限（图 9 / 视频 3 / 音频 3，`trouble.md:5`），
-      //          没有总文件数这一说 → 按 9+3+3 = 15 放开（后端也按分类型查）。
-      const cap = this.target === 'sd20' ? 15 : 12
+      //          没有总文件数这一说 → 按 9+3+3 = 15 放开（后端也按分类型查）；
+      //   2.5 —— 图 30 / 视频 10 / 音频 10 / **合计 50**（`skill-sd25-pe.md:112-115`）。
+      const cap = this.target === 'sd25' ? 50 : (this.target === 'sd20' ? 15 : 12)
       if (this.assets.length >= cap) {
         uni.showToast({ title: `素材最多 ${cap} 样`, icon: 'none' })
         return
