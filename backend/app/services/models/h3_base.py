@@ -242,11 +242,25 @@ def b11_cut_verb(p, ctx):
     return bad
 
 
+#: 官方 20 个运镜**表达名**（`base-en:98-111` 表格第一列，小写）。用词边界匹配，
+#: 免得 `pov` 在 `poverty` 里被当成运镜词。
+_CAMERA_NAME = re.compile(
+    r"\b(?:" + "|".join(re.escape(k) for k in
+                        sorted(hbc.CAMERA_PHRASES, key=len, reverse=True)) + r")\b")
+
+
 def b12_camera_closed(p, ctx):
-    """运镜只能取官方 20 个词（`base-en:98-111`）。
+    """运镜只能取官方 20 个表达（`base-en:98-111`）。
 
     ⚠️ 工程推断：只检查**以 `The camera ` 起头**的句子 —— 官方 3 个句例
     （`base-en:120-122`）都是这个形态。别的写法查不出来，这是已知盲区。
+
+    🩸 2026-10-30 真机（网页跑 3D 动画）：模型写
+    `The camera uses a tracking shot with large amplitude at fast speed, following …`
+    被判红。**这是尺子的错，不是模型的错** —— `base-en:107` 的表格里
+    `Tracking Shot` 本身就是可用表达，官方 §4.3 的例句 `The camera holds a static shot`
+    （`base-en:122`）也是**用表达名**写的。原来只认动词形态（`follows`），
+    所以同一条规则里 `static shot` 能过、`tracking shot` 不过，自相矛盾。
     """
     verbs = hbc.camera_verbs()
     cut_verbs = CUT_VERBS
@@ -257,8 +271,11 @@ def b12_camera_closed(p, ctx):
         low = s.lower()
         if any(v in low for v in cut_verbs):
             continue
-        if not any(v in low for v in verbs):
-            bad.append(f"运镜词不在官方闭集里：{s[:90]}")
+        if any(v in low for v in verbs):
+            continue
+        if _CAMERA_NAME.search(low):      # 官方表达名本身也合法（名词形态）
+            continue
+        bad.append(f"运镜词不在官方闭集里：{s[:90]}")
     return bad
 
 

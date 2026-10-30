@@ -508,3 +508,29 @@ export function cloneFileUrl(id, kind, rid) {
   if (kind.startsWith('slot:')) return `${API_BASE}/api/clone/${id}/file/slot/${kind.slice(5)}`
   return ''
 }
+
+
+// ---------------------------------------------------------------- 提示词对话历史（存后端）
+//
+// 🩸 2026-10-30：历史原来只存浏览器本地，换台机器就没了；「新对话」一按旧对话也回不去。
+// 现在存在后端 `data/prompt_sessions/<编号>.json`（只存文字，截图只记张数）。
+
+/** 历史对话列表（摘要：标题/时间/几轮，不含正文） */
+export function promptSessions() {
+  return request('/api/prompt/sessions')
+}
+
+/** 打开一份对话（含全部消息） */
+export function promptSession(id) {
+  return request(`/api/prompt/sessions/${id}`)
+}
+
+/** 整份保存（前端每次有新内容就整份推上来） */
+export function promptSessionSave(id, payload) {
+  return request(`/api/prompt/sessions/${id}`, { method: 'PUT', data: payload })
+}
+
+/** 删掉一份 */
+export function promptSessionDel(id) {
+  return request(`/api/prompt/sessions/${id}`, { method: 'DELETE' })
+}

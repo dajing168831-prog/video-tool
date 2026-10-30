@@ -445,6 +445,122 @@ def main() -> int:
         reds = [x for x in rules.check(p_bad, {"mode": "t2va"}) if x[1] == "红"]
         expect(bool(reds), "8a 桩坏样本确实被判红（第 3 条不是空跑）",
                str(reds)[:200])
+
+        # ------------------------------------------------------ S 对话历史（存后端）
+        # 🩸 2026-10-30「点了新对话，旧对话回不去了」→ 历史搬后端。
+        import shutil as _sh
+        import tempfile
+        from app.services import prompt_sessions as _ps
+        _tmp = Path(tempfile.mkdtemp(prefix="p18sess_"))
+        _real_root = _ps.ROOT
+        _ps.ROOT = _tmp
+        try:
+            r = client.put("/api/prompt/sessions/sabc123", json={
+                "title": "做个 3D 动画", "target": "h3", "turns": 2,
+                "last_prompt": "integrated…",
+                "msgs": [{"role": "user", "text": "做个3D动画"}]}).json()
+            expect(r["biz_code"] == 0 and r["data"]["title"] == "做个 3D 动画",
+                   "S1 存一份对话", str(r)[:200])
+            r = client.get("/api/prompt/sessions").json()
+            expect([x["id"] for x in r["data"]] == ["sabc123"],
+                   "S2 列表能看到（摘要）", str(r["data"])[:200])
+            r = client.get("/api/prompt/sessions/sabc123").json()
+            expect(r["data"]["msgs"][0]["text"] == "做个3D动画",
+                   "S3 点开能拿回原话", str(r["data"])[:200])
+            r = client.delete("/api/prompt/sessions/sabc123").json()
+            expect(r["data"]["deleted"] is True and not _ps.index(),
+                   "S4 删掉之后列表就空", str(r)[:200])
+            # 成对：非法编号必须拒（否则等于把服务器目录开给浏览器）
+            r = client.get("/api/prompt/sessions/a.b").json()
+            expect(r.get("biz_code", -1) != 0,
+                   "S5 会话编号带 . 被拒（先过白名单再拼路径）", str(r)[:200])
+            r = client.get("/api/prompt/sessions/..%2F..%2Fetc")
+            expect(r.status_code != 200 or r.json().get("biz_code", -1) != 0,
+                   "S5b 路径穿越拿不到数据（路由层或校验层拦住）",
+                   f"{r.status_code} {r.text[:120]}")
+
+            # ------------------------------------------------ S6+ 离开页面也跑完、也留得下
+            # 🩸 2026-10-30 主人：「我不在那个页面也会把之前的提问输出完整」。
+            # 这条不是在验模型，是在验**活和请求解耦**：没人收结果，它也得自己落盘。
+            import asyncio
+            import time
+            from app.api import prompt as _api
+
+            def _slow(b):
+                time.sleep(0.15)
+                return {"action": "write", "prompt": "A woman walks in. " * 4,
+                        "red": [], "yellow": [], "chars": 76, "rules": 20,
+                        "format": "官方 skill 直出", "note": ""}
+
+            body = _api.ChatIn(messages=[{"role": "user", "content": "做个3D动画，四镜"}],
+                               target="h3", sid="sdet1")
+
+            async def _leave():
+                """顾客刚发就关页面：等待者被取消，活照跑完。"""
+                fut = _api._detach(
+                    lambda b: _api._run(_slow, b, user_text="做个3D动画，四镜",
+                                        target="h3"), body)
+                try:
+                    await asyncio.wait_for(_api._wait(fut), timeout=0.02)
+                    return "没取消掉（桩太快？）"
+                except asyncio.TimeoutError:
+                    pass
+                await asyncio.wait_for(asyncio.wrap_future(fut), timeout=5)
+                return ""
+
+            why = asyncio.run(_leave())
+            row = _ps.load("sdet1") or {}
+            msgs = row.get("msgs") or []
+            expect(not why and [m["role"] for m in msgs] == ["user", "ai"],
+                   "S6 顾客中途离开，这一轮仍然落盘（问 + 答都在）",
+                   f"{why} {msgs}"[:300])
+            expect(bool(msgs) and msgs[-1]["data"].get("prompt", "").startswith("A woman walks"),
+                   "S6b 落盘的是**完整成品**，不是半截", str(msgs[-1:])[:300])
+            expect(row.get("title") == "做个3D动画，四镜" and row.get("turns") == 1,
+                   "S6c 标题/轮数由后端自己记（前端不在也能起名）", str(row)[:300])
+
+            # 成对：前端那一份**先落地过**（尾条已经是这一问）→ 不许再记一遍。
+            # 这是真会发生的顺序：顾客点「新对话」时前端 stash 会整份推上去，
+            # 而后端那条请求还在跑，回来再把同一问写一次就成了问两遍。
+            _ps.save("srace", title="", target="h3", turns=1,
+                     msgs=[{"role": "user", "text": "第二问", "shots": 0,
+                            "data": None, "error": ""}])
+            _ps.append_turn("srace", user_text="第二问",
+                            ai={"action": "write", "prompt": "p2"}, target="h3")
+            again = (_ps.load("srace") or {}).get("msgs") or []
+            expect([m["role"] for m in again] == ["user", "ai"],
+                   "S6d 前端推过的那一问不重复记（否则回来看到问两遍）",
+                   str([m["role"] for m in again]))
+
+            # 成对：失败也要留痕 —— 不然顾客回来只看到自己那句话，以为没发出去
+            def _boom(b):
+                raise RuntimeError("方舟 500")
+
+            async def _fail():
+                fut = _api._detach(
+                    lambda b: _api._run(_boom, b, user_text="再写一个", target="h3"), body)
+                try:
+                    await asyncio.wrap_future(fut)
+                except RuntimeError:
+                    return True
+                return False
+
+            raised = asyncio.run(_fail())
+            tail = (_ps.load("sdet1") or {}).get("msgs") or []
+            expect(raised and tail[-1]["role"] == "ai" and "方舟 500" in (tail[-1].get("error") or ""),
+                   "S7 跑失败也写一条 error（顾客回来知道是失败了，不是没发）",
+                   str(tail[-1:])[:300])
+
+            # 成对：不带 sid 的老请求照常工作，不许因为记不下来就报错
+            fut = _api._detach(lambda b: _api._run(_slow, b, user_text="", target="h3"),
+                               _api.ChatIn(messages=[], target="h3"))
+            got = fut.result(timeout=5)
+            expect(got.get("chars") == 76 and (_ps.load("sdet1") or {}).get("turns") == 2,
+                   "S8 不带 sid 不写历史、也不报错（老调用方不受影响）",
+                   f"{got} {(_ps.load('sdet1') or {}).get('turns')}")
+        finally:
+            _ps.ROOT = _real_root
+            _sh.rmtree(_tmp, ignore_errors=True)
     finally:
         restore()
 

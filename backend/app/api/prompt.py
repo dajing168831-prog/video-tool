@@ -20,7 +20,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
@@ -28,6 +30,7 @@ from pydantic import BaseModel, Field
 from app.api.routes import fail, ok
 from app.core.config import settings
 from app.services import ark_chat
+from app.services import prompt_sessions, run_log
 from app.services import h3_convert_route as conv_route
 from app.services import h3_direct
 from app.services import h3_skill
@@ -54,6 +57,124 @@ DUR_MIN, DUR_MAX = 4, 15
 
 #: 顾客一次能粘多少字。超过这个量基本是整篇脚本，不是一句提示词。
 MAX_TEXT = 4000
+
+#: 跑模型这活儿的线程池 —— 和这次请求**没有关系**，请求断了它照样跑完。
+_POOL = ThreadPoolExecutor(max_workers=6, thread_name_prefix="prompt")
+
+
+def _detach(fn, body):
+    """把这件活交给独立线程，并把这一轮写进会话文件。
+
+    🩸 2026-10-30 主人：「我不在那个页面也要把之前的提问输出完整」。原来是
+    `asyncio.to_thread` 跑、结果只塞回浏览器里那个组件对象 —— 顾客点「新对话」
+    或关掉页面，几十秒的计算就白跑了，历史里什么都没有。
+    现在：线程里跑完**先落盘再返回**，前端在不在都不影响；请求取消也只是没人收
+    HTTP 响应，活照跑（`_wait` 用 `asyncio.shield` 挡住取消）。
+    """
+    return _POOL.submit(fn, body)
+
+
+async def _wait(fut):
+    """等一个独立线程里的活。**顾客断开不许把活掐掉** —— 取消只作用于等待者。"""
+    return await asyncio.shield(asyncio.wrap_future(fut))
+
+
+def _last_user(msgs) -> str:
+    for m in reversed(msgs or []):
+        if isinstance(m, dict) and m.get("role") == "user":
+            c = m.get("content")
+            return c if isinstance(c, str) else json.dumps(c, ensure_ascii=False)
+    return ""
+
+
+def _card(data) -> dict:
+    """会话文件里存的那张卡。字段与前端 `stash()` 存的一致，换机器也能重建。"""
+    if not isinstance(data, dict):
+        return {}
+    if data.get("action") == "ask":
+        # `blocks` 由前端渲染时自己拆（后端没有那套样式约定），这里只留原文
+        return {"action": "ask", "question": data.get("question") or "", "blocks": []}
+    return {
+        "action": "write",
+        "prompt": data.get("prompt") or "",
+        "red": data.get("red") or [],
+        "yellow": data.get("yellow") or [],
+        "warnings": data.get("warnings") or [],
+        "tries": data.get("tries") or 1,
+        "chars": data.get("chars") or 0,
+        "rules": data.get("rules") or 0,
+        "format": data.get("format") or "",
+        "note": data.get("note") or "",
+        "noteOpen": False,
+    }
+
+
+def _run(fn, body, *, user_text: str, target: str):
+    """跑一次生成并把这一轮落进会话 —— 成功失败都记，失败记 `error`。"""
+    sid = (getattr(body, "sid", "") or "").strip()
+    try:
+        data = fn(body)
+    except Exception as e:                             # noqa: BLE001
+        if sid:
+            prompt_sessions.append_turn(
+                sid, user_text=user_text, target=target,
+                ai={"action": "write", "error": f"{type(e).__name__}: {e}"})
+        raise
+    if sid:
+        prompt_sessions.append_turn(sid, user_text=user_text,
+                                    target=target, ai=_card(data))
+    return data
+
+# ---------------------------------------------------------------- 对话历史
+#
+# 🩸 2026-10-30 主人：「点了新对话，旧对话回不去了」。先做的是浏览器本地存储，
+#   但换台机器就没了 —— 所以存后端。**只存文字**，截图只记张数。
+#   id 由前端生成（`s<毫秒>`），服务端当不透明名字，只做文件名安全校验。
+
+
+class SessionIn(BaseModel):
+    title: str = ""
+    target: str = ""
+    turns: int = 0
+    last_prompt: str = ""
+    msgs: list = Field(default_factory=list)
+
+
+@router.get("/prompt/sessions")
+async def sessions_index():
+    """列表（摘要）：标题 / 时间 / 几轮。不带 msgs。"""
+    return ok(prompt_sessions.index())
+
+
+@router.get("/prompt/sessions/{sid}")
+async def sessions_get(sid: str):
+    try:
+        row = prompt_sessions.load(sid)
+    except prompt_sessions.SessionError as e:
+        return fail(str(e))
+    if row is None:
+        return fail("没有这个对话")
+    return ok(row)
+
+
+@router.put("/prompt/sessions/{sid}")
+async def sessions_put(sid: str, body: SessionIn):
+    try:
+        row = prompt_sessions.save(
+            sid, title=body.title, target=body.target, turns=body.turns,
+            last_prompt=body.last_prompt, msgs=body.msgs)
+    except prompt_sessions.SessionError as e:
+        return fail(str(e))
+    return ok(row)
+
+
+@router.delete("/prompt/sessions/{sid}")
+async def sessions_delete(sid: str):
+    try:
+        return ok({"deleted": prompt_sessions.delete(sid)})
+    except prompt_sessions.SessionError as e:
+        return fail(str(e))
+
 
 @router.get("/prompt/health")
 async def prompt_health():
@@ -100,6 +221,8 @@ class ConvertIn(BaseModel):
     variant: str = Field("MiniMax-H3", description="目标 H3 型号，决定时长下限")
     assets: list[ConvertAssetIn] = Field(
         default_factory=list, description="顾客这次要用的素材；一样不传 = 文生视频")
+    sid: str = Field("", description="会话编号。带上 = 这一轮后端自己写进历史"
+                                     "（顾客中途离开也跑完、也留得下）")
 
 
 def _judge_rows(prompt: str, guide: str, mode: str) -> list[tuple]:
@@ -198,7 +321,9 @@ async def convert(body: ConvertIn):
         return fail("方舟未配置：请设置 VT_ARK_API_KEY")
 
     try:
-        data = await asyncio.to_thread(_convert, body)
+        data = await _wait(_detach(
+            lambda b: _run(_convert, b, user_text=(b.text or "").strip()[:2000],
+                           target="h3"), body))
     except h3_direct.DirectError as e:
         return fail(f"提示词转换失败：{e}")
     except Exception as e:                             # noqa: BLE001
@@ -231,6 +356,7 @@ class ReviseIn(BaseModel):
                               description="出问题画面的截图，data URI（data:image/jpeg;base64,…）")
     duration: float = Field(5.0, description="目标片长，官方 4–15 秒")
     model: str = Field("", description="理解模型：lite / pro / deepseek，留空 = pro")
+    sid: str = Field("", description="会话编号，同 /prompt/convert")
 
 
 def _revise(body: ReviseIn) -> dict:
@@ -321,6 +447,7 @@ class ChatIn(BaseModel):
         default_factory=list,
         description="本轮截图（data URI）。sd20 走对话就能带图；"
                     "h3 的传图走 /prompt/revise")
+    sid: str = Field("", description="会话编号，同 /prompt/convert")
 
 
 #: 2.0 的素材用途说明。与 H3 那份各写各的：H3 是 `<Picture 1>`，2.0 是 `@图片1`，
@@ -471,6 +598,10 @@ def _chat_turn(body: ChatIn) -> dict:
     except skill_agent.AgentError as e:
         raise h3_direct.DirectError(str(e)) from e
 
+    # 🩸 落盘：读了哪几份 skill、问了几轮、判了几条红 —— 不然只能靠截图回忆。
+    # 写失败只记 warning，不影响这一轮交付（`run_log.write` 自己吞错）。
+    run_log.write("h3", model=key, result=got, messages=msgs, fixed=fixed)
+
     out = {
         "target": "h3",
         "action": got.action,
@@ -527,7 +658,10 @@ async def chat_turn(body: ChatIn):
         return fail("方舟未配置：请设置 VT_ARK_API_KEY")
 
     try:
-        data = await asyncio.to_thread(_chat_turn, body)
+        data = await _wait(_detach(
+            lambda b: _run(_chat_turn, b,
+                           user_text=_last_user(b.messages)[:2000],
+                           target=(b.target or "").strip().lower()), body))
     except (h3_direct.DirectError, sd20_direct.DirectError) as e:
         return fail(f"提示词对话失败：{e}")
     except Exception as e:                             # noqa: BLE001
@@ -548,7 +682,10 @@ async def revise(body: ReviseIn):
         return fail("方舟未配置：请设置 VT_ARK_API_KEY")
 
     try:
-        data = await asyncio.to_thread(_revise, body)
+        data = await _wait(_detach(
+            lambda b: _run(_revise, b,
+                           user_text=((b.feedback or "").strip() or "（按截图改稿）")[:2000],
+                           target="h3"), body))
     except h3_direct.DirectError as e:
         return fail(f"修订失败：{e}")
     except Exception as e:                             # noqa: BLE001

@@ -95,9 +95,17 @@ def main() -> int:
     for need in ("h3-prompt-writing", "minimalist-product-ad-generator",
                  "3d-animation-short-generator"):
         expect(need in names, f"1b 包里有 {need}", str(sorted(names)))
-    expect(all(r["description"] for r in rows),
-           "1c 每个 skill 都带自我介绍（模型靠这个选）",
-           str([r["name"] for r in rows if not r["description"]]))
+    # 🩸 2026-10-30 真机：9 个官方包里有 5 个的 `description` 是 YAML 块标量
+    #   （`description: |` + 缩进正文），旧解析只拿到一个 `|` —— 模型选题材时
+    #   看到的是 5 个竖线。原来的断言 `if not r["description"]` 对 `|` 判真，
+    #   **空过**（1 个字符也是"有"）。这里要求真实长度。
+    thin = [(r["path"].split("/")[0], len(r["description"])) for r in rows
+            if len(r["description"]) < 100]
+    expect(not thin,
+           "1c 每个 skill 的自我介绍是真的（≥100 字，不是 `|` 这种占位）", str(thin))
+    expect(rows[0]["description"] != "|",
+           "1c2 块标量写法解析出正文（不是拿到一个竖线就完事）",
+           rows[0]["description"][:40])
 
     # ---------------------------------------------------------- 2 只能读包内
     fs = skill_agent.SkillFS(root)
@@ -295,6 +303,42 @@ def main() -> int:
            str(h3_skill.judge(ref_six))[:160])
     expect(len(sysmsg2) < 3000, "10d 加了这几句，system 仍然很短",
            f"实际 {len(sysmsg2)} 字符")
+
+    # ---------------------------------------------------------- 10e 每轮落盘
+    # 🩸 2026-10-30：主人跑完一轮，我这边看不到它读了哪几份 skill、问了几轮 ——
+    #   全在 HTTP 响应里，刷新就没。落盘是"证据 vs 猜"的分界。
+    import json as _json
+    import shutil
+    import tempfile
+    from app.services import run_log
+
+    fake = skill_agent.AgentResult(
+        action="write", prompt=GOOD, note="补全：环境音", steps=4, calls=5,
+        tokens=1234, reads=["h3-prompt-writing/SKILL.md"],
+        trace=[{"t": 0, "stage": "start", "text": "开始"},
+               {"t": 3.2, "stage": "read", "text": "读 SKILL.md"}])
+    tmpd = Path(tempfile.mkdtemp(prefix="p21runs_"))
+    real_runs = run_log.RUNS
+    run_log.RUNS = tmpd
+    try:
+        p = run_log.write("h3", model="lite", result=fake,
+                          messages=[{"role": "user", "content": "拍个短片"}],
+                          fixed=["片长 8 秒"])
+        rec = _json.loads(p.read_text(encoding="utf-8"))
+        expect(rec["reads"] == ["h3-prompt-writing/SKILL.md"]
+               and rec["tokens"] == 1234 and rec["calls"] == 5
+               and rec["messages"][0]["content"] == "拍个短片"
+               and rec["fixed"] == ["片长 8 秒"] and rec["note"] == "补全：环境音",
+               "10e 每轮落一份记录（读了什么 / 几轮 / token / 顾客原话）",
+               str(rec)[:250])
+        # 成对：写不进去的时候只 warning，**不许把这一轮带崩**
+        run_log.RUNS = tmpd / "x.txt"
+        (tmpd / "x.txt").write_text("占位", encoding="utf-8")
+        got_none = run_log.write("h3", model="lite", result=fake) is None
+        expect(got_none, "10e2 落盘失败返回 None、不抛（不能因为记日志把交付搞挂）", "")
+    finally:
+        run_log.RUNS = real_runs
+        shutil.rmtree(tmpd, ignore_errors=True)
 
     passed = sum(1 for r in RESULT if r[0])
     for good, name, detail in RESULT:

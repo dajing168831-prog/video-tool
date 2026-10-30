@@ -99,25 +99,35 @@ else:
 
     # -----------------------------------------------------------------------
     # S3 异人对照（真素材分布）
+    # 🩸 2026-10-30：本机 `data/clone/*/subject.jpg` 里能认出脸的只剩 1 张
+    #   （其余是 `test_subject_look` 造的 24 字节假图），下面取"中位数"时
+    #   `pairs` 是**空集** → IndexError，整个 p16 变红。
+    #   素材不够就**标跳过并写明**，不许崩、也不许空集当通过。
     keys = [p.parent.name[:8] for p, _ in usable]
     feats = [f for _, f in usable]
     pairs = []
     for i in range(len(feats)):
         for j in range(i + 1, len(feats)):
             pairs.append(identity._cos(feats[i], feats[j]))
-    pairs.sort()
-    med = pairs[len(pairs) // 2]
-    above = sum(1 for s in pairs if s >= identity.THRESHOLD)
-    print(f"  [S3] 可认脸素材 {len(feats)} 张 / {len(pairs)} 对："
-          f"最低 {pairs[0]:.3f} / 中位 {med:.3f} / 最高 {pairs[-1]:.3f}"
-          f"；≥0.363 的 {above}/{len(pairs)}")
-    chk("S3 不同素材之间多数判「不同人」（中位 < 0.363）", med < identity.THRESHOLD,
-        f"中位={med:.3f}")
-    chk("S3 尺子能分开（至少存在一对 < 0.363）", pairs[0] < identity.THRESHOLD,
-        f"最低={pairs[0]:.3f}")
-    if above:
-        print(f"  [S3] 注意：{above} 对 ≥ 阈值（多为同一个人被多个任务复用），"
-              "不属于误判")
+    if len(feats) < 2:
+        skip("S3 异人对照（尺子准不准）",
+             f"能认出脸的素材只有 {len(feats)} 张，凑不出一对 —— "
+             f"**辨识准确度未验证**，上面 S2 只证明尺子没装反")
+        pairs = []
+    else:
+        pairs.sort()
+        med = pairs[len(pairs) // 2]
+        above = sum(1 for s in pairs if s >= identity.THRESHOLD)
+        print(f"  [S3] 可认脸素材 {len(feats)} 张 / {len(pairs)} 对："
+              f"最低 {pairs[0]:.3f} / 中位 {med:.3f} / 最高 {pairs[-1]:.3f}"
+              f"；≥0.363 的 {above}/{len(pairs)}")
+        chk("S3 不同素材之间多数判「不同人」（中位 < 0.363）", med < identity.THRESHOLD,
+            f"中位={med:.3f}")
+        chk("S3 尺子能分开（至少存在一对 < 0.363）", pairs[0] < identity.THRESHOLD,
+            f"最低={pairs[0]:.3f}")
+        if above:
+            print(f"  [S3] 注意：{above} 对 ≥ 阈值（多为同一个人被多个任务复用），"
+                  "不属于误判")
 
 # ---------------------------------------------------------------------------
 # S4 四类判定（桩：绕开真实图片，只测判定逻辑）

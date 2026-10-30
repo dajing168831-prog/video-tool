@@ -63,18 +63,35 @@ class AgentResult:
 # ---------------------------------------------------------------- skill 包
 
 def _frontmatter(text: str) -> dict:
-    """抢 SKILL.md 的 frontmatter（name / description / trigger-words）。"""
-    out: dict = {}
+    """抢 SKILL.md 的 frontmatter（name / description / trigger-words）。
+
+    🩸 2026-10-30 真机抓到：9 个官方包里 **5 个**的 `description` 写成 YAML
+    **块标量**（`description: |` 换行 + 缩进正文）。原来只按「一行 key: value」解析，
+    拿到的值就是一个竖线 `|` —— 模型 `list_skills` 时看到 5 个 skill 的简介是 `|`，
+    等于让它蒙着眼睛选题材。**它看起来"不懂 skill"，是因为我们喂给它的简介是空的。**
+    现在两种写法都认（`|` / `>` 及其变体 + 缩进续行）。
+    """
     if not text.startswith("---"):
-        return out
+        return {}
     parts = text.split("---", 2)
     if len(parts) < 3:
-        return out
+        return {}
+
+    raw: dict[str, list[str]] = {}
+    cur: str = ""
     for ln in parts[1].splitlines():
-        if ":" in ln and not ln.startswith((" ", "\t", "#")):
-            k, v = ln.split(":", 1)
-            out[k.strip()] = v.strip()
-    return out
+        if ln[:1] in (" ", "\t"):
+            if cur:
+                raw[cur].append(ln.strip())
+            continue
+        if ":" not in ln or ln.lstrip().startswith("#"):
+            cur = ""
+            continue
+        k, v = ln.split(":", 1)
+        k, v = k.strip(), v.strip()
+        raw[k] = [] if v in ("|", ">", "|-", ">-", "|+", ">+") else [v]
+        cur = k
+    return {k: " ".join(x for x in vals if x).strip() for k, vals in raw.items()}
 
 
 def list_skills(root: Path) -> list[dict]:

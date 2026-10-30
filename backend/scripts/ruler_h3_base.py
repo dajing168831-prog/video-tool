@@ -120,6 +120,13 @@ def probes() -> int:
     add("B11", c1.replace("the camera cuts to", "the camera jumps to"), c1, t)
     add("B12", c1.replace("pushes in with small amplitude", "swoops in with small amplitude"),
         c1, t)
+    # 🩸 2026-10-30 真机原句：模型写 `uses a tracking shot`（官方表达名当名词用），
+    #   旧实现只认动词形态 → 判红。官方 §4.3 例句 `holds a static shot` 就是名词形态，
+    #   所以名词形态必须放行；`dollies` 这种非官方词仍要响（成对）。
+    add("B12", c1.replace("pushes in with small amplitude at slow speed",
+                          "dollies around with small amplitude at slow speed"),
+        c1.replace("pushes in with small amplitude at slow speed",
+                   "uses a tracking shot with large amplitude at fast speed"), t)
     add("B13", c1.replace("with small amplitude", "with tiny amplitude"), c1, t)
     add("B14", c1.rstrip() + " Push In, small amplitude.", c1, t)
     # 官方原句是 `…at slow speed as the middle-aged baker …`；把 `as` 去掉 = 连接词丢失

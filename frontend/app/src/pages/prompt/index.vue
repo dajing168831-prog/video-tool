@@ -5,7 +5,38 @@
         <view class="brand-dot"></view>
         <text class="brand-name">提示词优化</text>
       </view>
-      <text v-if="msgs.length" class="topbar-act" @click="reset">新对话</text>
+      <view class="topbar-acts">
+        <!-- 🩸 历史常驻：这一轮可能是别的设备发起的，或者刚点「新对话」把本地清空了 —
+             只有本地 `sessions` 有货才显示按钮，就会在最需要它的时候消失 -->
+        <text class="topbar-act" @click="openHist">历史</text>
+        <text v-if="msgs.length" class="topbar-act" @click="reset">新对话</text>
+      </view>
+    </view>
+
+    <!-- 历史对话：每轮结束自动存一份，切回来接着聊 -->
+    <view v-if="histOpen" class="hist-mask" @click="histOpen = false">
+      <view class="hist-panel" @click.stop>
+        <view class="hist-head">
+          <text class="hist-title">历史对话</text>
+          <text class="hist-close" @click="histOpen = false">关闭</text>
+        </view>
+        <scroll-view scroll-y class="hist-list">
+          <view
+            v-for="s in sessions"
+            :key="s.id"
+            :class="['hist-row', s.id === sid && 'hist-row-on']"
+            @click="openSession(s.id)"
+          >
+            <view class="hist-main">
+              <text class="hist-name">{{ s.title }}</text>
+              <text class="hist-sub">{{ s.updated }} · {{ s.turns }} 轮</text>
+            </view>
+            <text class="hist-del" @click.stop="delSession(s.id)">删除</text>
+          </view>
+          <view v-if="!sessions.length" class="hist-empty">还没有历史对话</view>
+        </scroll-view>
+        <view class="hist-tip">只保留文字：截图不进历史</view>
+      </view>
     </view>
 
     <scroll-view
@@ -33,6 +64,9 @@
               />
             </view>
             <view v-if="m.text" class="bubble-user">{{ m.text }}</view>
+            <view v-if="m.shotsLost" class="shots-lost">
+              （这一轮传过 {{ m.shotsLost }} 张截图，历史里没留）
+            </view>
           </block>
 
           <view v-else class="ai">
@@ -183,7 +217,8 @@
 </template>
 
 <script>
-import { promptChat, promptConvert, promptRevise } from '@/api/request'
+import { promptChat, promptConvert, promptRevise,
+  promptSessions, promptSession, promptSessionSave, promptSessionDel } from '@/api/request'
 
 // 可选的理解模型。🩸 只放后端白名单里的 key，别传任意模型名过去。
 const MODELS = [
@@ -202,6 +237,10 @@ const TARGETS = [
 // 一眼能看出「这是一份现成稿」的记号：参考标签 / 镜头编号 / 时间码。
 // 命中就走转换（保真搬运）；命中不了才当"一句话想法"。
 const SCRIPT_HINT = /<\s*(picture|video|audio|subject)\b|第\s*\d+\s*[镜幕]|shot\s*\d+|00:\d{2}|\b\d{1,2}\s*[-–~]\s*\d{1,2}\s*s/i
+
+//: 历史对话存在本地。只存文字（截图是 data URI，几张就能把 5MB 撑爆）。
+const SKEY = 'vt_prompt_sessions'
+const MAX_SESS = 20
 
 // 参考素材的类型与用途。🩸 用途只放后端 `h3_convert_route.ROLES` 里的值。
 // 图可以当"参考图"也可以当"第一帧/最后一帧"（官方说这是两种完全不同的模式，
@@ -247,7 +286,21 @@ export default {
       taFocus: false,
       // 本轮会话最近一次产出的提示词 —— 顾客后面说"这不对"时，改的就是它
       lastPrompt: '',
+      // 🩸 2026-10-30 主人：「点了新对话，旧对话回不去了」——
+      // 原来 `reset()` 直接把 msgs 清空，什么都不留。现在每轮结束就把会话
+      // 存进本地，「历史」能切回来。**只存文字**：截图的 data URI 几张就能
+      // 把 localStorage（约 5MB）撑爆，存不下等于全丢。
+      sessions: [],
+      histOpen: false,
+      sid: 's' + Date.now(),
+      // 发一轮加一。两轮同时在跑时，只有最新那轮能改转圈/秒数（见 send）
+      reqSeq: 0,
     }
+  },
+  created() {
+    // 先上本地那份（后端没起也能看见历史），再用后端的覆盖
+    this.sessions = this.loadSessions()
+    this.syncFromCloud()
   },
   // #ifdef H5
   // 🩸 截图工具截完直接 Ctrl+V 是最顺的路，比"点＋→翻相册找文件"快得多。
@@ -302,6 +355,12 @@ export default {
       }
       const text = this.draft.trim()
       const imgs = this.shots.slice()
+      // 🩸 这一轮属于哪个对话：顾客中途点「新对话」/关页面，回来还是这条号。
+      // 结果由后端按这个号自己写进历史（`sid` 随请求一起发过去）。
+      const sid0 = this.sid
+      // 每次发送一个号：顾客在上一轮没跑完时又发了一轮，两轮共用一个 `loading`
+      // 会互相踩 —— 先回来的那个把后发的秒数和转圈全清了。
+      const reqId = ++this.reqSeq
 
       this.push('user', text, imgs)
       this.draft = ''
@@ -318,6 +377,7 @@ export default {
       this.loadingText = base + '…'
       clearInterval(this.timer)
       this.timer = setInterval(() => {
+        if (this.reqSeq !== reqId) return   // 已经被更新的那一轮接管了，别再改它的秒数
         this.waitSec += 1
         this.loadingText = `${base} · 已 ${this.waitSec} 秒`
           + (this.waitSec >= 25 ? why : '')
@@ -327,7 +387,10 @@ export default {
         const body = await this.route(text, imgs, history)
         const d = body.data || {}
         ai.loading = false
-        if (d.action === 'ask') {
+        if (this.sid !== sid0) {
+          // 顾客已经走开了（点「新对话」/切到别的对话）。这一轮后端自己写过历史，
+          // 这儿什么都不做 —— 尤其不许把这些字段塞进**新**对话里。
+        } else if (d.action === 'ask') {
           // 🩸 原文 `question` 必须留着：`blocks` 只给渲染用，
           // 进对话历史时要的是模型自己说过的那段字（浏览器实点抓到过丢失）
           ai.data = {
@@ -357,9 +420,15 @@ export default {
         ai.error = (e && e.message) || '请稍后重试'
         this.toEnd('m' + ai.id)
       } finally {
-        clearInterval(this.timer)
-        this.timer = null
-        this.loading = false
+        // 转圈/秒数只归**最新那一轮**管：旧一轮回来时不能把新一轮的状态清掉
+        if (this.reqSeq === reqId) {
+          clearInterval(this.timer)
+          this.timer = null
+          this.loading = false
+        }
+        // 只存**这一轮所属**的那份。顾客中途换了对话时 this.msgs 已经是新的了，
+        // 拿它去 stash 会把新对话写进旧编号，等于又丢一次。
+        if (this.sid === sid0) this.stash()
       }
     },
 
@@ -381,6 +450,7 @@ export default {
           target: 'sd20',
           images: imgs,
           assets: this.buildAssets(),
+          sid: this.sid,
         })
       }
       if (imgs.length || this.lastPrompt) {
@@ -394,6 +464,7 @@ export default {
           duration: this.duration,
           model: this.model,
           target: 'h3',
+          sid: this.sid,
         })
       }
       const isScript = text.length >= 200 || SCRIPT_HINT.test(text)
@@ -404,6 +475,7 @@ export default {
           model: this.model,
           target: 'h3',
           assets: this.buildAssets(),
+          sid: this.sid,
         })
       }
       // duration 传 0 = 还没定，让模型在对话里问（官方单段 4–15 秒它自己会说）
@@ -414,6 +486,7 @@ export default {
         target: 'h3',
         images: imgs,
         assets: this.buildAssets(),
+        sid: this.sid,
       })
     },
 
@@ -712,11 +785,171 @@ export default {
         success: () => uni.showToast({ title: '已复制', icon: 'none' }),
       })
     },
+    // ---------------------------------------------------------------- 历史会话
+    loadSessions() {
+      try {
+        const got = uni.getStorageSync(SKEY)
+        return Array.isArray(got) ? got : []
+      } catch (e) {
+        return []
+      }
+    },
+    saveSessions(list) {
+      try {
+        uni.setStorageSync(SKEY, list.slice(0, MAX_SESS))
+      } catch (e) {
+        // 存不下（多为截图太大）就算了，不能因为存档把这一轮搞挂
+        console.warn('历史没存下', e)
+      }
+      this.sessions = this.loadSessions()
+    },
+    sessionTitle() {
+      const first = this.msgs.find((m) => m.role === 'user' && m.text)
+      return first ? first.text.slice(0, 24) : '未命名对话'
+    },
+    async stash() {
+      // 没有实质内容就不存（避免点两下多出几条空记录）
+      const keep = this.msgs.filter((m) => !m.loading && (m.text || (m.images || []).length))
+      if (!keep.length) return
+      const now = new Date()
+      const p = (n) => String(n).padStart(2, '0')
+      const row = {
+        id: this.sid,
+        target: this.target,
+        lastPrompt: this.lastPrompt,
+        title: this.sessionTitle(),
+        turns: keep.filter((m) => m.role === 'user').length,
+        updated: `${now.getMonth() + 1}-${p(now.getDate())} ${p(now.getHours())}:${p(now.getMinutes())}`,
+        msgs: keep.map((m) => ({
+          role: m.role,
+          text: m.text || '',
+          // 🩸 只记张数不记图：data URI 太大，存进 localStorage 会把整份历史挤掉
+          shots: (m.images || []).length,
+          // 交付/提问那张卡要能原样重建，缺字段恢复出来就是一片空白
+          data: (m.role === 'ai' && m.data) ? {
+            action: m.data.action,
+            question: m.data.question || '',
+            blocks: m.data.blocks || [],
+            prompt: m.data.prompt || '',
+            red: m.data.red || [],
+            yellow: m.data.yellow || [],
+            warnings: m.data.warnings || [],
+            tries: m.data.tries || 1,
+            chars: m.data.chars || 0,
+            rules: m.data.rules || 0,
+            format: m.data.format || '',
+            note: m.data.note || '',
+            noteOpen: false,
+          } : null,
+          error: m.error || '',
+        })),
+      }
+      // 本地一份（立即能看见，后端挂了也不丢）+ 后端一份（换机器还在）
+      this.saveSessions([row].concat(this.loadSessions().filter((s) => s.id !== this.sid)))
+      // 🩸 这一轮还在跑时**不许整份推后端**：后端正在同一个文件里追加，
+      //    两边同时写 → 谁后落地谁说了算，可能把刚写好的那一轮盖掉。
+      if (this.loading && row.id === this.sid) return
+      await this.saveCloud(row)
+    },
+    async saveCloud(row) {
+      try {
+        await promptSessionSave(row.id, {
+          title: row.title, target: row.target || '', turns: row.turns || 0,
+          last_prompt: row.lastPrompt || '', msgs: row.msgs || [],
+        })
+        return true
+      } catch (e) {
+        // 后端没起/太大：本地那份还在，不打断顾客
+        return false
+      }
+    },
+    async syncFromCloud() {
+      try {
+        const rows = await promptSessions()
+        this.sessions = Array.isArray(rows) ? rows : []
+        // 升级前只存在本地的那几份，补传上去（一次就够，之后两边一致）
+        const cloud = new Set(this.sessions.map((s) => s.id))
+        const pending = this.loadSessions().filter((s) => !cloud.has(s.id))
+        for (const s of pending) {
+          await this.saveCloud(s)
+        }
+        if (pending.length) this.sessions = (await promptSessions()) || []
+      } catch (e) {
+        // 后端没起：就先用本地那份，不影响聊天
+      }
+    },
+    async openHist() {
+      // 每次打开都跟后端对一次：顾客可能是在别的页面/别的设备发起的这一轮，
+      // 后端写进历史了，本地还不知道。
+      this.histOpen = true
+      try {
+        const rows = await promptSessions()
+        if (Array.isArray(rows)) {
+          // 后端那份为准，但**本地还没推上去的**（这一轮还在跑）不能被抹掉
+          const have = new Set(rows.map((s) => s.id))
+          this.sessions = rows.concat(this.loadSessions().filter((s) => !have.has(s.id)))
+        }
+      } catch (e) { /* 后端没起：先看本地那份 */ }
+    },
+    async openSession(id) {
+      if (id === this.sid) { this.histOpen = false; return }
+      await this.stash()                 // 先保住当前这份，再切走
+      let s = null
+      try {
+        s = await promptSession(id)      // 以后端为准
+      } catch (e) {
+        s = null
+      }
+      if (!s) s = this.loadSessions().find((x) => x.id === id)
+      if (!s) { this.histOpen = false; return }
+      const card = (m) => {
+        if (m.role !== 'ai') return null
+        const d = m.data || {}
+        // 后端存的是模型原话（`question`），渲染用的 `blocks` 由前端现拆 ——
+        // 只认后端存下来的那份，不然跨设备恢复出来的「提问」是一张空白卡。
+        const blocks = (d.blocks && d.blocks.length)
+          ? d.blocks
+          : (d.action === 'ask' ? this.parseAsk(d.question) : [])
+        return { action: d.action || 'write', question: d.question || '',
+                 blocks, prompt: d.prompt || '', red: d.red || [],
+                 yellow: d.yellow || [], warnings: d.warnings || [],
+                 tries: d.tries || 1, chars: d.chars || 0, rules: d.rules || 0,
+                 format: d.format || '', note: d.note || '', noteOpen: false }
+      }
+      this.msgs = (s.msgs || []).map((m) => ({
+        id: ++this.seq,
+        role: m.role,
+        text: m.text || '',
+        images: [],
+        shotsLost: m.shots || 0,         // 有截图的那轮，提示一句"图没留"
+        loading: false,
+        error: m.error || '',
+        // 卡片缺 data 会渲染成空白：老记录没有 data 的，给个空壳兜住
+        data: card(m),
+      }))
+      this.target = s.target || this.target
+      // 本地存的是 `lastPrompt`，后端存的是 `last_prompt` —— 两边都要认
+      this.lastPrompt = s.lastPrompt || s.last_prompt || ''
+      this.draft = ''
+      this.shots = []
+      this.sid = s.id
+      this.histOpen = false
+      this.toEnd('stream-end')
+    },
+    async delSession(id) {
+      this.saveSessions(this.loadSessions().filter((s) => s.id !== id))
+      this.sessions = this.sessions.filter((s) => s.id !== id)
+      try {
+        await promptSessionDel(id)
+      } catch (e) { /* 后端没起就只删本地 */ }
+    },
     reset() {
+      this.stash()                       // 「新对话」把这一份收进历史，不再一清就没
       this.msgs = []
       this.lastPrompt = ''
       this.draft = ''
       this.shots = []
+      this.sid = 's' + Date.now()
       this.toEnd('stream-end')
     },
   },
@@ -777,6 +1010,101 @@ export default {
 .topbar-act {
   font-size: 25rpx;
   color: #8a8f9c;
+}
+.topbar-acts {
+  display: flex;
+  align-items: center;
+  gap: 28rpx;
+}
+
+/* ---------- 历史对话 ---------- */
+.hist-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(20, 22, 30, 0.32);
+  display: flex;
+  align-items: flex-end;
+}
+.hist-panel {
+  width: 100%;
+  max-height: 70vh;
+  background: #fff;
+  border-radius: 28rpx 28rpx 0 0;
+  padding: 28rpx 32rpx calc(24rpx + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+}
+.hist-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 16rpx;
+}
+.hist-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1c1f27;
+}
+.hist-close {
+  font-size: 26rpx;
+  color: #8a8f9c;
+}
+.hist-list {
+  flex: 1;
+  min-height: 0;
+  max-height: 52vh;
+}
+.hist-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22rpx 0;
+  border-bottom: 1rpx solid #f2f3f6;
+}
+.hist-row-on {
+  opacity: 0.55;
+}
+.hist-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+  min-width: 0;
+  flex: 1;
+}
+.hist-name {
+  font-size: 28rpx;
+  color: #1c1f27;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.hist-sub {
+  font-size: 23rpx;
+  color: #9aa0ad;
+}
+.hist-del {
+  font-size: 24rpx;
+  color: #c4c8d2;
+  padding-left: 24rpx;
+}
+.hist-empty {
+  padding: 60rpx 0;
+  text-align: center;
+  font-size: 26rpx;
+  color: #9aa0ad;
+}
+.hist-tip {
+  padding-top: 16rpx;
+  font-size: 22rpx;
+  color: #b3b8c3;
+  text-align: center;
+}
+.shots-lost {
+  font-size: 22rpx;
+  color: #b3b8c3;
+  text-align: right;
+  margin-top: 6rpx;
 }
 
 /* ---------- 消息流 ---------- */
