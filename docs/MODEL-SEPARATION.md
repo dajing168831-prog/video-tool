@@ -1041,3 +1041,53 @@ The camera remains in a static shot with shallow depth of field, keeping her smi
 - 四条前端 E2E 全绿
 
 ⚠️ **要重启后端才生效** —— 重启按老规矩由主人自己做。
+
+### 13.17 2026-10-30 第十一轮：**2.0 也改成 agent 自己读 skill 包**
+
+主人：「现在做 2.0 提示词优化，也是用 agents 调 2.0 skill，之前那些方案都不要了。」
+
+这和 H3 那条路（§13.15 前一轮）是同一个动作：**不让模型拿我们复述的规则干活，
+让它自己读官方原文**。
+
+**删掉的（"之前那些方案"）**
+
+| 文件 | 是什么 |
+|---|---|
+| `app/services/sd20_direct.py`（302 行） | `skill+guide+trouble+tips+运镜表`（1684 行）拼进 system；`<<<ASK>>>`/`<<<PROMPT>>>`/`<<<NOTE>>>` 文本标记协议；最多 3 轮重试循环 |
+| `app/services/sd20_official.py` | 上面那份 system 的装配器（`system_prompt()` + 五份材料的 loader） |
+
+**新结构**（完全照 H3 的形状）
+
+```
+data/official/sd20/skills/sd2-pe/
+    SKILL.md                    ← 官方原件（225 行，搬目录，一个字节没改）
+    references/guide.md         ← 官方提示词指南 1007 行
+    references/trouble.md       ← 官方常见问题指南 V1.7（382 行）
+    references/tips.md          ← 官方教程摘录（38 行）
+    references/camera-terms.md  ← 官方指南指过去的运镜术语表（原 sd10-camera/）
+```
+
+- 新增 `app/services/sd20_skill.py`（与 `h3_skill` 平级，互不 import）：
+  system 里**只有产品层**（1310 字符，旧方案 16 万+），写作规则一条不放。
+- `prompt.py` 的 `_chat_turn_sd20`：素材编号 / 上限校验 / 时长夹取**保留**（那是产品层），
+  调用换 `sd20_skill.run`，返回补 `trace/reads/calls/tokens`。
+- `skill_agent._clean` 支持**多模态 content**（2.0 截图要跟对话走；H3 不用图，行为不变）。
+- `sd10-camera/MANIFEST.json` 的 `path` 跟着改（`camera-terms.md` 搬进了 skill 包）。
+
+**2.0 官方只有 1 个 skill 包，但比 H3 的通用包厚**
+
+| | SKILL.md | references | 合计 |
+|---|---|---|---|
+| H3 `h3-prompt-writing` | 40 行 | 563 行 | 603 行（另有 8 个体裁包） |
+| 2.0 `sd2-pe` | 225 行 | 1459 行 | **1684 行** |
+
+不分体裁 ≠ 不详细：`guide.md` 那 1007 行在 H3 侧**没有对等物**。
+
+**判据**：`p20_check.py` 整体重写（47/47）。最要紧的一条从「原文有没有喂进去」
+反过来变成「**system 里有没有混进官方正文**」—— 混进去就等于又回到人工拼接那条老路。
+另留：skill 包结构、只能读包内、ask/deliver 工具协议、判据回灌一次、披露不进正文、
+素材上限、官方原件 sha256 与 MANIFEST 逐字一致，以及原有的 `volc20_pe` 尺子 11 条。
+
+`check_all --model volc20`：通过 46 / 跳过 5 / **红 0**。
+
+⚠️ **未真机验**（2.0 对话路从没打过真模型）；**要重启后端才生效**。

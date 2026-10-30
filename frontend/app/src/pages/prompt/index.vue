@@ -385,7 +385,8 @@ export default {
       this.waitSec = 0
       // 秒数一直在跳 = 页面活着。前 25 秒不用解释，之后补一句为什么慢，
       // 否则「已 40 秒」本身也像个坏掉的计数器。
-      const base = imgs.length ? '正在看图改稿' : '正在写'
+      // 带图不再等于「改稿」：第一次给参考图出稿也带图，但那时没有稿可改。
+      const base = imgs.length ? (this.lastPrompt ? '正在看图改稿' : '正在看图') : '正在写'
       const why = this.target === 'h3' ? '，模型在读官方 skill 包，这是正常的' : ''
       this.loadingText = base + '…'
       clearInterval(this.timer)
@@ -448,8 +449,8 @@ export default {
 
     /**
      * 两条路自动分流，**不让人做选择题**：
-     *   已经出过稿 / 带截图 → 修订（只改那几处，不重写）
-     *   其余                → 对话（缺信息先问，够了直接写）
+     *   已经出过稿 → 修订（只改那几处，不重写）
+     *   其余       → 对话（缺信息先问，够了直接写；第一次带的参考图跟着对话走）
      *
      * 🩸 2026-10-30 转换这条路**下线**：它拿到 8 镜稿会自己补运镜、自己加内容
      * （实测原稿 31 句只保住 22 句，还编了 5 句原稿没有的运镜），跟「只搬运」是反的。
@@ -470,13 +471,14 @@ export default {
           sid: this.sid,
         })
       }
-      if (imgs.length || this.lastPrompt) {
-        // 本轮刚出过提示词 → 正文是「哪不对」，提示词用上一份；
-        // 否则顾客是连提示词带截图一起粘进来的，正文就是那份提示词。
-        const has = !!this.lastPrompt
+      // 🩸 2026-10-31 分流依据是「有没有上一份稿」，**不是「有没有图」**。
+      //   顾客**第一次就给参考图出稿**（「用这张图里的女生」）时 lastPrompt 还是空的，
+      //   以前被塞进修订路：他那句原话被当成「已有的 H3 提示词」，模型只肯「改那几处」。
+      //   现在图跟着对话走（`h3_skill.run` 已接 images）。
+      if (this.lastPrompt) {
         return promptRevise({
-          prompt: has ? this.lastPrompt : text,
-          feedback: has ? text : '',
+          prompt: this.lastPrompt,
+          feedback: text, // 本轮正文是「哪不对」
           images: imgs,
           // 修订不另定片长：那份稿自己有「00:xx」时间码，传 0 = 沿用原稿
           duration: 0,
@@ -506,9 +508,13 @@ export default {
       return o ? o.name : a.role
     },
     addAsset() {
-      if (this.assets.length >= 12) {
-        // 官方混用总文件上限 12（h3-readme:85），前端先拦一道
-        uni.showToast({ title: '素材最多 12 样', icon: 'none' })
+      // 🩸 两家的总数上限不一样，别拿一家的套另一家：
+      //   H3 —— 「混合输入的总上限是 12 个文件」（官方 `manual:38`），确实有总数限制；
+      //   2.0 —— 只给了**分类型**上限（图 9 / 视频 3 / 音频 3，`trouble.md:5`），
+      //          没有总文件数这一说 → 按 9+3+3 = 15 放开（后端也按分类型查）。
+      const cap = this.target === 'sd20' ? 15 : 12
+      if (this.assets.length >= cap) {
+        uni.showToast({ title: `素材最多 ${cap} 样`, icon: 'none' })
         return
       }
       this.assets.push({ kind: 'image', role: 'reference_image', note: '' })

@@ -8,7 +8,7 @@
 两个文件名字像、干的事完全不同：一个调对话模型，一个调生成模型。
 
 🩸 为什么单独立一个文件（2026-10-30）：同一份白名单原来抄了**三份**
-（`h3_direct` / `sd20_direct` / `prompt.py`），翻译成端点名的动作写在各自内部；
+（`h3_direct` / `sd20_skill` / `prompt.py`），翻译成端点名的动作写在各自内部；
 `h3_skill` 那一份漏了翻 → 真机
 `404 InvalidEndpointOrModel.NotFound: The model or endpoint pro does not exist`。
 **抄一份就埋一个 404**，所以三条路现在都从这里取。

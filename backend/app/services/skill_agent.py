@@ -62,6 +62,9 @@ class AgentResult:
 
 # ---------------------------------------------------------------- skill 包
 
+_BLOCK = ("|", ">", "|-", ">-", "|+", ">+")
+
+
 def _frontmatter(text: str) -> dict:
     """抢 SKILL.md 的 frontmatter（name / description / trigger-words）。
 
@@ -70,6 +73,12 @@ def _frontmatter(text: str) -> dict:
     拿到的值就是一个竖线 `|` —— 模型 `list_skills` 时看到 5 个 skill 的简介是 `|`，
     等于让它蒙着眼睛选题材。**它看起来"不懂 skill"，是因为我们喂给它的简介是空的。**
     现在两种写法都认（`|` / `>` 及其变体 + 缩进续行）。
+
+    🩸 2026-10-31 第二轮：`trigger-words` 也有两种写法 —— handdrawn / music-video /
+    paper-collage 写在**顶层**，minimalist 缩在 **`metadata:` 下面**。原来一律当作
+    父键的正文拼接，顶层那种碰巧还能用 `fm["trigger-words"]` 取到，缩进那种则整段
+    沉进 `fm["metadata"]`，`list_skills` 只读后者 → 三种写法的包**只有一家取得到**。
+    现在缩进行若形如 `key: value` 且父键**不是**块标量，存成 `父键.子键`。
     """
     if not text.startswith("---"):
         return {}
@@ -79,17 +88,26 @@ def _frontmatter(text: str) -> dict:
 
     raw: dict[str, list[str]] = {}
     cur: str = ""
+    block = False                                # cur 是不是块标量（缩进行是它的正文）
     for ln in parts[1].splitlines():
         if ln[:1] in (" ", "\t"):
-            if cur:
-                raw[cur].append(ln.strip())
+            if not cur:
+                continue
+            s = ln.strip()
+            if block:
+                raw[cur].append(s)
+            else:
+                k, sep, v = s.partition(":")
+                if sep and k.strip():            # 一层嵌套：metadata: / trigger-words:
+                    raw[f"{cur}.{k.strip()}"] = [v.strip()]
             continue
         if ":" not in ln or ln.lstrip().startswith("#"):
-            cur = ""
+            cur, block = "", False
             continue
         k, v = ln.split(":", 1)
         k, v = k.strip(), v.strip()
-        raw[k] = [] if v in ("|", ">", "|-", ">-", "|+", ">+") else [v]
+        block = v in _BLOCK
+        raw[k] = [] if block else [v]
         cur = k
     return {k: " ".join(x for x in vals if x).strip() for k, vals in raw.items()}
 
@@ -105,8 +123,12 @@ def list_skills(root: Path) -> list[dict]:
         rows.append({
             "name": fm.get("name") or d.name,
             "path": f"{d.name}/SKILL.md",
-            "description": " ".join((fm.get("description") or "").split())[:600],
-            "triggers": fm.get("metadata", ""),
+            # 🩸 2026-10-31：原来截 600 字符，9 个包里 **6 个被砍**（最长 914），
+            #   砍掉的正好是结尾的「Not for …」不适用场景 —— 选包最靠这句。
+            "description": " ".join((fm.get("description") or "").split()),
+            # 触发词两种写法都认：顶层 `trigger-words` / `metadata:` 下缩进
+            "triggers": (fm.get("trigger-words") or fm.get("metadata.trigger-words") or ""
+                         ).strip().strip("[]").strip(),
         })
     return rows
 
@@ -160,7 +182,12 @@ TOOLS = [
     }},
     {"type": "function", "function": {
         "name": "ask_user",
-        "description": "向用户提问，然后等回答。一次最多问 3 个。信息够了就别问。",
+        # 🩸 只描述**这个工具能干什么**，不规定怎么问。
+        #   2026-10-31 前一版我写成「一次问完、不要拆成好几轮」，那是自造规则 ——
+        #   问几轮由 skill 自己定（minimalist:51「in one pass」、papercraft:83
+        #   「信息缺失直接选合理默认」），工具这边只负责让它**有本事**一次列多项。
+        "description": "向用户提问，然后等回答。一个问题里可以并列多个待确认事项，"
+                       "逐项以「- 」开头。信息够了就别问。",
         "parameters": {"type": "object", "properties": {
             "question": {"type": "string",
                          "description": "给用户看的问题，用正常说话的语气；"
@@ -194,12 +221,29 @@ def _post(messages: list[dict], *, model: str, key: str,
 
 
 def _clean(messages: list[dict]) -> list[dict]:
+    """只留 user / assistant 有内容的那几条，开头必须是顾客说的。
+
+    🩸 2026-10-30：`content` 允许是**多模态数组**（带图那一轮）。顾客说
+    「这儿不对」时文字往往只有一个字，图必须挂同一轮。以前这里对 list
+    调 `.strip()` 会直接崩 —— 加图这条路就通不了。
+    """
     out = []
     for m in messages or []:
         role = (m or {}).get("role")
-        text = ((m or {}).get("content") or "").strip()
-        if role in ("user", "assistant") and text:
-            out.append({"role": role, "content": text})
+        content = (m or {}).get("content")
+        if isinstance(content, list):
+            keep = bool(content) and any(
+                isinstance(x, dict) and (x.get("text") or x.get("image_url"))
+                for x in content)
+            text = ""
+        elif isinstance(content, str):
+            keep = bool(content.strip())
+            text = content.strip()
+        else:
+            keep = text = False
+        if role in ("user", "assistant") and keep:
+            out.append({"role": role, "content": content if isinstance(content, list)
+                        else text})
     while out and out[0]["role"] != "user":
         out.pop(0)
     return out
@@ -207,12 +251,15 @@ def _clean(messages: list[dict]) -> list[dict]:
 
 def run(root: Path, *, system: str, messages: list[dict], model: str, key: str,
         judge=None, max_steps: int = MAX_STEPS, max_tokens: int = MAX_TOKENS,
-        post=None, on_step=None) -> AgentResult:
+        post=None, on_step=None, nudge: bool = False) -> AgentResult:
     """跑一轮 agent 对话。
 
     `post` 可注入桩（`post(messages)`，零费用测试）。
     `judge` 是交付前的判据：返回非空列表就带着问题让模型改一次。
     `on_step` 是每一步的回调（前端进度用）。
+    `nudge` 默认关：模型不调工具直接说话时，是否先提醒它一次再谈收下。
+    **只有点名要的调用方（目前是 2.0）才打开** —— 打开就改变交付路径，
+    不该由执行器替某一家决定。
     """
     hist = _clean(messages)
     if not hist:
@@ -225,6 +272,7 @@ def run(root: Path, *, system: str, messages: list[dict], model: str, key: str,
     res = AgentResult(trace=[{"t": 0, "stage": "start", "text": "开始"}])
     t0 = time.time()
     judged_once = False
+    nudged = False
 
     def step(stage: str, text: str) -> None:
         res.trace.append({"t": round(time.time() - t0, 1),
@@ -248,10 +296,23 @@ def run(root: Path, *, system: str, messages: list[dict], model: str, key: str,
 
         tcs = msg.get("tool_calls") or []
         if not tcs:
-            # 模型没调工具直接说话 —— 当成交付（别让它的话白说）
             text = (msg.get("content") or "").strip()
             if not text:
                 raise AgentError("模型这一轮什么都没给")
+            # 🩸 2026-10-31 真机抓到（2.0 第一轮）：模型把「我想跟你确认几个细节」
+            #   写成一段回复，**没调 ask_user** —— 原来这里直接当成品收，顾客拿到
+            #   五个问题当提示词，判据还 0 红（提问文本不触发任何规则）。
+            #   工具协议是**产品层**的约定（官方 skill 里没有"工具"这回事），
+            #   模型没照做就提醒它一次。只提醒一次，别无限催。
+            if nudge and not nudged:
+                nudged = True
+                msgs.append({"role": "assistant", "content": text})
+                msgs.append({"role": "user", "content":
+                             "（系统提示）你刚才那段没有用工具。要问顾客就用 ask_user，"
+                             "成品就用 deliver_prompt —— 直接写在回复里，顾客那边收不到。"})
+                step("nudge", "模型没调工具，提醒它一次")
+                continue
+            # 提醒过还是不用工具 —— 只能当正文收，但把这件事标出来
             res.action, res.prompt = "write", text
             res.truncated = res.truncated or "模型没有按工具协议交付，直接当正文收了"
             step("deliver", "模型直接给了正文")

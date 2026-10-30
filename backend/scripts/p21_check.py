@@ -256,7 +256,7 @@ def main() -> int:
     # ---------------------------------------------------------- 9 模型名必须翻译成端点
     # 🩸 2026-10-30 真机第一次跑就撞上：`h3_skill.run` 把前端传的白名单键
     #   （`lite`/`pro`/`deepseek`）**原样**发给了方舟 → `404 InvalidEndpointOrModel`。
-    #   h3_direct / sd20_direct 都在自己内部翻（`MODELS.get`），这里漏了。
+    #   h3_direct / sd20_skill 都在自己内部翻（`MODELS.get`），这里漏了。
     #   这条是**生产路径的 bug**，不是探针写错了 —— 所以必须留断言。
     sent: dict = {}
 
@@ -281,6 +281,46 @@ def main() -> int:
         expect(sent.get("model") == "doubao-seed-2-1-pro-260915",
                "9b 不传 model → 落到默认端点名，不是空串",
                str(sent.get("model")))
+    finally:
+        skill_agent._post = real_post
+
+    # ---------------------------------------------------------- 11 参考图跟着对话走
+    # 🩸 2026-10-31：顾客**第一次就给参考图出稿**（「用这张图里的女生」）没有提示词
+    #   可修，走不了 /prompt/revise —— 图必须挂在这条对话路上。以前 `h3_skill.run`
+    #   没有 images 参数，前端只好把所有带图的请求全塞进修订路：顾客原话被当成
+    #   「已有的提示词」去「只改那几处」。这里钉住：传了 images 就真的挂到消息上。
+    IMG = "data:image/jpeg;base64,AAAA"
+    # 存**每次**发出的 messages：交付后 `run` 还会再发一轮（回灌判据），
+    # 最后一组的末条是 tool 结果，不是顾客那句话。取第一组（system + 顾客原话）。
+    seen: dict = {"all": []}
+
+    def _capture(msgs, **kw):
+        seen["all"].append([dict(m) for m in msgs])  # 必须拷贝：run 会原地往 msgs 追加
+        return {"choices": [{"message": {
+            "role": "assistant", "content": "",
+            "tool_calls": [{"id": "d1", "type": "function", "function": {
+                "name": "deliver_prompt",
+                "arguments": '{"prompt": "ok"}'}}]}}],
+            "usage": {"total_tokens": 1}}
+
+    skill_agent._post, real_post = _capture, skill_agent._post
+    try:
+        h3_skill.run([{"role": "user", "content": "用这张图里的女生"}],
+                     model="lite", key="k", images=[IMG])
+        parts = seen["all"][0][-1].get("content")
+        expect(isinstance(parts, list) and any(
+                   isinstance(x, dict) and (x.get("image_url") or {}).get("url") == IMG
+                   for x in parts),
+               "11a 对话路传了图 → 真的挂在最后一条 user 消息上", str(parts)[:200])
+        expect(isinstance(parts, list) and parts[0].get("text") == "用这张图里的女生",
+               "11b 文字段还在（没把顾客的话弄丢）", str(parts)[:200])
+
+        seen["all"].clear()
+        h3_skill.run([{"role": "user", "content": "用这张图里的女生"}],
+                     model="lite", key="k")
+        expect(seen["all"][0][-1].get("content") == "用这张图里的女生",
+               "11c 不传图时消息仍是纯文本（成对探针：别把普通对话改坏）",
+               str(seen["all"][0][-1].get("content"))[:120])
     finally:
         skill_agent._post = real_post
 

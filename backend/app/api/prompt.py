@@ -5,7 +5,7 @@
 | 路 | 入口 | 谁干活 |
 |---|---|---|
 | 对话出稿 | `/prompt/chat`（target=h3） | `h3_skill` → 模型自己读官方 skill 包 |
-| 对话出稿 | `/prompt/chat`（target=sd20） | `sd20_direct` → 2.0 官方材料拼进 system |
+| 对话出稿 | `/prompt/chat`（target=sd20） | `sd20_skill` → 模型自己读官方 skill 包 |
 | 转换 | `/prompt/convert` | `h3_direct.generate` → 摘现成稿，只换语法 |
 | 修订 | `/prompt/revise` | `h3_direct.revise` → 带截图只改那几处 |
 
@@ -34,7 +34,7 @@ from app.services import prompt_sessions, run_log
 from app.services import h3_convert_route as conv_route
 from app.services import h3_direct
 from app.services import h3_skill
-from app.services import sd20_direct
+from app.services import sd20_skill
 from app.services import skill_agent
 from app.services.models import h3_base as rules
 from app.services.models.h3_common import MAX_SOURCE_CHARS, ROLE_DESC, guess_kind
@@ -414,7 +414,12 @@ def _revise(body: ReviseIn) -> dict:
 
 
 def _mode_of(prompt: str) -> str:
-    """三字段下是哪种子模式（决定 B 系判据跑哪几条）。看得出就判，看不出按 t2va。"""
+    """三字段下是哪种子模式（决定 B 系判据跑哪几条）。看得出就判，看不出按 t2va。
+
+    🩸 2026-10-31：曾经加过「也认 `@图片1`」，同日**撤回** —— H3 的 56 条 run_log
+    里输入/产出 `@图片` 均 0 次，真机上模型读到 `@图片1` 也会转成 `<Picture 1>`。
+    没有对应场景的防御就是猜。
+    """
     p = prompt or ""
     if "<Picture 1>" in p and "<Picture 2>" in p:
         return "fl2va"
@@ -448,8 +453,8 @@ class ChatIn(BaseModel):
         default_factory=list, description="顾客声明的参考素材；一样不传 = 文生视频")
     images: list[str] = Field(
         default_factory=list,
-        description="本轮截图（data URI）。sd20 走对话就能带图；"
-                    "h3 的传图走 /prompt/revise")
+        description="本轮图（data URI）。两家都挂在最后一条 user 消息上："
+                    "参考图随对话出稿，出问题画面的截图随 /prompt/revise 修订")
     sid: str = Field("", description="会话编号，同 /prompt/convert")
 
 
@@ -490,7 +495,7 @@ def _chat_turn_sd20(body: ChatIn, msgs: list[dict]) -> dict:
     pairs = []
     for a in body.assets:
         if a.kind not in seen:
-            raise sd20_direct.DirectError(f"素材类型只认 image/video/audio，收到 {a.kind!r}")
+            raise sd20_skill.SkillError(f"素材类型只认 image/video/audio，收到 {a.kind!r}")
         seen[a.kind] += 1
         pairs.append({
             "label": {"image": "@图片", "video": "@视频", "audio": "@音频"}[a.kind]
@@ -504,41 +509,78 @@ def _chat_turn_sd20(body: ChatIn, msgs: list[dict]) -> dict:
     over = [f"{k} {seen[k]} 样" for k, cap in
             (("image", 9), ("video", 3), ("audio", 3)) if seen[k] > cap]
     if over:
-        raise sd20_direct.DirectError(
+        raise sd20_skill.SkillError(
             f"素材超过 2.0 官方上限（图 9 / 视频 3 / 音频 3）：{'、'.join(over)}")
 
     key = body.model or ark_chat.DEFAULT_MODEL
-    got = sd20_direct.chat_turn(
-        msgs, duration=dur, assets=pairs, model=key, images=imgs,
-        judge=lambda p: [(r[0], r[2], r[3], "；".join(r[4]))
-                         for r in volc20_pe.check(p) if r[1] == "红"])
+
+    # 🩸 2026-10-30 主人拍板：2.0 这一支也改成 **agent 自己读 skill 包**
+    # （与 H3 同一条路）。不再由我们把官方原文拼进 system。
+    fixed = [_fixed_duration_sd20(dur, SD20_LO, SD20_HI)]
+    if pairs:
+        fixed.append("顾客声明的参考素材（标签就用这套，别自己编新的）：\n" + "\n".join(
+            f"{a['label']} —— {a.get('role_desc') or a.get('role')}"
+            f"；{a.get('note') or '（顾客没写是什么）'}" for a in pairs))
+    else:
+        fixed.append("顾客没有声明参考素材。如果这一轮他传了图，那些图就是参考素材，"
+                     "按上传顺序是 @图片1 / @图片2 …")
+    if imgs:
+        fixed.append(f"顾客这一轮传了 {len(imgs)} 张图（挂在这条消息上），"
+                     f"按上传顺序是 @图片1 … @图片{len(imgs)}。"
+                     "先判断这是参考素材还是成片截图，再动手。")
+
+    try:
+        got = sd20_skill.run(msgs, model=key, fixed=fixed, images=imgs)
+    except skill_agent.AgentError as e:
+        raise sd20_skill.SkillError(str(e)) from e
+
+    # 落盘：读了哪几份 skill、问了几轮、判了几条红
+    run_log.write("sd20", model=key, result=got, messages=msgs, fixed=fixed)
 
     out = {
         "target": "sd20",
-        "action": got["action"],
-        "format": "2.0 中文提示词",
-        "tries": got["tries"],
-        "asked": got.get("asked", 0),
-        "warnings": ([note] if note else []),
+        "action": got.action,
+        "format": "官方 skill 直出",
+        "tries": got.steps,
+        "asked": sum(1 for m in msgs if (m or {}).get("role") == "assistant"),
+        "warnings": ([note] if note else []) + ([got.truncated] if got.truncated else []),
         "model": ark_chat.resolve(key),
+        # 前端进度：每一步读了什么、问了什么
+        "trace": got.trace,
+        "reads": got.reads,
+        "calls": got.calls,
+        "tokens": got.tokens,
     }
-    if got["action"] == "ask":
-        out["question"] = got["question"]
+    if got.action == "ask":
+        out["question"] = got.question
         return out
 
-    prompt = got["prompt"]
+    prompt = got.prompt
     rows = volc20_pe.check(prompt)
     out.update({
         "prompt": prompt,
         # 官方 Step 4 的「优化问题」—— 给顾客看的披露，**不属于提示词正文**
-        "note": got.get("note") or "",
+        "note": got.note or "",
         "chars": len(prompt),
         "duration": dur,
         "rules": len(volc20_pe.RULES),
-        "red": [f"{x[0]} {x[1]}：{x[3]}" for x in (got.get("red") or [])],
+        "red": [f"{x[0]} {x[1]}：{x[3]}" for x in (got.red or [])],
         "yellow": [x[0] for x in rows if x[1] == "黄"],
     })
     return out
+
+
+def _fixed_duration_sd20(dur: float, lo: float, hi: float) -> str:
+    """片长写进固定条件。0 = 还没定，让模型该问的时候自己问。
+
+    🩸 2026-10-31 主人：「agents 调模型里面本来就已经有执行标准了，我们自己又再要求一次？」
+      这里原来讲「文戏用向后延长、动作转折用分段拼接」—— 那是 `guide.md:259`
+      原文的意思，模型读了 SKILL.md 自己会去读。**只交代事实，不复述官方能力说明。**
+      （更早那版还写反过：「不要把分段、拼接说成 2.0 的能力」= 从 H3 照搬的错话。）
+    """
+    if dur:
+        return f"目标片长：{dur:g} 秒（2.0 单段 {lo:g}–{hi:g} 秒）"
+    return f"片长还没定（2.0 单段 {lo:g}–{hi:g} 秒）—— 该问的时候问顾客。"
 
 
 def _chat_turn(body: ChatIn) -> dict:
@@ -593,11 +635,18 @@ def _chat_turn(body: ChatIn) -> dict:
     else:
         fixed.append("顾客没有声明参考素材。如果这一轮他传了图，那些图就是素材，"
                      "按上传顺序是 <Picture 1>/<Picture 2> …")
-    if body.images:
-        fixed.append(f"顾客这一轮传了 {len(body.images)} 张图（挂在这条消息上）。")
+    # 🩸 2026-10-31：图现在真的挂上去了（`h3_skill.run` 接了 images）。
+    #   顾客**第一次就给参考图出稿**（「用这张图里的女生」）走的是这条对话路 ——
+    #   那时他还没有提示词可修，走不了 `/prompt/revise`。2.0 那条（`_chat_turn_sd20`）
+    #   本来就是这套写法，两家现在只剩标签语法不同（H3 是 `<Picture N>`）。
+    imgs = [str(x).strip() for x in (body.images or []) if str(x).strip()]
+    if imgs:
+        fixed.append(f"顾客这一轮传了 {len(imgs)} 张图（挂在这条消息上），"
+                     f"按上传顺序是 <Picture 1> … <Picture {len(imgs)}。"
+                     "先判断这是参考素材还是成片截图，再动手。")
 
     try:
-        got = h3_skill.run(msgs, model=key, fixed=fixed)
+        got = h3_skill.run(msgs, model=key, fixed=fixed, images=imgs)
     except skill_agent.AgentError as e:
         raise h3_direct.DirectError(str(e)) from e
 
@@ -665,7 +714,7 @@ async def chat_turn(body: ChatIn):
             lambda b: _run(_chat_turn, b,
                            user_text=_last_user(b.messages)[:2000],
                            target=(b.target or "").strip().lower()), body))
-    except (h3_direct.DirectError, sd20_direct.DirectError) as e:
+    except (h3_direct.DirectError, sd20_skill.SkillError) as e:
         return fail(f"提示词对话失败：{e}")
     except Exception as e:                             # noqa: BLE001
         log.exception("提示词对话异常")

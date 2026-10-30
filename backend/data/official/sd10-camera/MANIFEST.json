@@ -9,7 +9,7 @@
     {
       "role": "camera-terms",
       "role_zh": "运镜与景别术语表",
-      "path": "camera-terms.md",
+      "path": "../sd20/skills/sd2-pe/references/camera-terms.md",
       "abbr": [
         "sd10-camera",
         "camera-terms"

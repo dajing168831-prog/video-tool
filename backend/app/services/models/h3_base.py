@@ -232,11 +232,17 @@ def b11_cut_verb(p, ctx):
 
     🩸 2026-10-29 校准抓到假绿：原来用 `([^.]{0,80})\\.` 卡长度，官方长句超过 80 字符
     → 一个都没匹配上 → 规则从来没跑过。改成"时间码之后到下一个句号"。
+
+    🩸 2026-10-31 真机抓到假红：上面那个改法扫的是**所有** `MM:SS.mmm,`，于是镜头
+    **内部**的事件时间码（`At 00:06.700, the first half … appears gently in …`）也被
+    当成切点，报了 5 条「切镜动词不在官方 5 种里」—— 而那份稿的 4 处真切点全部是
+    官方原句 `the camera cuts to`。官方 `base-en:86` 说的是「**begin each one** with a
+    strictly increasing cut time」：`At MM:SS.mmm` 只属于**镜头开头**。只扫紧跟
+    `[Shot N]` 的那一个。
     """
     bad = []
-    for m in re.finditer(r"\d{2}:\d{2}\.\d{3},", p):
-        tail = p[m.end():m.end() + 300]
-        head = tail.split(".")[0]
+    for m in re.finditer(r"\[Shot \d+\]\s+At\s+\d{2}:\d{2}\.\d{3}[,，]?", p):
+        head = p[m.end():m.end() + 300].split(".")[0]
         if not any(v in head.lower() for v in CUT_VERBS):
             bad.append(f"切镜动词不在官方 5 种里：…{head.strip()[:80]}")
     return bad
