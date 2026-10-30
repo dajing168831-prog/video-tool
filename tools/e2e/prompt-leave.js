@@ -128,6 +128,8 @@ const ENV = JSON.stringify({ code: 200, biz_code: 0, msg: '', data: null })
   await sleep(500)
   await tap('H3')
   await sleep(400)
+  // 模型也没有默认：先点那格弹出选择框，再选（留空的话发送时会被拦下来问）
+  await tap('模型'); await sleep(400); await tap('豆包 Lite'); await sleep(300)
 
   await page.click('textarea')
   await page.type('textarea', '做个四镜的3D动画短片', { delay: 20 })

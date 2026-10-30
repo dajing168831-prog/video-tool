@@ -177,7 +177,7 @@
           <text class="opt-k">写给</text>
           <text class="opt-v">{{ targetName }}</text>
         </view>
-        <view class="opt-chip" @click="pickModel">
+        <view :class="['opt-chip', model ? '' : 'opt-need']" @click="pickModel">
           <text class="opt-k">模型</text>
           <text class="opt-v">{{ modelName }}</text>
         </view>
@@ -241,6 +241,8 @@ const SCRIPT_HINT = /<\s*(picture|video|audio|subject)\b|第\s*\d+\s*[镜幕]|sh
 
 //: 历史对话存在本地。只存文字（截图是 data URI，几张就能把 5MB 撑爆）。
 const SKEY = 'vt_prompt_sessions'
+//: 顾客选过的理解模型（选过就记住，是本机偏好不是服务端默认）
+const MKEY = 'vt_prompt_model'
 const MAX_SESS = 20
 
 // 参考素材的类型与用途。🩸 用途只放后端 `h3_convert_route.ROLES` 里的值。
@@ -276,7 +278,10 @@ export default {
       // 🩸 时长不再在上方选：等聊到该定的时候由模型问（2026-10-30 主人）。
       // 这个值只给「转换 / 修订」两条老路当兜底，对话路线传 0 = 还没定。
       duration: 5,
-      model: 'lite',
+      // 🩸 理解模型**没有默认**（2026-10-30 主人：「顾客前端选什么就选什么」）。
+      // 原来预选成 lite —— 顾客一次都没选过，跑的就是 lite，还怪 agent 判得差。
+      // 现在空着 = 还没选，第一次发送前必须选；选过记在本机，下次不用再选。
+      model: '',
       models: MODELS,
       target: '',        // 写给哪家：''（还没选）/ sd20 / h3 —— 平级，不预选
       targets: TARGETS,
@@ -299,6 +304,8 @@ export default {
     }
   },
   created() {
+    // 顾客上次选的理解模型（没选过就是空 —— 第一次发送前会问）
+    try { this.model = uni.getStorageSync(MKEY) || '' } catch (e) { /* 读不到就每次问 */ }
     // 先上本地那份（后端没起也能看见历史），再用后端的覆盖
     this.sessions = this.loadSessions()
     this.syncFromCloud()
@@ -321,7 +328,7 @@ export default {
     },
     modelName() {
       const m = MODELS.find((x) => x.key === this.model)
-      return m ? m.name : MODELS[0].name
+      return m ? m.name : '选一下'
     },
     targetName() {
       const t = TARGETS.find((x) => x.key === this.target)
@@ -352,6 +359,11 @@ export default {
       // 选完就记住，之后不再打断（换家要开新对话，两家格式不通用）。
       if (!this.target) {
         const picked = await this.pickTarget()
+        if (!picked) return
+      }
+      // 理解模型同样**没有默认**：没选过就先问，选过（记在本机）就不再打断
+      if (!this.model) {
+        const picked = await this.pickModel()
         if (!picked) return
       }
       const text = this.draft.trim()
@@ -756,11 +768,18 @@ export default {
         fail: () => uni.showToast({ title: '读取剪贴板失败', icon: 'none' }),
       })
     },
+    /** 选哪个理解模型。返回 Promise<boolean>：取消了就是 false，调用方别硬发。 */
     pickModel() {
-      const list = MODELS.map((m) => m.name)
-      uni.showActionSheet({
-        itemList: list,
-        success: (r) => { this.model = MODELS[r.tapIndex].key },
+      return new Promise((resolve) => {
+        uni.showActionSheet({
+          itemList: MODELS.map((m) => m.name),
+          success: (r) => {
+            this.model = MODELS[r.tapIndex].key
+            try { uni.setStorageSync(MKEY, this.model) } catch (e) { /* 存不下就每次再问 */ }
+            resolve(true)
+          },
+          fail: () => resolve(false),
+        })
       })
     },
     /** 选写给哪家。返回 Promise<boolean>：顾客取消了就是 false，调用方别硬发。 */

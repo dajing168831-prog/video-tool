@@ -63,7 +63,9 @@ const check = (n, ok, d = '') => {
     if (!box) throw new Error('找不到：' + t)
     await p.mouse.click(box.x, box.y)
   }
-  await tap('写给'); await sleep(400); await tap('H3'); await sleep(300)
+  await tap('写给'); await sleep(400); await tap('H3'); await sleep(400)
+  // 模型也没有默认：先点那格弹出选择框，再选（留空的话发送时会被拦下来问）
+  await tap('模型'); await sleep(400); await tap('豆包 Lite'); await sleep(300)
   await p.click('textarea'); await p.type('textarea', '做个四镜的3D动画短片'); await sleep(150)
   await tap('↑'); await sleep(2000)
 
