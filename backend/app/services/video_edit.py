@@ -2414,13 +2414,29 @@ def _fit_segment(seg: Path, ch: str, frames: int = 0) -> Path:
     if fps and (fps < lim["fps"][0] or fps > lim["fps"][1]):
         new_fps = min(max(fps, lim["fps"][0]), lim["fps"][1])
 
+    # 🩸🩸 2026-10-30（真机 `6d26558d` 报 400 抓到）：像素门槛是**硬性**的，
+    #   差 1.6% 也是 400。现场：原片 `480×836 = 401,280 px`，2.0 mini 的 r2v
+    #   下限是 407,696，只差 6,416 像素（1.6%）。
+    #   下面那句 `abs(scale-1.0) < 0.02` 本意是"缩放不到 2% 不值得重编码一遍"，
+    #   但它把**硬门槛**也一起放过了 → 片段原样送进去 → 火山当场拒单：
+    #   `video pixel count … must be greater than or equal to 407696`。
+    #   ⇒ 像素不在区间内时**必须**重编码，不许走"差别太小"那条捷径。
+    px_out_of_range = bool(
+        (lim["min_px"] and px < lim["min_px"])
+        or (lim["max_px"] and px > lim["max_px"]))
     too_big = size > lim["max_bytes"]
-    if abs(scale - 1.0) < 0.02 and abs(new_fps - fps) < 0.01 and not too_big:
+    if (not px_out_of_range and abs(scale - 1.0) < 0.02
+            and abs(new_fps - fps) < 0.01 and not too_big):
         return seg
 
     dest = seg.with_name(seg.stem + "_fit.mp4")
     nw = max(2, int(round(w * scale)) // 2 * 2)
     nh = max(2, int(round(h * scale)) // 2 * 2)
+    # 🩸 宽高各自取偶数后会再掉回线下一点，按高度补宽度直到过线
+    #   （与 `extend.normalize_ref` 同一套补齐做法，别各写各的）。
+    if lim["min_px"] and nw * nh < lim["min_px"]:
+        nw = max(nw, int(-(-lim["min_px"] // nh)) + 1)
+        nw += nw % 2
     # assemble._run 自己会补 ffmpeg 路径和 -y，这里不要再写一遍
     args = ["-i", str(seg),
             "-vf", f"scale={nw}:{nh}:flags=lanczos", "-an",

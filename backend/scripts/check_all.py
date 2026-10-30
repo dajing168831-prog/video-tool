@@ -44,6 +44,9 @@ REGISTRY: list[tuple[str, str, tuple[str, ...], bool, bool]] = [
     ("多人参考图", "test_person_refs.py", (), True, False),
     ("多版本缓存", "test_multi_version.py", (), True, False),
     ("编辑逻辑", "test_video_edit_logic.py", (), True, False),
+    # 🩸 2026-10-30：`_fit_segment` 此前零判据 → 480×836（差 1.6% 到像素下限）
+    #   被"缩放不到 2%"的宽容条件放过，整条片子发不出去。这条现在守着它。
+    ("参考片段像素门槛", "test_fit_segment.py", (), True, False),
     ("分诊", "test_triage.py", (), True, False),
     ("台词/转录", "test_transcript.py", (), True, False),
     ("切镜检测", "test_shot_detect.py", (), True, False),
