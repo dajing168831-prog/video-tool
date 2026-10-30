@@ -81,9 +81,12 @@ def instruction_line(mode: str, *, n_shots: int = 1, duration: float = 5.0) -> s
     raise ValueError(f"不认识的模式：{mode!r}（只认 {' / '.join(MODES)}）")
 
 
-# ---------------------------------------------------------------- 运镜闭集
-#: `base-en:98-111` 官方表格：**13 类 / 20 个具体词**。除这 20 个之外的运镜词
-#: 一律拒收 —— 官方给的是闭集，不是"举例"。
+# ---------------------------------------------------------------- 运镜词表
+#: `base-en:98-111` 官方表格：**13 类 / 20 个具体词**。
+#: ⚠️ 它叫「Available Expression」（可用表达），**不是白名单** —— 官方同一节还写着
+#: `write camera movement as natural English`。所以这张表用来**生成**（把用户给的写法
+#: 收口成官方词）和给 B14/B28 判**句子结构**，**不用来判"词不在表里就红"**。
+#: （2026-10-30 撤回 B12，见 `docs/_archive/b12-withdrawn-2026-10-30.md`）
 CAMERA_PHRASES = {
     "zoom in": "Zoom In", "zoom out": "Zoom Out",
     "push in": "Push In", "pull out": "Pull Out",
@@ -156,8 +159,8 @@ def camera_verbs() -> tuple[str, ...]:
     """官方 20 个运镜词的**动词形态**（小写、去掉 `The camera ` 前缀）——给尺子用。
 
     `follows` 单独补一条：Tracking Shot 带目标时写成 `The camera follows <目标>`
-    （`base-en:107`「follows a moving subject」），目标替换掉默认的 `the subject`，
-    不补这条 B12 会把合法产出判红。
+    （`base-en:107`「follows a moving subject」），目标替换掉默认的 `the subject`。
+    这份动词表现在只给 **B28（运镜句要能读通）** 用 —— 不再用来判"词在不在表里"。
     """
     forms = [s.replace("The camera ", "", 1).lower() for s in _CAM_SENTENCE.values()]
     forms.append("follows")
@@ -167,8 +170,8 @@ def camera_verbs() -> tuple[str, ...]:
 def camera_type(value: str) -> str:
     """把用户/模型给的任意写法收口成官方那 20 个词之一；认不出 → 空串。
 
-    认不出**不抛错、也不猜**：调用方据此判断"这一镜有没有运镜"，
-    真要写运镜得让用户从闭集里挑（`PROMPT-AUDIT-H3-BASE` B12）。
+    认不出**不抛错、也不猜**：调用方据此判断"这一镜有没有运镜"。
+    ⚠️ 认不出 ≠ 模型写错了（B12 已撤回，"不在表里"不是判红依据）。
     """
     k = re.sub(r"[\s_\-]+", " ", (value or "").strip().lower()).strip()
     return CAMERA_PHRASES.get(k, "")

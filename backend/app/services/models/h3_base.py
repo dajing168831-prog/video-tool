@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""H3 创作模式（T2VA / I2VA / FL2VA / L2VA）的**判据本体** —— 23 条规则。
+"""H3 创作模式（T2VA / I2VA / FL2VA / L2VA）的**判据本体** —— 22 条规则（B12 已于 2026-10-30 撤回，见 docs/_archive）。
 
 与 `h3_compile.py` 的六段式判据（`ruler_h3.py`）互不引用：同一家模型，两种模式
 规则**方向相反**（风格句 base 写在 `[Shot 1]` 之内 `base-en:78`，ref 写在之前
@@ -244,40 +244,6 @@ def b11_cut_verb(p, ctx):
 
 #: 官方 20 个运镜**表达名**（`base-en:98-111` 表格第一列，小写）。用词边界匹配，
 #: 免得 `pov` 在 `poverty` 里被当成运镜词。
-_CAMERA_NAME = re.compile(
-    r"\b(?:" + "|".join(re.escape(k) for k in
-                        sorted(hbc.CAMERA_PHRASES, key=len, reverse=True)) + r")\b")
-
-
-def b12_camera_closed(p, ctx):
-    """运镜只能取官方 20 个表达（`base-en:98-111`）。
-
-    ⚠️ 工程推断：只检查**以 `The camera ` 起头**的句子 —— 官方 3 个句例
-    （`base-en:120-122`）都是这个形态。别的写法查不出来，这是已知盲区。
-
-    🩸 2026-10-30 真机（网页跑 3D 动画）：模型写
-    `The camera uses a tracking shot with large amplitude at fast speed, following …`
-    被判红。**这是尺子的错，不是模型的错** —— `base-en:107` 的表格里
-    `Tracking Shot` 本身就是可用表达，官方 §4.3 的例句 `The camera holds a static shot`
-    （`base-en:122`）也是**用表达名**写的。原来只认动词形态（`follows`），
-    所以同一条规则里 `static shot` 能过、`tracking shot` 不过，自相矛盾。
-    """
-    verbs = hbc.camera_verbs()
-    cut_verbs = CUT_VERBS
-    bad = []
-    for s in _sentences(p):
-        if not s.startswith("The camera "):
-            continue
-        low = s.lower()
-        if any(v in low for v in cut_verbs):
-            continue
-        if any(v in low for v in verbs):
-            continue
-        if _CAMERA_NAME.search(low):      # 官方表达名本身也合法（名词形态）
-            continue
-        bad.append(f"运镜词不在官方闭集里：{s[:90]}")
-    return bad
-
 
 def b13_amp_speed(p, ctx):
     """幅度只许 small/large，速度只许 slow/fast（`base-en:113-115`）。"""
@@ -300,7 +266,7 @@ def b28_target_connector(p, ctx):
 
     🩸 为什么加这条（2026-10-29）：三家真机对照跑了 15 份产出，其中 6 份写成
     `…at slow speed the man on the platform.` —— 连接词丢了，句子读不通，
-    而当时的 22 条规则一条都没响（B12/B13 只查**词表**，不查**句子能不能读**）。
+    而当时的规则一条都没响（词表类只查词，不查**句子能不能读**）。
     """
     # `follows <目标>` 本身语法完整（目标就是宾语），不会缺连接词 → 排除
     verbs = sorted((v for v in hbc.camera_verbs() if v != "follows"),
@@ -444,7 +410,6 @@ RULES = [
     ("B9", "红", "指令行是第一行且后跟空行", "base-en:34", b9_instr_blank),
     ("B10", "红", "[Shot 1] 无时间戳、后续 At MM:SS.mmm 递增", "base-en:86", b10_shots),
     ("B11", "红", "切镜动词用官方 5 种", "base-en:92", b11_cut_verb),
-    ("B12", "红", "运镜只取官方 20 个词", "base-en:98-111", b12_camera_closed),
     ("B13", "红", "幅度/速度只用官方词", "base-en:113-115", b13_amp_speed),
     ("B14", "红", "运镜不堆成句尾标签", "base-en:117", b14_no_trailing_tags),
     ("B28", "红", "运镜后接目标成分必须有连接词", "base-en:120-124", b28_target_connector),
@@ -472,7 +437,6 @@ QUOTES = {
     "B9": "The instruction must be the first line of the final prompt, followed by one blank line",
     "B10": "Do not add a timestamp to the first shot.",
     "B11": "For ordinary cuts, use `the camera cuts to`",
-    "B12": "Motion type defines how the camera moves",
     "B13": "Amplitude defines the range of compositional change",
     "B14": "rather than stacked as separate labels at the end of a sentence",
     "B15": "state the overall style and initial composition",
