@@ -189,5 +189,6 @@ agent 那版一句运镜都没编，原稿句几乎逐字搬过去。
 
 原始响应：`D:/tmp/h3accept/6-agent-raw-paste.json`（裸粘）、`5-agent-convert.json`（带指令）。
 
-**落地**：转换这条路从产品上摘掉，粘稿改走对话路 + 自动带上那句意图（写在顾客自己的消息里，
-看得见、能删）。详见 `docs/MODEL-SEPARATION.md` §13.15；判据 `tools/e2e/prompt-paste.js` 5/5。
+**落地**：转换这条路从产品上摘掉，粘稿一律走对话路，**顾客写什么发什么，一个字不加**
+（我先试过自动补那句意图，主人否掉：「不需要你加这些规则，顾客自己会知道怎么告诉 agents」）。
+详见 `docs/MODEL-SEPARATION.md` §13.15；判据 `tools/e2e/prompt-paste.js` 4/4。

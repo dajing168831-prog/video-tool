@@ -92,14 +92,15 @@ function check(name, ok, detail = '') {
   check('① 走的是对话路（不是 /convert）', got.path === 'chat', got.path)
   const last = ((got.body || {}).messages || []).filter((m) => m.role === 'user').pop()
   const sent = (last && last.content) || ''
-  check('② 发出去的话里带着「内容一个字都别改」', sent.includes('内容一个字都别改'), sent.slice(0, 80))
-  check('③ 原稿正文一字不少地一起发了', sent.includes('SHOT 8') && sent.includes('00:07.000'), sent.slice(-80))
-  check('④ duration 传 0（让模型问，不是写死 5）', got.body && got.body.duration === 0, String(got.body && got.body.duration))
+  // 🩸 主人：「不需要你加这些规则，顾客自己会知道怎么告诉 agents」→ 粘什么发什么，一字不加
+  check('② 发出去的内容跟粘的一字不差（没替他加话）',
+    sent.trim() === SCRIPT.trim(), JSON.stringify(sent.slice(0, 60)) + ' … ' + JSON.stringify(sent.slice(-40)))
+  check('③ duration 传 0（让模型问，不是写死 5）',
+    got.body && got.body.duration === 0, String(got.body && got.body.duration))
 
-  // 顾客自己那条气泡里要看得见这句（不藏）
   const visible = await page.evaluate(() => document.body.innerText)
-  check('⑤ 顾客那条消息里看得到这句话（不是偷偷加的）',
-    visible.includes('内容一个字都别改'), visible.slice(0, 160))
+  check('④ 页面上就是顾客自己那段（没多出别人写的句子）',
+    visible.includes('SHOT 8') && !visible.includes('内容一个字都别改'), visible.slice(0, 160))
 
   await page.screenshot({ path: 'D:/tmp/vt-shots/prompt-paste.png' })
   await browser.close()
