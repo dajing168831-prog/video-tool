@@ -1,0 +1,22 @@
+{
+  "family": "sd10-camera",
+  "display": "火山 Seedance 1.0 pro · 镜头语言（运镜术语）",
+  "one_rule": "一个型号一把尺：本目录以外的官方资料，与本家无关，不得引用。",
+  "note": "2.0 的官方指南把运镜词表指到了这份文档（sd20-guide:191 原句「更多请参见 [镜头语言]」）。2026-10-30 主人拍板「运镜词表要从 1.0 pro 那份文档搬」—— 所以它是 2.0 的**官方指定上游**，不是跨型号搬运。只收术语与规则原句，不收 1.0 的示例句。",
+  "origin": "https://docs.volcengine.com/docs/ark/seedance-1-0-pro-pro-fast?lang=zh",
+  "fetched": "2026-10-30",
+  "files": [
+    {
+      "role": "camera-terms",
+      "role_zh": "运镜与景别术语表",
+      "path": "camera-terms.md",
+      "abbr": [
+        "sd10-camera",
+        "camera-terms"
+      ],
+      "lines": 32,
+      "sha256": "61776c8d5fa1866cdb7ceef7739007d04acae2f56cec0d9978a0138e5e9efa00",
+      "origin": "火山《Seedance 1.0 pro 提示词指南》「镜头语言」「多镜头能力」两章逐字摘录"
+    }
+  ]
+}

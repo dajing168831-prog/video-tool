@@ -1,0 +1,279 @@
+# -*- coding: utf-8 -*-
+"""别家稿 / 顾客想法 → H3 提示词成品：**模型按官方 skill 直出**，代码只管判模式和验收。
+
+## 为什么推翻之前的「拆槽 + 代码拼装」
+
+2026-10-29 主人一句话点破：
+
+    「都已经调模型了，而且他们的能力包括你自己的能力你都不知道的吗？」
+
+实测印证：把官方 `base-en`/`ref-en` 原文喂进 system prompt 后，模型写的运镜是
+`lateral tracking` / `push in to over-the-shoulder` —— **比我们那个 20 词闭集槽位更贴官方**。
+是我们自己写的校验层把它认为「不在闭集」的描述全清空了，再逼它往 15 个固定字段里塞，
+结果正文撑到 7580 字符超限。
+
+拆槽、闭集清洗、代码拼装，都是**替模型瞎操心**：官方 skill 本来就是给 agent 读着写用的。
+
+## 这条链只保留代码真正该干的三件事
+
+1. **判模式**（`h3_convert_route`）—— 素材决定走哪份 reference，猜错整篇废；
+2. **喂原文**（`h3_official`）—— SKILL.md + 对应 reference 全文，不是二手摘要；
+3. **验收**（两把尺子）—— 23 条判红就把**红的条目 + 官方出处**喂回去重试一次。
+
+## 保真怎么办
+
+顾客粘的是一份现成稿，要求「一字不丢搬成 H3 语法」。这条写在 user 消息的护栏里，
+由模型自己在写作时守住 —— 它读得到原文、也读得懂「不许增删」。
+"""
+from __future__ import annotations
+
+import httpx
+
+from app.services import h3_official
+
+#: 官方 `text` 硬上限（`h3-create:407`）。原在 `h3_convert_limits`，
+#: 拆槽那条链路 2026-10-30 下线后并到这里 —— 直出这条路是唯一用它的地方。
+MAX_CHARS = 7000
+
+
+class DirectError(ValueError):
+    """直出失败。消息直接给顾客看，写人话。"""
+
+
+CHAT_URL = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
+
+#: 理解模型白名单（**不许前端传任意 model 名** —— 直通方舟等于把计费口子开给浏览器）。
+MODELS = {
+    "lite": "doubao-seed-2-1-lite-260915",
+    "pro": "doubao-seed-2-1-pro-260915",
+    "deepseek": "deepseek-v4-1-flash-261017",
+}
+DEFAULT_MODEL = "pro"
+
+MAX_TEXT = 20000
+
+#: 用途 → 给模型看的说明。用的是顾客能懂的中文 + 官方英文原值，
+#: 让模型既知道"这是干什么的"，也对得上 `base-en` 里的官方句式。
+ROLE_DESC = {
+    "first_frame": "first_frame，作为片子的第一帧",
+    "last_frame": "last_frame，作为片子的最后一帧",
+    "reference_image": "reference_image，只当人/风格/场景的参考",
+    "reference_video": "reference_video，参考它的动作/镜头/节奏",
+    "reference_audio": "reference_audio，参考它的音色/配乐/音效",
+}
+
+
+def user_message(text: str, *, duration: float, assets: list[dict],
+                 ratio: str = "", hint: str = "") -> str:
+    """顾客的稿 + 素材清单 + 片长画幅 + 上一轮的判红理由。"""
+    parts = [f"【目标片长】{duration:g} 秒", f"【提示词总长硬上限】{MAX_CHARS} 字符"]
+    if ratio:
+        parts.append(f"【画幅】{ratio}")
+    if assets:
+        # 🩸 必须写清用途：同一张图当 `first_frame` 和当 `reference_image`，
+        # 官方是**两种完全不同的模式**（`h3-create:212-214` 还规定二者不可混用）。
+        # 只给标签不说用途，模型会按参考图写，首帧那边就全错。
+        lines = [f"{a['label']} —— {a.get('role_desc') or a.get('role') or '用途未说明'}"
+                 f"；{a.get('note') or '（顾客没写是什么）'}" for a in assets]
+        parts.append("【顾客真实上传的素材（只能用这些标签）】\n" + "\n".join(lines))
+    else:
+        parts.append("【素材】无（走文生视频，不要出现任何参考标签）")
+    parts.append("【顾客提供的原文】\n" + text.strip())
+    if hint.strip():
+        parts.append("【上一轮被判红的地方 —— 逐条改掉再交】\n" + hint.strip())
+    return "\n\n".join(parts)
+
+
+def guess_kind(prompt: str) -> str:
+    """现成提示词是哪种格式：有 `subject_definitions` 就是六段式，否则三字段。
+
+    纯规则零费用 —— 决定修订时喂哪份官方 reference。
+    """
+    return "ref" if "subject_definitions" in (prompt or "") else "base"
+
+
+def _post(body: dict, key: str) -> str:
+    """一次方舟 chat/completions。所有链路共用，别各写一份 HTTP。"""
+    with httpx.Client(timeout=300) as c:
+        r = c.post(CHAT_URL, json=body, headers={
+            "Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+    if r.status_code >= 400:
+        raise DirectError(f"生成接口 {r.status_code}：{r.text[:200]}")
+    try:
+        return (r.json()["choices"][0]["message"]["content"] or "").strip()
+    except Exception as e:                                  # noqa: BLE001
+        raise DirectError(f"生成响应结构异常：{e}") from e
+
+
+def _body(model: str, messages: list[dict]) -> dict:
+    return {
+        "model": MODELS.get(model) or MODELS[DEFAULT_MODEL],
+        "messages": messages,
+        "temperature": 0.2,
+        # 🩸 2026-10-30 主人：「是不是没给思考？直接按标准输出了？」
+        # 对。`thinking: disabled` 是从**拆槽**那一步抄来的（填 JSON 简单，关了快 13 倍）。
+        # 但这一环是**写一份 7000 字符的完整提示词**，关掉思考等于不推理直接吐 ——
+        # 实测第一轮六段结构散（E1/E2/E8 红）、字数在 7681 / 8755 之间乱跳。
+        "thinking": {"type": "enabled"},
+    }
+
+
+def _chat(sys_msg: str, user_msg: str, *, model: str, key: str,
+          images: list[str] | None = None) -> str:
+    """`images` 是 data URI 列表（`data:image/jpeg;base64,…`），走方舟的多模态 content。"""
+    content: object = user_msg
+    if images:
+        content = [{"type": "text", "text": user_msg}]
+        content += [{"type": "image_url", "image_url": {"url": u}} for u in images]
+    return _post(_body(model, [{"role": "system", "content": sys_msg},
+                               {"role": "user", "content": content}]), key)
+
+
+def _strip_fence(s: str) -> str:
+    t = (s or "").strip()
+    if t.startswith("```"):
+        t = t.split("\n", 1)[1] if "\n" in t else ""
+        if t.rstrip().endswith("```"):
+            t = t.rstrip()[:-3]
+    return t.strip()
+
+
+def generate(text: str, *, kind: str, duration: float, assets: list[dict],
+             ratio: str = "", model: str = "", judge=None,
+             attempts: int = 2, chat=None) -> dict:
+    """模型按官方 skill 直出成品提示词；`judge(prompt) -> [(编号, 名称, 出处, 说明)]` 判红回灌。
+
+    `kind` = base（三字段）/ ref（六段式），由 `h3_convert_route` 判出来。
+    `chat` 可注入桩函数（测试用，零花费）；不传就走方舟（**会花钱**）。
+    """
+    from app.core.config import settings
+
+    src = (text or "").strip()
+    if not src:
+        raise DirectError("原稿是空的")
+    if len(src) > MAX_TEXT:
+        raise DirectError(f"原稿 {len(src)} 字，超过上限 {MAX_TEXT} 字")
+
+    key = (settings.ark_api_key or "").strip()
+    if not key and chat is None:
+        raise DirectError("方舟未配置：请设置 VT_ARK_API_KEY")
+
+    sys_msg = h3_official.system_prompt(kind, (
+        "## 本产品的交付形态\n"
+        "**直接交成品提示词**，不要 JSON、不要解释、不要 Markdown 代码块以外的任何包装。\n"
+        "保真护栏（顾客粘的是现成稿时适用）：镜头数、镜头顺序、镜头内容、台词原话、"
+        "画面内文字，一条都不许增删或翻译；原稿没写的不许补，没写幅度/速度就不写。"
+    ))
+
+    hint = ""
+    tries: list[dict] = []
+    for n in range(1, max(1, attempts) + 1):
+        msg = user_message(src, duration=duration, assets=assets, ratio=ratio, hint=hint)
+        raw = chat(sys_msg, msg) if chat else _chat(sys_msg, msg, model=model, key=key)
+        prompt = _strip_fence(raw)
+
+        problems: list = []
+        if not prompt:
+            problems = [("空", "模型交回了空内容", "", "")]
+        elif len(prompt) > MAX_CHARS:
+            problems = [("长", f"总长 {len(prompt)} 字符，超过官方上限 {MAX_CHARS}",
+                         "h3-create:407", "必须压到上限以内")]
+        elif judge is not None:
+            problems = judge(prompt)
+
+        tries.append({"n": n, "chars": len(prompt),
+                      "red": [f"{p[0]} {p[1]}" for p in problems]})
+        if not problems:
+            return {"prompt": prompt, "tries": tries, "hint": hint}
+        if n >= attempts:
+            return {"prompt": prompt, "tries": tries, "hint": hint, "red": problems}
+
+        # 回灌只喂「哪条规矩没过 + 官方出处」，不喂任何创作要求
+        hint = "\n".join(
+            f"- [{rid}] {name}（官方出处 {src_}）：{why}"
+            for rid, name, src_, why in problems)
+
+    raise DirectError("生成没能完成")
+
+
+# ---------------------------------------------------------------- 修订（出了片，改几处）
+#
+# 🩸 2026-10-30 主人：「今天说的产出的视频效果不理想，切图回来反馈让他修改部分提示词。
+# 你现在这样的输入和操作方式我感觉很落后」——
+# 产品不该是「粘一段稿子进去换一份新的出来」，而该是**闭环**：
+#   出片 → 看效果不对 → 切图回来 → 只说哪不对 → 只改那几处。
+# 模型本来就能读图（`settings.vision_model`），这条路口一直是通的。
+
+REVISE_GUARD = (
+    "## 本产品的修订规则（**这是修订，不是重写**）\n"
+    "顾客已经有一份能用的 H3 提示词，片子也出来了，只是有几处不对。他会给你截图和一句话说明。\n"
+    "A. **先看图**，看清顾客说的是哪一个镜头、哪一处；图里能对上的细节以图为准；\n"
+    "B. **只改反馈指出的地方**。没被指出来的镜头、台词、画面内文字、段落顺序，"
+    "一个字都不许动 —— 逐字保留；\n"
+    "C. 输出**完整的新提示词**（不是 diff、不是说明），顾客要能直接拿去用；\n"
+    "D. 不要顺手优化别的地方，不要补顾客没说的内容；\n"
+    "E. 改完如果字数变了，仍要守住官方总长上限。"
+)
+
+
+def revise(prompt: str, feedback: str, *, images: list[str],
+           kind: str = "", duration: float = 5.0, model: str = "",
+           judge=None, attempts: int = 2, chat=None) -> dict:
+    """现有提示词 + 截图 + 一句话反馈 → 只改那几处的新提示词。
+
+    `images` 是 data URI 列表。`chat` 可注入桩（零费用测试）。
+    """
+    from app.core.config import settings
+
+    src = (prompt or "").strip()
+    fb = (feedback or "").strip()
+    if not src:
+        raise DirectError("要修订的提示词是空的")
+    if not fb and not images:
+        raise DirectError("请说明哪里不对，或者传一张出了问题的截图")
+    if len(src) > MAX_TEXT:
+        raise DirectError(f"提示词 {len(src)} 字，超过上限 {MAX_TEXT} 字")
+
+    key = (settings.ark_api_key or "").strip()
+    if not key and chat is None:
+        raise DirectError("方舟未配置：请设置 VT_ARK_API_KEY")
+
+    k = kind or guess_kind(src)
+    sys_msg = h3_official.system_prompt(k, REVISE_GUARD)
+
+    msg = (f"【目标片长】{duration:g} 秒\n\n"
+           f"【现有提示词（完整）】\n{src}\n\n"
+           f"【顾客的反馈】\n{fb or '（顾客只给了截图，没说文字）'}")
+    if images:
+        msg += f"\n\n【出问题的画面截图】共 {len(images)} 张，见下。"
+
+    hint = ""
+    tries: list[dict] = []
+    for n in range(1, max(1, attempts) + 1):
+        use = msg + (f"\n\n【上一轮被判红的地方 —— 逐条改掉再交】\n{hint}" if hint else "")
+        raw = (chat(sys_msg, use, images=images) if chat
+               else _chat(sys_msg, use, model=model, key=key, images=images))
+        out = _strip_fence(raw)
+
+        problems: list = []
+        if not out:
+            problems = [("空", "模型交回了空内容", "", "")]
+        elif len(out) > MAX_CHARS:
+            problems = [("长", f"总长 {len(out)} 字符，超过官方上限 {MAX_CHARS}",
+                         "h3-create:407", "必须压到上限以内")]
+        elif judge is not None:
+            problems = judge(out)
+
+        tries.append({"n": n, "chars": len(out),
+                      "red": [f"{p[0]} {p[1]}" for p in problems]})
+        if not problems:
+            return {"prompt": out, "tries": tries, "kind": k}
+        if n >= attempts:
+            return {"prompt": out, "tries": tries, "kind": k, "red": problems}
+
+        hint = "\n".join(
+            f"- [{rid}] {name}（官方出处 {src_}）：{why}"
+            for rid, name, src_, why in problems)
+
+    raise DirectError("修订没能完成")
+

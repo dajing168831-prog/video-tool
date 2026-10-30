@@ -1,0 +1,462 @@
+# 来源：C:\tmp\video-tool\backend\scripts\test_h3_base_slots.py
+# 删除原因：被测对象 h3_base_slots 已删
+
+# -*- coding: utf-8 -*-
+"""H3 创作模式「拆槽层」的纯逻辑自检（**不发网络请求、不花钱**）。
+
+被测对象：`app/services/h3_base_slots.py` —— 把顾客的话变成编译器认的 spec。
+这里全部用**桩模型**（返回写死的 JSON），所以只验证「拆槽层自己的规矩」：
+
+  · 模型给了越界值 → 收口（丢掉/夹紧）并如实报出来，不猜、不静默
+  · 顾客的原话 → 数字与引号里的招牌文字一个不许丢
+  · 切点 → 缺的均分、乱的调正、超时长的报出来（官方 `base-en:86`）
+  · 最终产出 → 过 `ruler_h3_base` 的 22 条判据，红 0
+
+🩸 为什么必须跑尺子：拆槽层绿了不代表提示词能用。只测"函数返回了 dict"
+等于自己给自己发合格证 —— 终点是**尺子不红**。
+
+运行：python scripts/test_h3_base_slots.py --model h3
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+import _model_lock  # noqa: E402
+
+RESULT: list[tuple[bool, str, str]] = []
+
+
+def ok(name: str, detail: str = "") -> None:
+    RESULT.append((True, name, detail))
+
+
+def bad(name: str, detail: str) -> None:
+    RESULT.append((False, name, detail))
+
+
+def expect(cond: bool, name: str, detail: str = "") -> bool:
+    (ok if cond else bad)(name, "" if cond else detail)
+    return cond
+
+
+def stub(payload):
+    """桩模型：不管问什么都返回同一份 JSON（零花费）。"""
+    def _chat(sys_msg: str, user_msg: str) -> dict:
+        _chat.seen.append((sys_msg, user_msg))
+        return payload
+    _chat.seen = []
+    return _chat
+
+
+def run(name: str, fn) -> None:
+    try:
+        fn()
+    except Exception as e:                                   # noqa: BLE001
+        bad(name, f"抛异常：{type(e).__name__}: {e}")
+
+
+# ================================================================ 1 收口
+def t_camera_illegal() -> None:
+    from app.services import h3_base_slots as S
+    spec, warn = S.to_spec(
+        {"style": "Live-action", "shots": [{"body": "A woman walks.",
+                                            "camera_type": "dolly zoom"}],
+         "soundscape": "Wind.", "music": ""},
+        kind="rewrite", duration=5.0, ratio="16:9", has_image=False)
+    expect("camera" not in spec["shots"][0], "1a 非法运镜被丢掉",
+           f"仍留在 spec 里：{spec['shots'][0].get('camera')}")
+    expect(any("不在官方闭集" in w for w in warn), "1b 非法运镜有告警",
+           f"warn={warn}")
+
+
+def t_amp_speed_illegal() -> None:
+    from app.services import h3_base_slots as S
+    spec, warn = S.to_spec(
+        {"style": "Live-action",
+         "shots": [{"body": "A woman walks.", "camera_type": "Push In",
+                    "camera_amplitude": "medium", "camera_speed": "quick",
+                    "camera_target": "her face"}],
+         "soundscape": "Wind.", "music": ""},
+        kind="rewrite", duration=5.0, ratio="16:9", has_image=False)
+    cam = spec["shots"][0]["camera"]
+    expect(cam == {"type": "Push In", "target": "her face"},
+           "2a 越界幅度/速度被丢掉、合法项保留", f"cam={cam}")
+    expect(sum("不在官方的" in w for w in warn) == 2, "2b 两条越界各报一次",
+           f"warn={warn}")
+
+
+def t_camera_legal() -> None:
+    from app.services import h3_base_slots as S
+    from app.services.models import h3_base_compile as H
+    spec, _ = S.to_spec(
+        {"style": "Live-action", "shots": [{"body": "A woman walks.",
+                                            "camera_type": "Arc Shot",
+                                            "camera_amplitude": "large",
+                                            "camera_speed": "slow"}],
+         "soundscape": "Wind.", "music": ""},
+        kind="rewrite", duration=5.0, ratio="16:9", has_image=False)
+    p = H.compile(spec)["text"]
+    expect("The camera arcs" in p or "arc" in p.lower(), "3a 合法运镜写进正文",
+           p[:200])
+
+
+def t_too_many_shots() -> None:
+    from app.services import h3_base_slots as S
+    shots = [{"body": f"Scene {i}."} for i in range(8)]
+    spec, warn = S.to_spec({"style": "Live-action", "shots": shots,
+                            "soundscape": "Wind.", "music": ""},
+                           kind="rewrite", duration=15.0, ratio="16:9",
+                           has_image=False)
+    expect(len(spec["shots"]) == S.MAX_SHOTS, "4a 超上限截断到 6 镜",
+           f"实际 {len(spec['shots'])}")
+    expect(any("超过上限" in w for w in warn), "4b 截断有告警", f"warn={warn}")
+
+
+def t_empty_shots() -> None:
+    from app.services import h3_base_slots as S
+    for payload, name in (({"shots": []}, "5a 空镜头列表"),
+                          ({"shots": [{"body": "  "}]}, "5b 全是空正文"),
+                          ("not-a-dict", "5c 不是 JSON 对象")):
+        try:
+            S.to_spec(payload, kind="rewrite", duration=5.0, ratio="16:9",
+                      has_image=False)
+        except S.SlotError:
+            ok(name + " → 报错")
+        else:
+            bad(name + " → 报错", "没有报错，被当成合法输入放行")
+
+
+# ================================================================ 2 时间
+def t_cut_auto() -> None:
+    from app.services import h3_base_slots as S
+    spec, warn = S.to_spec(
+        {"style": "Live-action",
+         "shots": [{"body": "Shot one."}, {"body": "Shot two."},
+                   {"body": "Shot three."}],
+         "soundscape": "Wind.", "music": ""},
+        kind="rewrite", duration=15.0, ratio="16:9", has_image=False)
+    cuts = [sh.get("cut") for sh in spec["shots"][1:]]
+    expect(cuts == [5.0, 10.0], "6a 缺切点按镜头数均分", f"实际 {cuts}")
+    expect(sum("均分" in w for w in warn) == 2, "6b 每个缺的切点都报出来",
+           f"warn={warn}")
+
+
+def t_cut_order() -> None:
+    from app.services import h3_base_slots as S
+    spec, warn = S.to_spec(
+        {"style": "Live-action",
+         "shots": [{"body": "Shot one."}, {"body": "Shot two.", "cut_sec": 4.0},
+                   {"body": "Shot three.", "cut_sec": 2.0}],
+         "soundscape": "Wind.", "music": ""},
+        kind="rewrite", duration=15.0, ratio="16:9", has_image=False)
+    cuts = [sh["cut"] for sh in spec["shots"][1:]]
+    expect(cuts == sorted(cuts) and len(set(cuts)) == len(cuts),
+           "7a 乱序切点被调成严格递增", f"实际 {cuts}")
+    expect(any("不是递增" in w for w in warn), "7b 调正有告警", f"warn={warn}")
+
+
+def t_cut_over() -> None:
+    from app.services import h3_base_slots as S
+    _, warn = S.to_spec(
+        {"style": "Live-action",
+         "shots": [{"body": "Shot one."}, {"body": "Shot two.", "cut_sec": 9.0}],
+         "soundscape": "Wind.", "music": ""},
+        kind="rewrite", duration=5.0, ratio="16:9", has_image=False)
+    expect(any("超过时长" in w for w in warn), "8a 切点超出时长要报",
+           f"warn={warn}")
+
+
+# ================================================================ 3 保真
+def t_keep_number() -> None:
+    from app.services import h3_base_slots as S
+    miss = S.check_preserved(
+        "画面里有 3 个人，桌上有一只 1980 年的手表",
+        {"shots": [{"body": "Three people stand in a room."}],
+         "style": "", "soundscape": "", "music": ""})
+    expect(len(miss) == 2, "9a 内容数字丢了要报出来（3 人 / 1980）",
+           f"miss={miss}")
+    miss2 = S.check_preserved("画面里有 3 个人",
+                              {"shots": [{"body": "3 people stand."}]})
+    expect(not miss2, "9b 数字保留时不报", f"miss={miss2}")
+
+
+def t_keep_sign() -> None:
+    from app.services import h3_base_slots as S
+    miss = S.check_preserved(
+        "招牌上写着「OPEN 24H」", {"shots": [{"body": 'A shopfront.'}]})
+    expect(any("OPEN 24H" in m for m in miss), "10a 招牌文字丢了要报",
+           f"miss={miss}")
+    miss2 = S.check_preserved(
+        "招牌上写着「OPEN 24H」",
+        {"shots": [{"body": 'A shopfront with "OPEN 24H" on the sign.'}]})
+    expect(not miss2, "10b 招牌文字原样保留时不报", f"miss={miss2}")
+
+
+def t_ordinal_noise() -> None:
+    from app.services import h3_base_slots as S
+    miss = S.check_preserved(
+        "第一个镜头拍她，第二个镜头拍街道",
+        {"shots": [{"body": "Shot one: her."},
+                   {"body": "Shot two: the street.", "cut": 2.5}]})
+    expect(not miss, "11  序数（第一个/第二个）不制造噪音", f"miss={miss}")
+
+
+def t_cjk_warning() -> None:
+    from app.services import h3_base_slots as S
+    _, warn = S.to_spec(
+        {"style": "Live-action",
+         "shots": [{"body": "一个女人走进店里。"},
+                   {"body": 'A shopfront with "开业大吉" on the sign.'}],
+         "soundscape": "Wind.", "music": ""},
+        kind="rewrite", duration=10.0, ratio="16:9", has_image=False)
+    hits = [w for w in warn if "汉字" in w]
+    expect(len(hits) == 1, "12a 只有引号外的汉字被报（招牌不报）", f"hits={hits}")
+    expect("第 1 镜" in hits[0] if hits else False, "12b 指出是哪一镜",
+           f"hits={hits}")
+
+
+# ================================================================ 4 台词
+def t_dialogue() -> None:
+    from app.services import h3_base_slots as S
+    spec, _ = S.to_spec(
+        {"style": "Live-action",
+         "shots": [{"body": "A woman looks up.",
+                    "dialogue": [{"who": "Woman", "text": "你回来了"}]}],
+         "soundscape": "Rain.", "music": ""},
+        kind="rewrite", duration=5.0, ratio="16:9", has_image=False)
+    d = spec["shots"][0]["dialogue"][0]
+    expect(d["lang"] == "zh", "13a 中文台词自动判 zh", f"lang={d['lang']}")
+
+
+def t_voiceover() -> None:
+    from app.services import h3_base_slots as S
+    from app.services.models import h3_base_compile as H
+    spec, _ = S.to_spec(
+        {"style": "Live-action",
+         "shots": [{"body": "Empty street.",
+                    "dialogue": [{"who": "Narrator", "lang": "zh",
+                                  "text": "那年冬天", "voiceover": True}]}],
+         "soundscape": "Rain.", "music": ""},
+        kind="rewrite", duration=5.0, ratio="16:9", has_image=False)
+    p = H.compile(spec)["text"]
+    expect("off-screen voiceover" in p and "lips remain completely closed" in p,
+           "14  画外音走官方固定句", p[-300:])
+
+
+# ================================================================ 5 端到端
+def _rules_red(prompt: str, ctx: dict) -> list:
+    import ruler_h3_base as R
+    return [r for r in R.check(prompt, ctx) if r[1] == "红"]
+
+
+def t_e2e_t2va() -> None:
+    from app.services import h3_base_slots as S
+    out = S.extract(
+        "一条雨夜街道，红色的霓虹招牌写着「OPEN」，一个女人撑着黑伞走过",
+        kind="rewrite", duration=5.0, ratio="16:9",
+        chat=stub({"style": "Live-action, cinematic, rainy night",
+                   "shots": [{"body": "A rainy street at night. A woman with a "
+                                      "black umbrella walks past a red neon sign "
+                                      'reading "OPEN".',
+                              "camera_type": "Tracking Shot",
+                              "camera_amplitude": "small",
+                              "camera_speed": "slow",
+                              "camera_target": "the woman"}],
+                   "soundscape": "Steady rain falls on the pavement.",
+                   "music": ""}))
+    red = _rules_red(out["prompt"], {"mode": "t2va"})
+    expect(not red, "15a T2VA 端到端过尺子（红 0）", str(red)[:500])
+    expect('"OPEN"' in out["prompt"], "15b 招牌文字原样进正文",
+           out["prompt"][:400])
+    expect(not any("looked" in w or "找不到" in w for w in out["warnings"]),
+           "15c 保真检查无缺项", str(out["warnings"])[:400])
+
+
+def t_e2e_i2va() -> None:
+    from app.services import h3_base_slots as S
+    out = S.extract(
+        "让画面里的女人抬头笑一下", kind="idea", duration=5.0, ratio="16:9",
+        has_image=True,
+        chat=stub({"style": "Live-action, natural light",
+                   "shots": [{"body": "The woman slowly lifts her head and "
+                                      "smiles at the camera.",
+                              "camera_type": "Push In",
+                              "camera_amplitude": "small",
+                              "camera_speed": "slow",
+                              "camera_target": "her face"}],
+                   "soundscape": "Soft room tone.",
+                   "music": ""}))
+    red = _rules_red(out["prompt"], {"mode": "i2va"})
+    expect(not red, "16a I2VA 端到端过尺子（红 0）", str(red)[:500])
+    expect(out["params"]["ratio"] == "adaptive", "16b I2VA 画幅恒 adaptive",
+           out["params"])
+    expect("is fully referenced" in out["prompt"], "16c I2VA 指令行在",
+           out["prompt"][:200])
+
+
+def t_e2e_multi() -> None:
+    from app.services import h3_base_slots as S
+    out = S.extract(
+        "开头特写她的手，三秒后切到她的脸，她说“我等你很久了”", kind="rewrite",
+        duration=8.0, ratio="16:9",
+        chat=stub({"style": "Live-action, cold color grade",
+                   "shots": [{"body": "A close-up of a woman's hands resting on "
+                                      "a wooden table.",
+                              "camera_type": "Static Shot"},
+                             {"body": "The woman's face as she looks up.",
+                              "camera_type": "Push In",
+                              "camera_amplitude": "small",
+                              "camera_speed": "slow",
+                              "dialogue": [{"who": "Woman", "lang": "zh",
+                                            "text": "我等你很久了"}]}],
+                   "soundscape": "A clock ticks softly.",
+                   "music": "A low sustained cello note."}))
+    red = _rules_red(out["prompt"], {"mode": "t2va"})
+    expect(not red, "17a 多镜+台词 过尺子（红 0）", str(red)[:500])
+    expect(out["spec"]["shots"][1]["cut"] == 4.0, "17b 缺的切点按 2 镜均分 8s",
+           str(out["spec"]["shots"][1].get("cut")))
+    expect("(S1)" in out["prompt"], "17c 说话人编号自动加", out["prompt"][-400:])
+
+
+def t_idea_guard() -> None:
+    from app.services import h3_base_slots as S
+    # 桩模型越权加了一个顾客没说的人物 —— 拆槽层查不出来（那是模型的责任），
+    # 但必须证明「系统提示里确实带着三条护栏」，否则这套护栏根本没发出去。
+    chat = stub({"style": "Live-action", "shots": [{"body": "A man walks."}],
+                 "soundscape": "Wind.", "music": ""})
+    S.extract("一个人在街上走", kind="idea", duration=5.0, chat=chat)
+    sys_msg = chat.seen[0][0]
+    for k in ("一个字都不许改", "不许编剧情", "不许加台词"):
+        expect(k in sys_msg, f"18  护栏「{k}」确实发出去了", sys_msg[:400])
+
+
+def t_user_message() -> None:
+    from app.services import h3_base_slots as S
+    m = S.user_message("测试", kind="rewrite", duration=5.0, has_image=False)
+    missing = [c for c in set(S.CAMERA_PHRASES.values()) if c not in m]
+    expect(not missing, "19a user 消息里带全了 20 个运镜词", f"缺：{missing}")
+    expect("rewrite_existing_prompt" in m, "19b rewrite 任务名正确", m[:120])
+
+
+# ================================================================ 6 入参与配置
+def t_bad_input() -> None:
+    from app.services import h3_base_slots as S
+    for kw, name in (({"text": "  "}, "20a 空输入"),
+                     ({"text": "x", "kind": "weird"}, "20b 未知 kind")):
+        kw = dict(kw)
+        text = kw.pop("text")
+        try:
+            S.extract(text, chat=stub({}), **kw)
+        except S.SlotError:
+            ok(name + " → 报错")
+        else:
+            bad(name + " → 报错", "没报错")
+
+
+def t_no_key_no_network() -> None:
+    """没配 key 时必须**当场报错**，不许静默走网络（桩之外唯一的联网路径）。"""
+    from app.services import h3_base_slots as S
+    from app.core.config import settings
+
+    if not (settings.ark_api_key or "").strip():
+        ok("21a 未配 key → 报错（本机本来就没配，直接验）")
+        return
+    old = settings.ark_api_key
+    try:
+        object.__setattr__(settings, "ark_api_key", "")   # settings 是 frozen 的
+        try:
+            S._default_chat("s", "u")                     # 必须在发请求之前就抛
+        except S.SlotError:
+            ok("21a 未配 key → 报错（没发请求）")
+        else:
+            bad("21a 未配 key → 报错（没发请求）", "居然没报错")
+    finally:
+        object.__setattr__(settings, "ark_api_key", old)
+
+
+def t_ruler_selfprove() -> None:
+    """🩸 尺子自证：上面那几条「过尺子红 0」只有在尺子**会响**时才有意义。
+
+    拿同一份合法产出，故意改坏三处，尺子必须各报一次红；坏样本不响 = 判据是空的。
+    """
+    from app.services.models import h3_base_compile as H
+
+    good = H.compile({"mode": "t2va", "duration": 5.0, "ratio": "16:9",
+                      "style": "Live-action, natural light",
+                      "shots": [{"body": "A woman walks down the street.",
+                                 "camera": {"type": "Push In",
+                                            "amplitude": "small",
+                                            "speed": "slow"}}],
+                      "soundscape": "Wind moves through the trees.",
+                      "music": ""})["text"]
+    expect(not _rules_red(good, {"mode": "t2va"}),
+           "22a 好样本不响", str(_rules_red(good, {"mode": "t2va"}))[:300])
+
+    probes = {
+        "22b 正文中文化 → B3": good.replace("A woman walks down the street.",
+                                            "一个女人走过街道。"),
+        "22c 自造运镜 → B12": good.replace("pushes in", "dollies in"),
+        "22d 删掉 music 字段 → B1": good.split("non_diegetic_music:")[0].rstrip(),
+    }
+    for name, p in probes.items():
+        expect(bool(_rules_red(p, {"mode": "t2va"})), name, "尺子没响（假绿）")
+
+
+def main() -> int:
+    if "--model" not in sys.argv:
+        print("⛔ 必须点名型号：--model h3")
+        return 2
+    i = sys.argv.index("--model")
+    sel = sys.argv[i + 1] if i + 1 < len(sys.argv) else ""
+    if sel != "h3":
+        print("⛔ 本文件只装 H3 的断言（一轮一家模型）：--model h3")
+        return 2
+    _model_lock.guard("h3")
+
+    cases = [
+        ("1 运镜越界", t_camera_illegal),
+        ("2 幅度速度越界", t_amp_speed_illegal),
+        ("3 合法运镜", t_camera_legal),
+        ("4 镜头数上限", t_too_many_shots),
+        ("5 空输入形状", t_empty_shots),
+        ("6 切点均分", t_cut_auto),
+        ("7 切点递增", t_cut_order),
+        ("8 切点超时长", t_cut_over),
+        ("9 数字保真", t_keep_number),
+        ("10 招牌保真", t_keep_sign),
+        ("11 序数不误报", t_ordinal_noise),
+        ("12 汉字告警", t_cjk_warning),
+        ("13 语言识别", t_dialogue),
+        ("14 画外音", t_voiceover),
+        ("15 T2VA 端到端", t_e2e_t2va),
+        ("16 I2VA 端到端", t_e2e_i2va),
+        ("17 多镜端到端", t_e2e_multi),
+        ("18 护栏在场", t_idea_guard),
+        ("19 user 消息", t_user_message),
+        ("20 入参校验", t_bad_input),
+        ("21 未配 key", t_no_key_no_network),
+        ("22 尺子自证", t_ruler_selfprove),
+    ]
+    for name, fn in cases:
+        run(name, fn)
+
+    passed = sum(1 for r in RESULT if r[0])
+    for good, name, detail in RESULT:
+        if good:
+            print(f"  ✅ {name}")
+        else:
+            print(f"  ❌ {name}")
+            if detail:
+                print(f"       {detail}")
+    print()
+    print(f"拆槽层自检：通过 {passed} / {len(RESULT)}，红 {len(RESULT) - passed}")
+    return 0 if passed == len(RESULT) else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

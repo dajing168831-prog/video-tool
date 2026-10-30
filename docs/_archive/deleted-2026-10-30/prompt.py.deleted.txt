@@ -1,0 +1,105 @@
+# 来源：C:\tmp\video-tool\backend\app\api\prompt.py
+# 删除原因：接口 /prompt/optimize 无任何调用方；拆槽方案 2026-10-29 已被推翻
+
+# ======== 第 23-23 行 ========
+from app.services import h3_base_slots as slots
+
+# ======== 第 54-55 行 ========
+#: 总尝试次数（1 次首发 + 1 次带着判红理由重试）。
+MAX_TRIES = 2
+
+# ======== 第 58-69 行 ========
+class OptimizeIn(BaseModel):
+    text: str = Field(..., description="顾客的原话，或一段现成的提示词")
+    kind: str = Field("idea", description="idea=只有想法；rewrite=已有现成提示词")
+    duration: int = Field(5, description="目标片长，官方支持 4–15 秒整数")
+    ratio: str = Field("16:9", description="画幅，见 RATIOS")
+    model: str = Field("", description="lite / pro / deepseek，留空 = lite")
+
+
+def _reds(prompt: str, mode: str) -> list[tuple]:
+    return [r for r in rules.check(prompt, {"mode": mode}) if r[1] == "红"]
+
+
+
+# ======== 第 70-122 行 ========
+def _optimize(body: OptimizeIn) -> dict:
+    """同步实现（在 thread 里跑，不占事件循环）。"""
+    text = (body.text or "").strip()
+    if not text:
+        raise slots.SlotError("输入是空的")
+    if len(text) > MAX_TEXT:
+        raise slots.SlotError(f"输入 {len(text)} 字，超过上限 {MAX_TEXT} 字")
+
+    tries: list[dict] = []
+    hint = ""
+    out: dict | None = None
+    red: list = []
+    mid = MODELS.get(body.model or DEFAULT_MODEL) or MODELS[DEFAULT_MODEL]
+
+    # 官方 `h3-api`：duration 取 4–15 的整数。越界不报 422（前端只会看到"服务异常"），
+    # 夹到边界并**如实说明**，顾客才知道自己填的没被采纳。
+    dur = int(body.duration)
+    clamp_note = ""
+    if dur < DUR_MIN or dur > DUR_MAX:
+        fixed = max(DUR_MIN, min(DUR_MAX, dur))
+        clamp_note = f"片长 {dur} 秒超出官方范围，已按 {fixed} 秒生成"
+        dur = fixed
+
+    for n in range(1, MAX_TRIES + 1):
+        out = slots.extract(text, kind=body.kind, duration=float(dur),
+                            ratio=body.ratio, model=mid, hint=hint)
+        red = _reds(out["prompt"], out["spec"]["mode"])
+        tries.append({"n": n, "red": [f"{r[0]} {r[2]}" for r in red],
+                      "chars": len(out["prompt"])})
+        if not red:
+            break
+        # 把上一轮被判红的条目回灌 —— 只喂"哪条规矩没过"，不喂任何创作要求
+        hint = ("上一轮产出被以下判据判红，请严格按官方写法修正后重新输出完整 JSON：\n"
+                + "\n".join(f"- [{r[0]}] {r[2]}：{'；'.join(r[4])}" for r in red))
+
+    assert out is not None
+    yellow = [r[0] for r in rules.check(out["prompt"],
+                                        {"mode": out["spec"]["mode"]}) if r[1] == "黄"]
+    return {
+        "prompt": out["prompt"],
+        "mode": out["spec"]["mode"],
+        "params": out["params"],
+        "spec": out["spec"],
+        "warnings": ([clamp_note] if clamp_note else []) + out["warnings"],
+        "duration": dur,
+        "rules": len(rules.RULES),
+        "red": [f"{r[0]} {r[2]}：{'；'.join(r[4])}" for r in red],
+        "yellow": yellow,
+        "tries": len(tries),
+        "history": tries,
+        "model": mid,
+    }
+
+
+# ======== 第 629-9999 行 ========
+
+@router.post("/prompt/optimize")
+async def optimize(body: OptimizeIn):
+    if body.kind not in KINDS:
+        return fail(f"kind 只认 {KINDS}")
+    if body.ratio not in hbc.RATIOS:
+        return fail(f"画幅只认 {hbc.RATIOS}")
+    if body.model and body.model not in MODELS:
+        return fail(f"模型只认 {tuple(MODELS)}")
+    if not (settings.ark_api_key or "").strip():
+        return fail("方舟未配置：请设置 VT_ARK_API_KEY")
+
+    try:
+        data = await asyncio.to_thread(_optimize, body)
+    except slots.SlotError as e:
+        return fail(f"提示词优化失败：{e}")
+    except Exception as e:                             # noqa: BLE001
+        log.exception("提示词优化异常")
+        return fail(f"提示词优化异常：{type(e).__name__}: {e}")
+
+    if data["red"]:
+        # 不吞：钱已经花了，把问题说清楚比返回一份废提示词有用
+        return ok(data, biz_code=2,
+                  msg=f"已返回，但仍有一条判据没过：{data['red'][0]}")
+    return ok(data)

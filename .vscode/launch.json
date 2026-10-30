@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "▶ 后端 (uvicorn 8911)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/backend/scripts/debug_server.py",
+      "args": ["8911"],
+      "cwd": "${workspaceFolder}/backend",
+      "python": "D:/venvs/video-tool/Scripts/python.exe",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "subProcess": false,
+      "env": {
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUTF8": "1"
+      }
+    }
+  ]
+}

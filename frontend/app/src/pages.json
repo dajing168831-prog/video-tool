@@ -1,0 +1,61 @@
+{
+  "pages": [
+    {
+      "path": "pages/index/index",
+      "style": { "navigationBarTitleText": "视频工具" }
+    },
+    {
+      "path": "pages/result/result",
+      "style": { "navigationBarTitleText": "解析结果" }
+    },
+    {
+      "path": "pages/clone/index",
+      "style": { "navigationBarTitleText": "复刻爆款" }
+    },
+    {
+      "path": "pages/prompt/index",
+      "style": { "navigationBarTitleText": "提示词优化" }
+    },
+    {
+      "path": "pages/clone/diagnose",
+      "style": { "navigationBarTitleText": "原片结构" }
+    },
+    {
+      "path": "pages/clone/progress",
+      "style": { "navigationBarTitleText": "出片中" }
+    },
+    {
+      "path": "pages/clone/result",
+      "style": {
+        "navigationBarTitleText": "复刻成片",
+        "navigationBarBackgroundColor": "#0f1115",
+        "navigationBarTextStyle": "white"
+      }
+    },
+    {
+      "path": "pages/history/history",
+      "style": { "navigationBarTitleText": "历史" }
+    },
+    {
+      "path": "pages/mine/mine",
+      "style": { "navigationBarTitleText": "我的" }
+    }
+  ],
+  "tabBar": {
+    "color": "#9aa0a6",
+    "selectedColor": "#4F7CFF",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "white",
+    "list": [
+      { "pagePath": "pages/index/index", "text": "解析" },
+      { "pagePath": "pages/history/history", "text": "历史" },
+      { "pagePath": "pages/mine/mine", "text": "我的" }
+    ]
+  },
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "视频工具",
+    "navigationBarBackgroundColor": "#ffffff",
+    "backgroundColor": "#f6f7fb"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "app/services/models/volc20_compile.py::# 2.5 明令禁止自动加这类通用负向约束（sd25-pe 原则 8 点名「分身」），所以只挂 2.0。": "否定说明：2.5 禁止自动加负向约束，所以这条兜底只给 2.0 —— 引用是为了说明「别搬」",
+  "app/services/models/volc20_compile.py::# 🩸 这是 2.0 的标记法，和 H3 的 `<d>[Chinese] …</d>`（`ref-en:220`）**不是一套**，": "否定说明：2.0 的说话人标记与 H3 的 <d> 不是一套，引用是为了防止混用",
+  "app/services/models/volc20_compile.py::#   2.5  sd25-pe「编辑@视频1，只把<…>替换为<…>」": "对比说明：2.5 的编辑句式与 2.0 不同，写在这里是为了说明 2.0 为什么不用它",
+  "app/services/models/volc20_compile.py::# `sd25-pe:142`（2.5 要求逐条写明每个音频的用途）—— 那是 2.5 的规矩。": "撤回说明：这句音轨句原本依据 2.5 的 :142，2026-10-26 已删除，注释留证",
+  "app/services/models/volc20_compile.py::#    sd25-pe 原则 8：不得自动添加用户未要求的画质包/稳定包/水印/Logo/字幕/分身": "否定说明：2.5 原则 8 禁止自动加画质包/稳定包，用于说明 2.0 才挂",
+  "app/services/models/volc20_compile.py::# 动作轨迹、遮挡关系和事件顺序」这句 —— 它的出处是 **2.5** 的 `sd25-pe:564`": "撤回说明：母版句出处是 2.5 的 :564，2026-10-26 已从 2.0 删除，注释留证",
+  "app/services/models/volc25.py::🩸 2.0 **不走这里**：2.0 的延长句式是 `seedance-20-guide` 那一套，别混。": "否定说明：2.5 不走 2.0 的延长句式，提醒别混",
+  "app/services/models/volc25_compile.py::2.0 的一段式（`sd2-pe:118`）与 2.5 的五段模板（`sd25-pe`）结构相反，": "对比说明：2.0 一段式与 2.5 五段模板结构相反，用于说明 2.5 为什么用五段",
+  "app/services/models/volc25_compile.py::🩸 出处只在 2.5：`sd2-pe` / `seedance-20-guide` / `volc-create` 里": "（待补理由：为什么必须引用别家）",
+  "app/services/models/volc25_compile.py::🩸 **2.5 和 2.0 的结构是相反的**：2.0 `sd2-pe:118` 明令编辑任务": "对比说明：同上，强调两家结构相反",
+  "app/services/models/h3_compile.py::# 🩸 2026-10-26 清掉的死分支：这里曾按 2.0 的 `sd2-pe:139`": "墓碑说明：H3 曾按 2.0 的 :139 写过两图分工，2026-10-26 已删，注释留证"
+}

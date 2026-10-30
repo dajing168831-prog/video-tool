@@ -1,0 +1,312 @@
+# -*- coding: utf-8 -*-
+"""顾客想法 → Seedance 2.0 提示词成品：模型按 2.0 官方 skill 直出。
+
+🩸 与 `h3_direct` **平级并列，互不 import**（2026-10-30 主人：「所有模型没有默认和
+更强，都是平级处理」）。两家共用的只有产品自己的东西：`<<<ASK>>>` / `<<<PROMPT>>>`
+这对标记、对话历史的清洗、重试机制 —— 那都是我们产品的协议，不是模型的规则。
+**规则一条都不共用**，因为两家官方口径在关键处相反：
+
+| | H3 | Seedance 2.0 |
+|---|---|---|
+| 语言 | 英文 | 中文 |
+| 时间 | 必须绝对时间戳 `At 00:03.500…` | **禁止**绝对秒数，用「镜头1/镜头2」 |
+| 台词 | `<d>[English]台词</d>` | `{台词}` |
+| 缺失 | 不许编，必须问 | 八大要素**自动补全 + 透明披露** |
+| 兜底包 | 无此概念 | **必挂**（画质 + 稳定 + 水印/Logo） |
+| 更长 | 能力边界外，不许提分段 | 官方有「延长视频」，可以说 |
+"""
+from __future__ import annotations
+
+import httpx
+
+from app.services import sd20_official
+
+#: 官方建议正文长度（`api-create-task.md:175`）：中文 ≤500 字、英文 ≤1000 词。
+#: 这不是硬上限（官方是「建议」），超了给黄不给红 —— 见 `volc20_pe.v7_length`。
+
+ASK_TAG = "<<<ASK>>>"
+PROMPT_TAG = "<<<PROMPT>>>"
+#: 官方 Step 4 的「优化问题」段落（`sd2-pe:186-190` 要求透明披露）。
+#: 🩸 它是**给顾客看的说明**，不是提示词的一部分 —— 解析时必须拆出去，
+#: 否则顾客一复制就把「我替你定了暖色调」粘进 2.0 的输入框。
+NOTE_TAG = "<<<NOTE>>>"
+
+#: 最多问两轮，第三轮强制出稿（与 H3 同一产品口径）。
+MAX_ASK_ROUNDS = 2
+
+#: 理解模型白名单（**不许前端传任意 model 名** —— 直通方舟等于把计费口子开给浏览器）。
+MODELS = {
+    "lite": "doubao-seed-2-1-lite-260915",
+    "pro": "doubao-seed-2-1-pro-260915",
+    "deepseek": "deepseek-v4-1-flash-261017",
+}
+DEFAULT_MODEL = "pro"
+
+CHAT_URL = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
+
+
+class DirectError(ValueError):
+    """直出失败。消息直接给顾客看，写人话。"""
+
+
+# ---------------------------------------------------------------- HTTP 层
+
+def _post(body: dict, key: str) -> str:
+    with httpx.Client(timeout=300) as c:
+        r = c.post(CHAT_URL, json=body, headers={
+            "Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+    if r.status_code >= 400:
+        raise DirectError(f"生成接口 {r.status_code}：{r.text[:200]}")
+    try:
+        return (r.json()["choices"][0]["message"]["content"] or "").strip()
+    except Exception as e:                                  # noqa: BLE001
+        raise DirectError(f"生成响应结构异常：{e}") from e
+
+
+def _body(model: str, messages: list[dict]) -> dict:
+    return {"model": MODELS.get(model) or MODELS[DEFAULT_MODEL],
+            "messages": messages, "temperature": 0.2,
+            "thinking": {"type": "enabled"}}
+
+
+def _with_images(history: list[dict], images: list[str] | None) -> list[dict]:
+    """把本轮截图挂到**最后一条 user 消息**上（方舟多模态 content 格式）。
+
+    🩸 顾客说「这儿不对」时传的是截图，文字往往只有一个字；图必须跟着
+    那一轮走，不能另起一条消息 —— 否则模型会把它当成新的素材参考。
+    """
+    hist = [dict(m) for m in history]
+    if not images or not hist:
+        return hist
+    last = hist[-1]
+    if last.get("role") != "user":
+        return hist
+    hist[-1] = {
+        "role": "user",
+        "content": ([{"type": "text", "text": last["content"]}]
+                    + [{"type": "image_url", "image_url": {"url": u}} for u in images]),
+    }
+    return hist
+
+
+def _chat_multi(sys_msg: str, history: list[dict], *, model: str, key: str,
+                images: list[str] | None = None) -> str:
+    return _post(_body(model, [{"role": "system", "content": sys_msg}]
+                       + _with_images(history, images)), key)
+
+
+def _strip_fence(text: str) -> str:
+    """模型爱用 ``` 包一层，剥掉；只剥最外层。"""
+    t = (text or "").strip()
+    if t.startswith("```"):
+        t = t.split("\n", 1)[1] if "\n" in t else ""
+        if t.rstrip().endswith("```"):
+            t = t.rstrip()[:-3]
+    return t.strip()
+
+
+def _clean_history(messages: list[dict]) -> list[dict]:
+    """只留 user/assistant 的非空文本，且**从一条 user 开始**。"""
+    out: list[dict] = []
+    for m in messages or []:
+        role = (m or {}).get("role")
+        text = ((m or {}).get("content") or "").strip()
+        if role in ("user", "assistant") and text:
+            out.append({"role": role, "content": text})
+    while out and out[0]["role"] != "user":
+        out.pop(0)
+    return out
+
+
+# ---------------------------------------------------------------- 对话护栏
+
+CHAT_GUARD = """## 你现在做什么
+
+顾客想拍一段视频，用 Seedance 2.0 生成。你的任务是把他的想法写成一份**能直接粘到
+2.0 上用的提示词**。他只说了个大概，剩下的不归他管 —— 归你。
+
+**工作流以上面的官方原文为准**（Step 0 到 Step 4、音频通道、特殊字符、文字生成
+模板全在里面）。下面只写官方没规定、由我们这个产品决定的部分。
+🩸 不要用下面的话去覆盖上面的规则 —— 上面写到的，照上面的办。
+
+## 问，还是写
+
+提问按官方原文办：Step 0 的引导提问、Step 3.1 的四类关键歧义。此外只有片长要问
+（见下）。其余一律不问 —— 运镜、景别、分镜怎么切、环境声、配乐、光线氛围、
+主角长什么样，这些官方 Step 3.2 都交给你自己补。
+
+## 问的规矩
+
+- 一轮最多问 2 个，用正常说话的语气，别列成表单
+- 每个问题底下给 2–3 个具体选项，用 "- " 开头单独成行，顾客能直接点
+- 顾客说"别问了""直接写" → 立刻写，缺的按官方 Step 3.2 补全并在披露里说明
+
+## 两个原件必须顾客给（我们的产品规矩，不是官方规定）
+
+**台词原话**、**画面里出现的字** —— 这两样一个字都不许你编。顾客没给，就不写台词、
+不写画面文字。理由很实在：编出来的台词顾客没说过，出片就是错的。
+
+## 片长
+
+Seedance 2.0 单段 4–15 秒（整数值）。顾客要更长的，官方**有「延长视频」能力**：
+可以说「先出这一段，之后用「向后延长」接着拍」—— 这是 2.0 自己的功能，可以讲。
+但不要把「分段、拼接」说成 2.0 的能力，那是剪辑层面的事。
+
+## 顾客传了图的时候
+
+**先分清这是哪一种**（按对话历史判断，不要一律当成截图）：
+
+- 历史里**还没有**你写出的提示词 → 这是他给的**参考素材**（"这就是我主角"、
+  "场景长这样"）。照图把外貌、服装、光线、场景写准，**不要**说成"哪儿不对"，
+  也不要去改根本不存在的上一稿。
+- 历史里**已经有**你写出的提示词 → 这是**成片截图**，他在指出哪儿不对。这时：
+  - 先认出他上一份提示词，**只改他指出的那几处**，没被指到的句子一个字都不许动
+    —— 他不是要你重写，是要你修那一处。
+  - 他没说哪不对、只给了图，就按图里能看出来的问题改，改完在「优化问题」里
+    说明你动了哪一句，方便他核。
+
+**编号**：顾客这一轮传的附件图按**上传顺序**就是 `@图片1 … @图片N`（这条会写在
+下面的固定条件里）。他在素材面板里另外声明的图片素材，接着往后编。两套不撞号。
+顾客自己给过名字（"这是小美""主角叫阿强"）就用 `<主体1>@图片1（小美）` 这种写法，
+别把名字丢了。
+
+## 你做不到的事（不是客气话，是能力边界）
+
+- 你只写提示词。你不能生成视频，不能说自己"已经出片"，也不能保证效果。
+- 不确定的参数一律不写。片长、画幅、参考编号以顾客实际给的为准，缺就不写，不许估。
+
+## 必须拒的
+
+遇到下面这些，直接说做不到，不绕、不换个说法偷偷做：
+- 用真实存在的具体他人的脸（明星、网红、熟人照片）当主角或换脸对象
+- 色情、暴力、涉及未成年人的性化内容
+- 拿别人的成片逐帧复刻到能认出原作者的程度
+
+拒绝只说一句"这个我做不了"，然后给一个能改的方向，不展开说教。
+
+## 输出格式（只认这三种标记，不要任何别的包装）
+
+要问：
+
+ASK_MARK
+
+（一句人话，底下 2–3 个 "- " 开头的选项）
+
+要写：
+
+PROMPT_MARK
+
+（完整提示词，从第一句开始，不要说明文字、不要分块标题）
+
+写完提示词之后，接着交官方 Step 4 要求的**优化问题**（上面官方原文里叫
+"优化问题"和"相关原则"两块合并成下面两行）：
+
+NOTE_MARK
+
+补全：你替顾客定了哪些（画质包、光影、运镜、场景、兜底约束…），一条一行
+改动：你改了他给的什么、为什么 —— **用人话**，不要写"Asset ID 屏蔽原则""断句防歧义
+原则"这种术语，顾客看不懂。例如「把"参考@视频1"改成了"严格编辑@视频1"，
+不然模型会当成参考任务，不是改片」
+
+NOTE 是给顾客看的说明，**不会进提示词**，顾客复制时也带不走。
+""".replace("ASK_MARK", ASK_TAG).replace("PROMPT_MARK", PROMPT_TAG).replace(
+    "NOTE_MARK", NOTE_TAG)
+
+
+# ---------------------------------------------------------------- 一轮对话
+
+def chat_turn(messages: list[dict], *, duration: float = 0.0,
+              assets: list[dict] | None = None, model: str = "",
+              images: list[str] | None = None,
+              judge=None, attempts: int = 2, chat=None) -> dict:
+    """一轮对话：要么问一句（`action=ask`），要么交一份成品（`action=write`）。
+
+    `chat` 可注入桩（`chat(sys_msg, history)`，零费用测试）。
+    """
+    from app.core.config import settings
+
+    hist = _clean_history(messages)
+    if not hist:
+        raise DirectError("没有收到任何对话内容")
+    if hist[-1]["role"] != "user":
+        raise DirectError("最后一轮不是顾客说的话")
+
+    key = (settings.ark_api_key or "").strip()
+    if not key and chat is None:
+        raise DirectError("方舟未配置：请设置 VT_ARK_API_KEY")
+
+    asked = sum(1 for m in hist if m["role"] == "assistant")
+
+    # 片长：0 = 还没定，交给对话问。选项按工程口径 4 秒起（2026-10-30 主人拍板）。
+    if duration:
+        fixed = [f"目标片长：{duration:g} 秒（2.0 单段 4–15 秒，按这个长度分镜头）"]
+    else:
+        fixed = ["片长还没定 —— 你要问顾客要几秒，选项给：4 / 5 / 6 / 8 / 10 / 15 秒。"
+                 "顾客要更长的，告诉他 2.0 可以先出这一段、之后用「向后延长」接着拍。"]
+    if images:
+        n = len(images)
+        fixed.append(
+            f"顾客这一轮传了 {n} 张图（就挂在这条消息上），按上传顺序就是 "
+            f"@图片1 … @图片{n}。要写参考标签就用这套编号。"
+            "先按「顾客传了图的时候」判断这是参考素材还是成片截图，再动手 —— "
+            "别把第一次传的人物照当成出问题的片子。")
+    if assets:
+        lines = [f"{a['label']} —— {a.get('role_desc') or a.get('role') or '用途未说明'}"
+                 f"；{a.get('note') or '（顾客没写是什么）'}" for a in assets]
+        fixed.append("顾客已经上传的素材（只能用这些标签）：\n" + "\n".join(lines))
+    else:
+        fixed.append("顾客没有任何参考素材，走文生视频，不要出现任何参考标签。")
+    if asked >= MAX_ASK_ROUNDS:
+        fixed.append(f"你已经问过 {asked} 轮了。这一轮**必须直接产出提示词**，"
+                     "缺的信息按官方 Step 3.2 自动补全并披露，不许再问，"
+                     "也不许自己编台词和画面文字。")
+
+    sys_msg = sd20_official.system_prompt(
+        CHAT_GUARD + "\n\n## 本次会话的固定条件\n" + "\n".join(fixed))
+
+    tries: list[dict] = []
+    hint = ""
+    for n in range(1, max(1, attempts) + 1):
+        sm = sys_msg + (f"\n\n## 上一轮的问题 —— 改掉再交\n{hint}" if hint else "")
+        raw = (chat(sm, hist) if chat
+               else _chat_multi(sm, hist, model=model, key=key, images=images))
+        text = _strip_fence(raw)
+        head = text[:120]
+
+        problems: list = []
+        if not text:
+            problems = [("空", "模型交回了空内容", "", "")]
+        elif ASK_TAG in head:
+            q = text.split(ASK_TAG, 1)[1].strip()
+            if asked < MAX_ASK_ROUNDS:
+                tries.append({"n": n, "action": "ask", "chars": len(q)})
+                return {"action": "ask", "question": q, "tries": tries, "asked": asked}
+            problems = [("问", f"已经问满 {MAX_ASK_ROUNDS} 轮，这一轮必须直接写",
+                         "", "不许再问，缺的按官方 Step 3.2 补全并披露")]
+        else:
+            body = text.split(PROMPT_TAG, 1)[1].strip() if PROMPT_TAG in head else text
+            # 🩸 官方 Step 4 的「优化问题」是给顾客看的，**不是提示词的一部分**：
+            # 不拆出去，顾客一复制就把「我替你定了暖色调」粘进 2.0 的输入框。
+            if NOTE_TAG in body:
+                prompt, note = body.split(NOTE_TAG, 1)
+            else:
+                prompt, note = body, ""
+            prompt, note = prompt.strip(), note.strip()
+            if judge is not None:
+                problems = judge(prompt)
+            tries.append({"n": n, "action": "write", "chars": len(prompt),
+                          "red": [f"{p[0]} {p[1]}" for p in problems]})
+            if not problems:
+                return {"action": "write", "prompt": prompt, "note": note,
+                        "tries": tries, "asked": asked}
+            if n >= attempts:
+                return {"action": "write", "prompt": prompt, "note": note,
+                        "tries": tries, "asked": asked, "red": problems}
+
+        if not problems:
+            problems = [("空", "模型既没问也没写", "", "")]
+        hint = "\n".join(
+            f"- [{rid}] {name}（官方出处 {src_}）：{why}"
+            for rid, name, src_, why in problems)
+
+    raise DirectError("模型连续两轮都没交出可用结果，请稍后重试")

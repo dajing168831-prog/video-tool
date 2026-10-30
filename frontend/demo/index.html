@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>视频工具箱</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { overflow-x: hidden; }
+  body {
+    margin: 0; min-height: 100vh; font-family: -apple-system, BlinkMacSystemFont,
+    "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(180deg, #0f1220 0%, #171b2e 100%);
+    color: #e8ecf5; padding: 20px 16px 40px;
+  }
+  .wrap { width: 100%; max-width: 520px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 8px 0 4px; font-weight: 700; }
+  .sub { color: #8b93a7; font-size: 13px; margin-bottom: 20px; }
+  .card {
+    background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08);
+    border-radius: 16px; padding: 16px; margin-bottom: 14px;
+  }
+  textarea {
+    width: 100%; max-width: 100%; min-width: 0; min-height: 96px; resize: vertical;
+    border: none; outline: none; background: transparent; color: #e8ecf5;
+    font-size: 15px; line-height: 1.6; font-family: inherit;
+  }
+  textarea::placeholder { color: #5d6478; }
+  .row { display: flex; gap: 10px; margin-top: 10px; }
+  button {
+    flex: 1; min-width: 0; border: none; border-radius: 12px; padding: 13px 16px;
+    font-size: 15px; font-weight: 600; cursor: pointer; transition: .15s; font-family: inherit;
+  }
+  button:active { transform: scale(.98); }
+  .primary { background: linear-gradient(135deg, #4f7cff, #7a5cff); color: #fff; }
+  .primary:disabled { opacity: .5; cursor: not-allowed; }
+  .ghost { background: rgba(255,255,255,.08); color: #cfd6e6; }
+  .status { font-size: 13px; color: #8b93a7; margin-top: 10px; min-height: 18px; }
+  .status.err { color: #ff7a7a; }
+  .result { display: none; }
+  .result.show { display: block; animation: fade .25s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; } }
+  .meta { display: flex; gap: 12px; }
+  .cover { width: 84px; height: 112px; border-radius: 10px; object-fit: cover; background: #22263a; flex: none; }
+  .meta-text { min-width: 0; }
+  .title { font-size: 15px; line-height: 1.5; margin: 0 0 8px; word-break: break-word; }
+  .tag { display: inline-block; font-size: 12px; color: #9fb0ff; background: rgba(79,124,255,.14);
+         padding: 2px 8px; border-radius: 999px; margin: 0 6px 6px 0; }
+  .kv { font-size: 12px; color: #8b93a7; margin-bottom: 4px; }
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+  .actions button { font-size: 14px; }
+  .hint { font-size: 12px; color: #5d6478; margin-top: 18px; line-height: 1.7; }
+  video { width: 100%; border-radius: 12px; margin-top: 12px; background: #000; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>视频工具箱</h1>
+  <div class="sub">粘贴分享链接，一次拿到无水印视频、文案和音频</div>
+
+  <div class="card">
+    <textarea id="input" placeholder="把抖音 / 快手 / B站 / 小红书的分享链接或整段分享文案粘贴到这里"></textarea>
+    <div class="row">
+      <button class="primary" id="btnParse">解析</button>
+      <button class="ghost" id="btnClear">清空</button>
+    </div>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="card result" id="result">
+    <div class="meta">
+      <img class="cover" id="cover" alt="">
+      <div class="meta-text">
+        <p class="title" id="title"></p>
+        <div id="tags"></div>
+        <div class="kv" id="author"></div>
+        <div class="kv" id="duration"></div>
+      </div>
+    </div>
+    <video id="preview" controls playsinline style="display:none"></video>
+    <div class="actions">
+      <button class="ghost" id="btnVideo">下载视频</button>
+      <button class="ghost" id="btnAudio">提取音频</button>
+      <button class="ghost" id="btnCopy">复制文案</button>
+      <button class="ghost" id="btnCover">下载封面</button>
+    </div>
+  </div>
+
+  <div class="hint">
+    支持：抖音 · 快手 · B站 · 小红书（需登录态）· Twitter<br>
+    解析成功才会消耗次数，失败不扣。
+  </div>
+</div>
+
+<script>
+const API = location.origin.startsWith('http') && !location.origin.includes('127.0.0.1') &&
+            !location.origin.includes('localhost')
+  ? location.origin
+  : 'http://127.0.0.1:8911';
+
+const $ = (id) => document.getElementById(id);
+let current = null;
+
+function setStatus(msg, isErr = false) {
+  const el = $('status');
+  el.textContent = msg || '';
+  el.className = 'status' + (isErr ? ' err' : '');
+}
+
+async function parse() {
+  const text = $('input').value.trim();
+  if (!text) return setStatus('请先粘贴链接', true);
+  const btn = $('btnParse');
+  btn.disabled = true;
+  setStatus('解析中…');
+  const t0 = Date.now();
+  try {
+    const resp = await fetch(API + '/api/parse', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    const body = await resp.json();
+    if (body.code !== 200 || body.biz_code !== 0) {
+      throw new Error(body.msg || '解析失败');
+    }
+    current = body.data;
+    render(current);
+    setStatus('完成，用时 ' + ((Date.now() - t0) / 1000).toFixed(1) + ' 秒');
+  } catch (e) {
+    setStatus(e.message || String(e), true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function render(d) {
+  $('result').classList.add('show');
+  $('cover').src = d.cover || '';
+  $('title').textContent = d.title || '（无标题）';
+  $('tags').innerHTML = (d.tags || []).map(t => `<span class="tag">#${t}</span>`).join('');
+  $('author').textContent = d.author ? '作者：' + d.author : '';
+  $('duration').textContent = d.duration ? '时长：' + Math.round(d.duration) + ' 秒' : '';
+  const v = $('preview');
+  if (d.video_url) {
+    v.style.display = 'block';
+    // 平台直链有防盗链，浏览器直接播放会被拒 —— 统一走后端代理
+    v.src = `${API}/api/file/${d.token}/video`;
+    $('btnVideo').disabled = false;
+    $('btnAudio').disabled = false;
+  } else {
+    v.style.display = 'none';
+    v.src = '';
+    $('btnVideo').disabled = true;
+    $('btnAudio').disabled = true;
+  }
+}
+
+function download(url, filename) {
+  const a = document.createElement('a');
+  a.href = url;
+  if (filename) a.download = filename;
+  a.target = '_blank';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+// 支持 ?text= 或 ?url= 直接带入链接并自动解析（便于分享与调试）
+(function autoFromQuery() {
+  const q = new URLSearchParams(location.search);
+  const preset = q.get('text') || q.get('url');
+  if (preset) {
+    $('input').value = preset;
+    parse();
+  }
+})();
+
+$('btnParse').onclick = parse;
+$('btnClear').onclick = () => {
+  $('input').value = '';
+  $('result').classList.remove('show');
+  setStatus('');
+};
+$('input').addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') parse();
+});
+$('btnVideo').onclick = () => {
+  if (!current) return;
+  setStatus('开始下载视频…');
+  download(`${API}/api/file/${current.token}/video?download=true`,
+           (current.title || 'video') + '.mp4');
+};
+$('btnAudio').onclick = async () => {
+  if (!current) return;
+  setStatus('提取音频中（首次需下载视频，可能需要几秒）…');
+  try {
+    const url = `${API}/api/file/${current.token}/audio?download=true`;
+    download(url, (current.title || 'audio') + '.m4a');
+    setStatus('音频已开始下载');
+  } catch (e) {
+    setStatus('提取失败：' + e.message, true);
+  }
+};
+$('btnCopy').onclick = async () => {
+  if (!current) return;
+  try {
+    await navigator.clipboard.writeText(current.title || '');
+    setStatus('文案已复制');
+  } catch {
+    setStatus('复制失败，请手动选择文本', true);
+  }
+};
+$('btnCover').onclick = () => {
+  if (current && current.cover) download(current.cover, 'cover.jpg');
+};
+</script>
+</body>
+</html>

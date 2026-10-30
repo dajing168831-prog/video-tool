@@ -1,0 +1,48 @@
+{
+  "version": "2.0",
+  "tasks": [
+    {
+      "label": "▶ 启动后端（日志滚在这里）",
+      "detail": "先杀掉占用 8911 的旧进程，再前台启动 uvicorn；日志直接输出到终端，Ctrl+C 停止",
+      "type": "shell",
+      "command": "${workspaceFolder}\\backend\\scripts\\run_backend.bat",
+      "options": { "cwd": "${workspaceFolder}\\backend" },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true,
+        "focus": true,
+        "showReuseMessage": false
+      },
+      "problemMatcher": [],
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "▶ 启动 H5 前端（8920）",
+      "detail": "http://127.0.0.1:8920/",
+      "type": "shell",
+      "command": "D:\\venvs\\video-tool\\Scripts\\python.exe",
+      "args": ["scripts\\serve_h5.py", "8920", "0.0.0.0"],
+      "options": { "cwd": "${workspaceFolder}\\backend" },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true,
+        "showReuseMessage": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "■ 停止后端（释放 8911）",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-Command",
+        "$p = (Get-NetTCPConnection -LocalPort 8911 -State Listen -ErrorAction SilentlyContinue).OwningProcess; if ($p) { Stop-Process -Id $p -Force; Write-Host '[backend] stopped' } else { Write-Host '[backend] not running' }"
+      ],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+      "problemMatcher": []
+    }
+  ]
+}

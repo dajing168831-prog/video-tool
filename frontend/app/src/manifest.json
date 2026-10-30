@@ -1,0 +1,44 @@
+{
+  "name": "视频工具",
+  "appid": "",
+  "description": "视频解析 / 去水印 / 提取文案 / 提取音频",
+  "versionName": "1.0.0",
+  "versionCode": "100",
+  "transformPx": false,
+  "app-plus": {
+    "usingComponents": true,
+    "nvueStyleCompiler": "uni-app",
+    "compilerVersion": 3,
+    "splashscreen": {
+      "alwaysShowBeforeRender": true,
+      "waiting": true,
+      "autoclose": true,
+      "delay": 0
+    },
+    "modules": {},
+    "distribute": {
+      "android": { "permissions": [] },
+      "ios": {},
+      "sdkConfigs": {}
+    }
+  },
+  "quickapp": {},
+  "mp-weixin": {
+    "appid": "touristappid",
+    "setting": { "urlCheck": false, "es6": true, "minified": true },
+    "usingComponents": true,
+    "permission": {
+      "scope.writePhotosAlbum": { "desc": "保存视频或图片到相册" }
+    }
+  },
+  "mp-toutiao": {
+    "appid": "",
+    "setting": { "urlCheck": false, "es6": true, "minified": true },
+    "usingComponents": true
+  },
+  "h5": {
+    "title": "视频工具",
+    "router": { "mode": "hash" }
+  },
+  "vueVersion": "3"
+}

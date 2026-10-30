@@ -1,0 +1,203 @@
+# h3_direct「多轮（先问后写）」—— 2026-10-30 删除前的原样存档
+#
+# 为什么删：接口的 h3 分支改走 h3_skill（agent 自己读官方 skill 包），
+#           这条一次调用 + <<<ASK>>>/<<<PROMPT>>> 文本协议的路再没有调用方。
+# 要回滚：把下面两段贴回 h3_direct.py 对应位置（_chat_multi 放 _chat 之后，
+#         其余放文件末尾）。依赖的 h3_official 仍然 import 着，不用改。
+# 全工程唯一引用方 p18_check.py 的 L 段已同轮删除。
+#
+
+# ======== h3_direct.py 第 132-136 行 ========
+def _chat_multi(sys_msg: str, history: list[dict], *, model: str, key: str) -> str:
+    """多轮：history 已经是 `[{role, content}]`，原样接在 system 后面。"""
+    return _post(_body(model, [{"role": "system", "content": sys_msg}] + history), key)
+
+
+
+# ======== h3_direct.py 第 286-471 行 ========
+# ---------------------------------------------------------------- 多轮（先问后写）
+#
+# 🩸 2026-10-30 主人：「不可能一上来就说提示词，可以是需要短暂交流然后得到自己
+# 想要的东西，然后才开始模型调 skill 去产出提示词。」
+#
+# 官方 `SKILL.md` 的 workflow 本来分两步：判模式 → 读对应 guide 写。
+# 这里补的是它前面那一步：**顾客说不清的时候先问**。
+#
+# 🩸 「该问什么」不另写清单 —— 原文里就分好了：
+#   §4.4 台词是 the actual **user-provided** spoken content → 不能编 → 只能问
+#   §4.5 画面文字 preserve **verbatim**                → 同上
+#   §4.1 T2VA **may add** scene/character/action/sound → 这是模型的活 → 不许问
+# 所以澄清轮也把 guide 全文喂进去，让它照着原文自己分。多喂 15KB（几分钱），
+# 换的是「只有一份真理源」。
+
+ASK_TAG = "<<<ASK>>>"
+PROMPT_TAG = "<<<PROMPT>>>"
+
+#: 最多问几轮。到顶就强制产出，缺的留空，不许模型自己编。
+MAX_ASK_ROUNDS = 2
+
+CHAT_GUARD = """## 你现在做什么
+
+顾客想拍一段视频，用 H3 生成。你的任务是把他的想法变成一份官方格式的 H3 提示词。
+他只说了个大概，剩下的不归他管 —— 归你。
+
+## 每一轮先判断：该问，还是该写
+
+只问三种信息：
+
+1. 顾客心里一定有、而你猜会猜错、猜错整篇要重做 —— **风格**（写实 / 动画 / 3D / 其他）、
+   **主角是谁**、**要多长**（看下方固定条件；已经定了就别再问）。
+2. 官方规定必须由顾客提供的原件 —— **台词原话**（§4.4 "the actual user-provided
+   spoken content"）、**画面里的字**（§4.5 "verbatim"）。这两样**一个字都不许你编**：
+   顾客没给，就不写台词、不写画面文字，绝不能自己拟。
+
+除此之外一律不要问。特别是运镜、景别、分镜怎么切、环境声、配乐、光线氛围 ——
+这些是你按本文件该自己定的（§4.1 明写 T2VA 可以补场景、人物、动作、声音细节），
+拿去问顾客等于把活推给不会答的人。
+
+## 问的规矩
+
+- 一轮最多问 2 个，用正常说话的语气，别列成表单
+- 每个问题底下给 2–3 个具体选项，用 "- " 开头单独成行，顾客能直接点
+- 台词和画面文字例外：不给选项，只问他要原话
+- 顾客说"别问了""直接写" → 立刻写
+
+## 写的时候
+
+完全按本文件的格式：字段名、顺序、时间写法。总长 ≤ 7000 字符。
+正文英文；台词和画面文字保留顾客给的原语言，一字不改。
+
+## 你做不到的事（不是客气话，是能力边界）
+
+- 你只写提示词。你不能生成视频，不能说自己"已经出片"，也不能保证效果。
+- 不确定的参数一律不写。片长、画幅、参考编号以顾客实际给的为准，缺就不写，不许估。
+
+## 必须拒的
+
+遇到下面这些，直接说做不到，不绕、不换个说法偷偷做：
+- 用真实存在的具体他人的脸（明星、网红、熟人照片）当主角或换脸对象
+- 色情、暴力、涉及未成年人的性化内容
+- 拿别人的成片逐帧复刻到能认出原作者的程度
+
+拒绝只说一句"这个我做不了"，然后给一个能改的方向，不展开说教。
+
+## 输出格式（只认这两种，不要任何别的包装）
+
+要问：
+
+ASK_MARK
+
+（一句人话，底下 2–3 个 "- " 开头的选项）
+
+要写：
+
+PROMPT_MARK
+
+（完整提示词，从第一个字段开始，不要说明文字）
+""".replace("ASK_MARK", ASK_TAG).replace("PROMPT_MARK", PROMPT_TAG)
+
+
+def _clean_history(messages: list[dict]) -> list[dict]:
+    """只留 user/assistant 的非空文本，且**从一条 user 开始** ——
+    拦腰切断会切出 assistant 打头，模型会以为自己在自言自语。"""
+    out: list[dict] = []
+    for m in messages or []:
+        role = (m or {}).get("role")
+        text = ((m or {}).get("content") or "").strip()
+        if role in ("user", "assistant") and text:
+            out.append({"role": role, "content": text})
+    while out and out[0]["role"] != "user":
+        out.pop(0)
+    return out
+
+
+def chat_turn(messages: list[dict], *, kind: str = "base", duration: float = 5.0,
+              assets: list[dict] | None = None, model: str = "",
+              judge=None, attempts: int = 2, chat=None) -> dict:
+    """一轮对话：要么问一句（`action=ask`），要么交一份成品（`action=write`）。
+
+    `messages` 是完整历史（前端持有，每轮全量发）。
+    `chat` 可注入桩（`chat(sys_msg, history)`，零费用测试）。
+    """
+    from app.core.config import settings
+
+    hist = _clean_history(messages)
+    if not hist:
+        raise DirectError("没有收到任何对话内容")
+    if hist[-1]["role"] != "user":
+        raise DirectError("最后一轮不是顾客说的话")
+
+    key = (settings.ark_api_key or "").strip()
+    if not key and chat is None:
+        raise DirectError("方舟未配置：请设置 VT_ARK_API_KEY")
+
+    asked = sum(1 for m in hist if m["role"] == "assistant")
+
+    # 🩸 2026-10-30 主人：「这个时间是不是也可以不要了？因为都还没聊清楚项目，
+    # 到出提示词的时候再问一次」。片长从"开口前先定死"改成"聊到该定的时候问"。
+    if duration:
+        fixed = [f"目标片长：{duration:g} 秒（官方 4–15 秒，按这个长度写时间轴）"]
+    else:
+        # 🩸 「更长的可以分段再拼」是**我们自己在复刻项目里做的**（cloneExtend），
+        # 不是 H3 的能力 —— 官方 API 明写「输出时长 4～15 秒，仅支持整数值」，
+        # 三份 skill 文档里也没有任何延长/接续/分段的表述。这里不许替产品许这个诺。
+        fixed = ["片长还没定 —— 你要问顾客要几秒，选项给：4 / 5 / 6 / 8 / 10 / 15 秒。"
+                 "官方单段最长 15 秒。顾客要更长的，只说明「这一段最长 15 秒」，"
+                 "不要提分段、拼接、续写之类的做法 —— 那不是 H3 的能力。"]
+    if assets:
+        # 用途必须带给模型：同一张图当首帧和当参考图是两种模式（h3-create:212-214）
+        lines = [f"{a['label']} —— {a.get('role_desc') or a.get('role') or '用途未说明'}"
+                 f"；{a.get('note') or '（顾客没写是什么）'}" for a in assets]
+        fixed.append("顾客已经上传的素材（只能用这些标签）：\n" + "\n".join(lines))
+    else:
+        fixed.append("顾客没有任何参考素材，走文生视频，不要出现任何参考标签。")
+    if asked >= MAX_ASK_ROUNDS:
+        fixed.append(f"你已经问过 {asked} 轮了。这一轮**必须直接产出提示词**，"
+                     "缺的信息留空，不许再问，也不许自己编台词和画面文字。")
+
+    sys_msg = h3_official.system_prompt(kind, CHAT_GUARD + "\n\n## 本次会话的固定条件\n"
+                                        + "\n".join(fixed))
+
+    tries: list[dict] = []
+    hint = ""
+    for n in range(1, max(1, attempts) + 1):
+        sm = sys_msg + (f"\n\n## 上一轮的问题 —— 改掉再交\n{hint}" if hint else "")
+        raw = (chat(sm, hist) if chat
+               else _chat_multi(sm, hist, model=model, key=key))
+        text = _strip_fence(raw)
+        head = text[:120]
+
+        problems: list = []
+        if not text:
+            problems = [("空", "模型交回了空内容", "", "")]
+        elif ASK_TAG in head:
+            q = text.split(ASK_TAG, 1)[1].strip()
+            if asked < MAX_ASK_ROUNDS:
+                tries.append({"n": n, "action": "ask", "chars": len(q)})
+                return {"action": "ask", "question": q, "tries": tries, "asked": asked}
+            # 问满了还在问 = 不听话，按"必须写"回灌重试
+            problems = [("问", f"已经问满 {MAX_ASK_ROUNDS} 轮，这一轮必须直接写",
+                         "", "不许再问，缺的留空")]
+        else:
+            prompt = text.split(PROMPT_TAG, 1)[1].strip() if PROMPT_TAG in head else text
+            if len(prompt) > MAX_CHARS:
+                problems = [("长", f"总长 {len(prompt)} 字符，超过官方上限 {MAX_CHARS}",
+                             "h3-create:407", "必须压到上限以内")]
+            elif judge is not None:
+                problems = judge(prompt)
+            tries.append({"n": n, "action": "write", "chars": len(prompt),
+                          "red": [f"{p[0]} {p[1]}" for p in problems]})
+            if not problems:
+                return {"action": "write", "prompt": prompt, "tries": tries,
+                        "asked": asked, "kind": kind}
+            if n >= attempts:
+                return {"action": "write", "prompt": prompt, "tries": tries,
+                        "asked": asked, "kind": kind, "red": problems}
+
+        if not problems:
+            problems = [("空", "模型既没问也没写", "", "")]
+        hint = "\n".join(
+            f"- [{rid}] {name}（官方出处 {src_}）：{why}"
+            for rid, name, src_, why in problems)
+
+    raise DirectError("这一轮没能完成")

@@ -1,0 +1,15 @@
+const puppeteer=require('puppeteer-core'),fs=require('fs')
+const sleep=ms=>new Promise(r=>setTimeout(r,ms))
+;(async()=>{
+const DL='D:/tmp/vt-shots/downloads'
+fs.mkdirSync(DL,{recursive:true});for(const f of fs.readdirSync(DL))fs.unlinkSync(DL+'/'+f)
+const b=await puppeteer.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:'new',args:['--no-sandbox']})
+const p=await b.newPage()
+const c=await p.createCDPSession()
+await c.send('Browser.setDownloadBehavior',{behavior:'allow',downloadPath:DL,eventsEnabled:true})
+c.on('Browser.downloadProgress',e=>console.log('[progress]',e.state,e.receivedBytes))
+await p.goto('http://127.0.0.1:5180/',{waitUntil:'networkidle2'})
+await p.evaluate(()=>{const a=document.createElement('a');a.href='/favicon.ico';a.download='fav.ico';document.body.appendChild(a);a.click()})
+await sleep(4000)
+console.log('files:',fs.readdirSync(DL))
+await b.close()})().catch(e=>{console.error('FAIL',e.message);process.exit(1)})

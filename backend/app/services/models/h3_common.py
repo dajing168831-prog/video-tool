@@ -1,0 +1,224 @@
+# -*- coding: utf-8 -*-
+"""H3 的**两种模式共用**的提示词工具（Ref2VA 六段式 与 T2VA/I2VA 创作模式）。
+
+官方 `ref-en:9` 明写：「The basic formats for shots, camera movement, speakers,
+dialogue, and ordinary sound are shared with the Video Prompt Writing Guide
+(T2VA / I2VA / FL2VA / L2VA)」—— 台词写法两种模式**是同一套**。
+
+🩸 为什么单独一个文件（2026-10-29）：
+`model_separation_check` 的跨家引用门把 `h3_base_compile` 当成"另一家"
+（家名从文件名推），于是它 import `h3_compile` 被判红。那条门判得对 ——
+**共用件就该放中立文件，谁也不许认另一家的编译器**。搬法照 `volc_common.py`。
+
+⛔ 本文件**不许** import `models/` 下的任何一家（它是共用件，读了就是串味）。
+依赖只到 stdlib。
+"""
+from __future__ import annotations
+
+import re
+
+
+# 🩸 官方 `ref-en:220/274`、`base-en:129`：对白要写成
+# `<Subject N> (Sx) says, <d>[Language] 原词</d>` —— `<d>` 里**只放语言标签和台词**，
+# 说话人、动作、语气都写在 `<d>` 外面；台词用**原语言原词**，不翻译不改写。
+# 这些台词来自 →（tts/mix）用户填的新文案 /（original）原片 ASR，都是确定文本，
+# 不是我们编的。成片声音是后期贴的音轨，所以模型念错也不出声，只影响嘴型。
+# 🩸 `<d>` 里的语言标签用**英文语言名**（官方示例就是 `[English]`）。表里只放
+# 官方音色表真实存在的语言；查不到时退回 Chinese（不影响 zh，但小语种必须先补表，
+# 否则泰语台词会被标成 `[Chinese]`，模型按中文念泰文）。
+_LANG_TAG = {
+    "zh": "Chinese", "en": "English", "ja": "Japanese", "ko": "Korean",
+    "th": "Thai", "vi": "Vietnamese", "id": "Indonesian", "ms": "Malay",
+    "tl": "Filipino", "es": "Spanish", "mx": "Spanish", "pt": "Portuguese",
+    "ru": "Russian", "ar": "Arabic", "de": "German", "fr": "French",
+    "it": "Italian",
+}
+
+#: 官方模型卡 `h3-readme:78` 逐字：「Supported dialogue languages — **Stable support
+#: for 11 languages**: Arabic, Chinese, English, French, German, Italian, Japanese,
+#: Korean, Portuguese, Russian, and Spanish. **Additional languages are also
+#: supported to varying degrees**」。
+#: 🩸 别再拿平台站那份 40 语言表当口径 —— 那是**语音模型（T2A）**的支持语言
+#:   （`mm-docs:710`）。视频模型自己的说法只有这 11 种「稳定」，其余是
+#:   「不同程度支持」。我们的东南亚主市场（泰/越/印尼/马来/菲）**全在这条线外**。
+_LANG_STABLE = frozenset({
+    "Chinese", "English", "Japanese", "Korean", "Spanish", "Portuguese",
+    "Russian", "Arabic", "German", "French", "Italian",
+})
+
+
+def lang_support(code: str) -> str:
+    """这个语言码在 H3 上的官方支持等级。
+
+    `stable` = 官方点名「稳定支持」；`varying` = 官方只说「不同程度支持」；
+    `unknown` = 我们的表里没有这个码（会回落 `Chinese`）。
+    """
+    name = _LANG_TAG.get((code or "").strip().lower())
+    if not name:
+        return "unknown"
+    return "stable" if name in _LANG_STABLE else "varying"
+
+#: `<d>` 里要换成基本标点的全角符号（官方 `ref-en:274-276`：「Standardize punctuation
+#: to the basic written marks **such as** `,`, `.`, `?`, and `!`；remove … repeated or
+#: decorative punctuation」）。只动标点，**台词用词一个字不动**。
+_D_PUNCT = (("，", ","), ("。", "."), ("？", "?"), ("！", "!"),
+            ("、", ","), ("；", ";"), ("：", ":"), ("…", "."))
+
+#: 台词里**不许出现**的装饰符号 —— 官方 `ref-en:274` 逐字：「remove repeated tildes,
+#: **emoji**, **bullets**, and repeated or decorative punctuation」。
+#: 🩸 只作用于 `<d>` 里面；六段正文是英文，不受影响。
+_EMOJI = re.compile(
+    "[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U00002B00-\U00002BFF"
+    "\U0001F1E6-\U0001F1FF\uFE0F\u200D]")
+#: 项目符号里**不收** `·`（U+00B7）：它是音译人名的分隔号（「克里斯·埃文斯」），
+#: 当装饰删掉会改人名。
+_BULLET = re.compile(r"[•●▪◦‣∙]")
+_TILDE_RUN = re.compile(r"[~～〜]{2,}")
+#: 零宽字符（ZWSP / ZWNJ / ZWJ / BOM）。🩸 官方没有点名这一条 —— 这是**我们的取舍**：
+#: 它不可见、也不可念，留着只会让 TTS 与口型在看不见的地方断开。
+_INVISIBLE = re.compile("[\\u200B-\\u200F\\uFEFF]")
+#: 我们自己的标号语法（`ref-en:220`）。台词里出现 = 用户从提示词里抄回来的**假标号**。
+#: 原样发出去会让 `<d>` 提前闭合（实测「他说</d>完了」→ `<d>` ×1 / `</d>` ×2，
+#: 整段结构就烂了）；假 `<Picture 2>` 还会指着一个不存在的素材。
+_RESERVED_TAG = re.compile(
+    r"</?(?:d|Picture|Video|Audio|Subject|scenetrans|cutoff)\b[^<>]*>")
+
+
+def _h3_line(text: str, who: str, lang: str = "zh", part: str = "",
+             tied_to_audio: bool = False) -> str:
+    """一句台词 → 官方写法。
+
+    `part` 处理跨切与截断（`base-en:142`、`ref-en:221`）：
+      · `"start"` —— 这句话跨过切点，**前半**在这一镜，用 `<scenetrans>` 标连接点
+                     并说明声音跨切连续（官方给的连续性措辞之一）；
+      · `"end"`   —— **后半**在下一镜开头，同样带 `<scenetrans>`，说明承接上一镜；
+      · `"cutoff"`—— 这句被视频结尾截断，用 `<cutoff>`。
+    官方文档只写了规则、**没有给示例**，所以措辞取自它列出的那几句原文
+    （`continues seamlessly across the cut` / `carries over from the previous shot`）。
+    """
+    t = (text or "").strip()
+    if not t:
+        return ""
+    # 🩸 2026-10-28 字符集排查（`D:/tmp/clone_diag/probeH3_charset.py`）：
+    #   官方 `ref-en:274` 同一句还要求「remove repeated tildes, **emoji**, **bullets**,
+    #   and repeated or decorative punctuation」—— 之前只落了"换成基本标点"和"去重复"，
+    #   **emoji / 项目符号 / 波浪号三样原样发了出去**（实测 `太好了🙂我们走` →
+    #   `<d>[Chinese] 太好了🙂我们走.</d>`）。
+    #   台词里还可能抄进我们自己的标号：`他说</d>完了` 编出来是 `<d>`×1 / `</d>`×2，
+    #   `<d>` 提前闭合、整段结构就烂了；假 `<Picture 2>` 还会指向不存在的素材。
+    #   两类一起清 —— **台词用词一个字不动**，只去符号。
+    t = _RESERVED_TAG.sub("", t)
+    t = _EMOJI.sub("", _INVISIBLE.sub("", _BULLET.sub("", _TILDE_RUN.sub("", t))))
+    # 台词是**句内联**（`ref-en:220`：`<Subject N> (S1) says, <d>…</d>`）。换行、制表、
+    # 全角空格会把一条镜头句劈成两行，这里压成单空格。
+    t = re.sub(r"\s+", " ", t).strip()
+    if not t:
+        # 整句只剩装饰符号（例如用户只发了个 emoji）→ 没有可念的内容，丢掉这一句，
+        # 不要发一个空的 `<d>[Chinese] .</d>`。
+        return ""
+    tag = _LANG_TAG.get((lang or "zh").strip().lower(), "Chinese")
+    # 🩸 判不出说话人时（2026-10-25）：
+    #   · 原声复用（`tied_to_audio`）→ 这句词本来就在被复用的 `<Audio 1>` 里，
+    #     按官方写法把声源写回 `<Audio N>`，**不发明 (Sx)** ——
+    #     `ref-en:5.4`「Verbal cues that exist only within a directly reused …
+    #     complete soundtrack use `<Audio N>`… do not invent an additional `(Sx)`」。
+    #     以前这里退回"整段的所有说话人"（`A (S1) and B (S2) says`），
+    #     等于宣称两人同时开口（`base-en:127` 的复合号 `(S1,S2)` 只给**齐声**用）。
+    #   · 新配音 → 没有原轨可挂，只能退回一个单数主语（见 `_minimax` 的 `spk_who`）。
+    # 🩸 官方 `ref-en:266` 两句连着读：`<Subject N>` 指被参考的主体、`(Sx)` 指实际
+    #   说话人；「When the speaker does not correspond to a defined subject, use a
+    #   stable voice description followed by `(Sx)`」。
+    #   以前退回 "the person in <Video 1> (S1)" —— 它**不是已定义主体**（没有定义行），
+    #   又默认这个人在画面里：原片一句画外旁白/内心独白会被写成画内某人开口，
+    #   模型照做就让那个人对口型（手册读者评论区里问的正是这个坑）。
+    #   我们拿不到音色属性（年龄/音高/性别都不可靠），能给出的最小稳定描述就是
+    #   「一个声音」+ 官方 `(Sx)` 编号；它不声称画内，也不冒充某个主体。
+    # 首字母大写：这句永远起一个新句子（`… speaks, <d>…</d>` 直接跟在后一句上）
+    speaker = who or "A voice (S1)"
+    # 🩸 官方 `ref-en:5`（5.4 结尾）：「End complete statements, questions, and
+    # exclamations with `.`, `?`, or `!` respectively **before `</d>`**」，同段还要求
+    # 「用 `. , ? !` 这类基本标点，去掉重复波浪号/emoji/装饰性标点」。
+    # 以前把 ASR 原文原样塞进 `<d>`，没标点的短句出来就是
+    # `<d>[Chinese] 我走了</d>` —— 句末没有标点，两句连着写还粘成一个长句。
+    # 🩸 2026-10-28 实测补漏：以前只在**没标点**时补一个 `.`，中文全角标点原样进
+    #   `<d>`（真实请求 `494b1c28`：「<d>[Chinese] 要去帮忙啊？</d>`）⇒ 尺子 E11 判红。
+    #   官方同段要求「Standardize punctuation to the basic written marks … such as
+    #   `,`, `.`, `?`, and `!`；remove … repeated or decorative punctuation」
+    #   ⇒ 先转基本标点、再去重复，最后按 `. ? !` 收尾。台词**用词一个字不动**。
+    for _fw, _ascii in _D_PUNCT:
+        t = t.replace(_fw, _ascii)
+    # 「repeated … punctuation」也管中文破折号：`——` → `—`（单条保留，句子要用）
+    t = re.sub(r"([,.;:?!—])\1+", r"\1", t)
+    if t[-1] not in ".?!":
+        t = t + "."
+    said = f"<d>[{tag}] {t}</d>"
+    if not who and tied_to_audio:
+        # 声源是 <Audio 1> 本身（上面 docstring 里的官方两条）。跨切/截断的
+        # 连续性措辞照旧，只把"谁说的"换成"哪条音轨里的"。
+        if part == "start":
+            return (f"<Audio 1> contains the line {said}<scenetrans> and the line "
+                    f"continues seamlessly across the cut into the next shot.")
+        if part == "end":
+            return (f"<scenetrans> <Audio 1> contains the line {said} that carries "
+                    f"over from the previous shot.")
+        if part == "cutoff":
+            return (f"<Audio 1> contains the line {said}<cutoff> as the speech is "
+                    f"cut off by the end of the video.")
+        return f"<Audio 1> contains the line {said}, heard exactly as in <Video 1>."
+    if part == "start":
+        return _ucfirst(
+            f"{speaker} says, {said}<scenetrans> and the line continues "
+            f"seamlessly across the cut into the next shot.")
+    if part == "end":
+        return (f"<scenetrans> {speaker} continues the line that carries over "
+                f"from the previous shot, {said}")
+    if part == "cutoff":
+        return _ucfirst(
+            f"{speaker} says, {said}<cutoff> as the speech is cut off by the "
+            f"end of the video.")
+    # 🩸 2026-10-28 亲眼读产出时抓到：说话人不是 `<Subject N>` 而是散文描述
+    #   （"the man in a blue shirt (S2)"）时，这句直接接在上一个句号后面，
+    #   出来是「… as the original. **the** man in a blue shirt (S2) says, …」
+    #   —— 句首小写。`_ucfirst` 早就写在下面（`ref-en` 要求标号大小写完全一致，
+    #   所以不能用 `str.capitalize()`），只是这里一直没调用。
+    return _ucfirst(f"{speaker} says, {said}")
+
+def _ucfirst(text: str) -> str:
+    """只把首字母大写。🩸 不能用 str.capitalize()：它会把后面的 <Subject 1> 压成
+    <subject 1>，而官方 skill 要求标号在所有段落里**完全一致**。"""
+    return text[:1].upper() + text[1:] if text else text
+
+
+# ---------------------------------------------------------------- 两条路共用：格式分类与上限
+#
+# 🩸 2026-10-30：这几样原来长在 `h3_direct` 里，`h3_skill`（agent 那条路）为了拿它们
+#   得反过来 `from app.services import h3_direct` —— **新路靠旧路活着，旧路一删新路就断**。
+#   搬到这个中立件，两条路现在真的互不 import。
+
+#: 官方 `text` 硬上限（`api-create:407`「`text` 最多 7000 个字符」）。
+#: 与 `h3_base.B4` / `h3_ref.E24` 是同一条官方限制，三处要一起改。
+MAX_CHARS = 7000
+
+#: 顾客**粘进来的原稿**上限（产品规矩，不是官方限制）。超过这个量基本是整篇脚本。
+#: 🩸 别和 `prompt.py` 的 `MAX_TEXT`（对话里一次能打多少字）混了 —— 名字原来撞在一起，
+#:   两个数一个是 20000、一个是 4000，看名字根本分不出。
+MAX_SOURCE_CHARS = 20000
+
+#: 素材作用 → 给模型看的说明。用的是顾客能懂的中文 + 官方英文原值，
+#: 让模型既知道"这是干什么的"，也对得上 `base-en` 里的官方句式。
+ROLE_DESC = {
+    "first_frame": "first_frame，作为片子的第一帧",
+    "last_frame": "last_frame，作为片子的最后一帧",
+    "reference_image": "reference_image，只当人/风格/场景的参考",
+    "reference_video": "reference_video，参考它的动作/镜头/节奏",
+    "reference_audio": "reference_audio，参考它的音色/配乐/音效",
+}
+
+
+def guess_kind(prompt: str) -> str:
+    """现成提示词是哪一种：有 `subject_definitions` 就是六段式（`ref`），否则三字段（`base`）。
+
+    纯规则零费用。⚠️ 它认的是**结果的形状**，不代表该走哪条路 ——
+    agent 那条路走哪条由模型读完 SKILL.md 自己定，这里只是回头看它交出来的是什么。
+    """
+    return "ref" if "subject_definitions" in (prompt or "") else "base"

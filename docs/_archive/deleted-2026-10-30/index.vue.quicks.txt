@@ -1,0 +1,59 @@
+# 首页空状态的「三张入口卡」（QUICKS）
+# 删除原因：主人 2026-10-30 下令删除。
+# 恢复：把下面四段贴回 index.vue 对应位置即可。
+
+# ======== 第 1 段 ========
+          <view class="quick">
+            <view v-for="(q, i) in quicks" :key="i" class="quick-item" @click="useQuick(q)">
+              <text class="quick-label">{{ q.label }}</text>
+              <text class="quick-desc">{{ q.desc }}</text>
+            </view>
+          </view>
+
+# ======== 第 2 段 ========
+const QUICKS = [
+  { label: '我只有想法', desc: '一句话也能写成能用的 H3 提示词', tip: '直接把想法写在下面就行' },
+  { label: '我有别家的提示词', desc: '粘进来，只改格式，内容一个不动', tip: '整段粘进输入框' },
+  { label: '片子出来了，有几处不对', desc: '传截图说哪儿不对，只改那几处', tip: '先把你现在用的提示词和截图一起给我' },
+]
+
+
+# ======== 第 3 段 ========
+      quicks: QUICKS,
+
+# ======== 第 4 段 ========
+    useQuick(q) {
+      uni.showToast({ title: q.tip, icon: 'none' })
+      this.taFocus = false
+      this.$nextTick(() => { this.taFocus = true })
+    },
+
+# ======== 第 5 段（样式）========
+.quick {
+  margin-top: 64rpx;
+  text-align: left;
+}
+.quick-item {
+  margin-bottom: 20rpx;
+  padding: 26rpx 28rpx;
+  border-radius: 20rpx;
+  border: 2rpx solid #eceef3;
+  background: #fbfbfd;
+}
+.quick-item:active {
+  background: #f3f5ff;
+  border-color: #d9deff;
+}
+.quick-label {
+  display: block;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #2a2e3a;
+}
+.quick-desc {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 23rpx;
+  color: #9aa0ae;
+}
+

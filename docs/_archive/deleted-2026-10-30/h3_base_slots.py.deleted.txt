@@ -1,0 +1,362 @@
+# 来源：C:\tmp\video-tool\backend\app\services\h3_base_slots.py
+# 删除原因：只服务 /prompt/optimize，该接口删除后无调用方
+
+# -*- coding: utf-8 -*-
+"""把顾客说的话变成 H3 创作模式的**槽位**（Step 3）。
+
+这一层只管「拆槽」，**不写提示词**：官方语法一律由 `models/h3_base_compile.py`
+按 `base-en.txt` 拼。大模型在这里的职责跟 `translate.py` 一样 ——
+**把自由文本结构化，不做创作**。
+
+两种输入（`kind`）：
+
+| kind | 输入 | 口径 |
+|---|---|---|
+| `rewrite` | 顾客粘贴的**一段现成提示词**（豆包写的 / 网上抄的） | **只做结构化和翻译，不添任何内容** |
+| `idea` | 顾客的**一句想法** | 允许补（官方 `base-en:172` 准许），但带三条护栏（见 `_GUARD`） |
+
+🩸 为什么中文必须变成英文：官方 `h3-skill:33`「Write rewrite sections in English」。
+所以中文输入**一定会被翻译** —— 这是格式要求，不是"改写内容"。交付时把原文和结果
+并排放，顾客自己能看到差别。
+
+依赖方向：本文件 → `h3_base_compile`（取运镜闭集）／`translate` 同级的方舟调用姿势。
+**不许**反向引用。
+"""
+from __future__ import annotations
+
+import json
+import logging
+import re
+
+log = logging.getLogger(__name__)
+
+#: 运镜闭集（官方 `base-en:98-111`）—— 从编译器取，不在这里重抄一份。
+from app.services.models.h3_base_compile import CAMERA_PHRASES, camera_type  # noqa: E402
+
+CHAT_URL = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
+
+#: 一次最多拆几镜。官方没规定上限；超过 6 镜的输入多半是"分镜脚本"而不是提示词，
+#: 硬拆会把时长摊薄到每镜不足 1 秒。
+MAX_SHOTS = 6
+
+#: 输入里出现这些语言码才认；认不出按有没有汉字决定（见 `_guess_lang`）。
+KNOWN_LANGS = {"zh", "en", "ja", "ko", "th", "vi", "id", "ms", "tl", "es", "pt",
+               "ru", "ar", "de", "fr", "it"}
+
+_CJK = re.compile(r"[一-鿿]")
+#: 只查「内容型数字」：带量词（3 个人 / 5 元）或两位以上（24 / 1980）。
+#: 「第一个镜头」里的 1 是序数，翻译成英文会变成 first —— 查它只会制造噪音。
+_NUM = re.compile(r"(?<!第)\d+(?:\.\d+)?(?=\s*[个人元秒米岁层块条张件只辆])"
+                  r"|(?<!第)\d{2,}(?:\.\d+)?")
+#: 双引号包住的部分允许保留原文（招牌/霓虹，官方 `base-en:60`）。
+_QUOTED = re.compile(r'"[^"\n]*"|“[^”\n]*”|「[^」\n]*」|『[^』\n]*』')
+
+
+_GUARD = (
+    "1. 顾客给出的具体内容（人物、物体、地点、数字、台词原话）**一个字都不许改、不许增删**；\n"
+    "2. 输入里已经有英文/中文的具体描述，只做**结构化与英文化**，不许换词、不许加形容词；\n"
+    "3. 只有当某一块**完全空白**时才补，且只能补到「能拍」为止（风格、景别、环境声），\n"
+    "   不许编剧情、不许加人物、不许加台词。"
+)
+
+#: 🩸 2026-10-29 主人：「你装在我本地！！！起到的作用和效果是我想要的吗？」
+#: 官方 skill 的 workflow 是「读 references/base-en.txt 照它写」（`SKILL.md:12`）。
+#: 以前这里塞的是我手抄的十几条摘要 —— 产品里的 agent 一次都没读过官方原文。
+#: 现在：system prompt = 官方 SKILL.md 全文 + base-en.txt 全文 + 下面这一层
+#: （这一层只讲**输出形态**和**保真护栏**，不重复官方已有的规则）。
+_OUT = (
+    "## 本产品的输出形态（官方原文没写这一层：官方是给 agent 直接写成品用的）\n"
+    "你这一环**只交结构化 JSON**，提示词正文由下游代码按官方模板逐字拼装。\n"
+    "A. 只返回 JSON，不要解释，不要输出提示词成品；\n"
+    "B. 把顾客的文字拆成「镜头 / 环境声 / 画外配乐」三块，字段见 schema；\n"
+    "C. 运镜名只能从 user 消息 `camera_types` 给的官方闭集里选，幅度 small / large、"
+    "速度 slow / fast，用不上就留空字符串；\n"
+    "D. 只有顾客明确说了「旁白 / 画外音 / 心里想」才把 voiceover 设成 true，其余 false；\n"
+    "E. 没有画外配乐就把 music 留空字符串（下游会自动写 N/A）；\n"
+    "F. 保真护栏（**本产品的定义**，官方文档里没有，别去原文里找）：\n"
+    + _GUARD
+)
+
+
+def _sys_prompt() -> str:
+    """官方 `SKILL.md` + `base-en.txt` 全文 + 本产品的输出形态要求。"""
+    from app.services import h3_official
+    return h3_official.system_prompt("base", _OUT)
+
+_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "style": {"type": "string"},
+        "shots": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "body": {"type": "string"},
+                    "cut_sec": {"type": "number"},
+                    "camera_type": {"type": "string"},
+                    "camera_amplitude": {"type": "string"},
+                    "camera_speed": {"type": "string"},
+                    "camera_target": {"type": "string"},
+                    "dialogue": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "who": {"type": "string"},
+                                "lang": {"type": "string"},
+                                "text": {"type": "string"},
+                                "voiceover": {"type": "boolean"},
+                            },
+                        },
+                    },
+                },
+                "required": ["body"],
+            },
+        },
+        "soundscape": {"type": "string"},
+        "music": {"type": "string"},
+    },
+    "required": ["style", "shots", "soundscape", "music"],
+}
+
+
+class SlotError(RuntimeError):
+    pass
+
+
+def _guess_lang(text: str) -> str:
+    return "zh" if _CJK.search(text or "") else "en"
+
+
+def user_message(text: str, *, kind: str, duration: float, has_image: bool,
+                 hint: str = "") -> str:
+    """发给模型的那条 user 消息（把"这次要什么形状"讲清）。
+
+    `hint` 只用来**回灌上一轮被判红的条目**（重试时用），不承载任何创作要求。
+    """
+    payload = {
+        "task": ("rewrite_existing_prompt" if kind == "rewrite" else "expand_idea"),
+        "duration_seconds": duration,
+        "has_first_frame_image": bool(has_image),
+        "camera_types": sorted(set(CAMERA_PHRASES.values())),
+        "max_shots": MAX_SHOTS,
+        "customer_text": text,
+    }
+    if hint:
+        payload["previous_attempt_rejected"] = hint
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _clean_shot(raw: dict, i: int) -> tuple[dict, list[str]]:
+    """一个镜头槽位 → 编译器认识的形状；认不出的值**丢掉并报出来**，不猜。"""
+    warn: list[str] = []
+    body = str(raw.get("body") or "").strip()
+    out: dict = {"body": body}
+    if i > 0:
+        cut = raw.get("cut_sec")
+        if isinstance(cut, (int, float)) and cut > 0:
+            out["cut"] = float(cut)
+        else:
+            warn.append(f"第 {i + 1} 镜没给切点秒数 —— 下游会按镜头数均分")
+    ct = camera_type(str(raw.get("camera_type") or ""))
+    if raw.get("camera_type") and not ct:
+        warn.append(f"第 {i + 1} 镜的运镜 {raw.get('camera_type')!r} 不在官方闭集里，已丢掉")
+    if ct:
+        cam: dict = {"type": ct}
+        amp = str(raw.get("camera_amplitude") or "").strip().lower()
+        spd = str(raw.get("camera_speed") or "").strip().lower()
+        if amp in ("small", "large"):
+            cam["amplitude"] = amp
+        elif amp:
+            warn.append(f"第 {i + 1} 镜幅度 {amp!r} 不在官方的 small/large 里，已丢掉")
+        if spd in ("slow", "fast"):
+            cam["speed"] = spd
+        elif spd:
+            warn.append(f"第 {i + 1} 镜速度 {spd!r} 不在官方的 slow/fast 里，已丢掉")
+        tgt = str(raw.get("camera_target") or "").strip()
+        if tgt:
+            cam["target"] = tgt
+        out["camera"] = cam
+    dlg = []
+    for d in (raw.get("dialogue") or []):
+        if not isinstance(d, dict):
+            continue
+        t = str(d.get("text") or "").strip()
+        if not t:
+            continue
+        lang = str(d.get("lang") or "").strip().lower()
+        if lang not in KNOWN_LANGS:
+            lang = _guess_lang(t)
+        item = {"who": str(d.get("who") or "").strip(), "lang": lang,
+                "text": t}
+        if d.get("voiceover"):
+            item["voiceover"] = True
+        dlg.append(item)
+    if dlg:
+        out["dialogue"] = dlg
+    return out, warn
+
+
+def to_spec(raw: dict, *, kind: str, duration: float, ratio: str,
+            has_image: bool) -> tuple[dict, list[str]]:
+    """模型返回的 JSON → 编译器规格。**所有越界值在这里收口，不靠模型自觉。**
+
+    返回 `(spec, warnings)`。
+    """
+    warn: list[str] = []
+    if not isinstance(raw, dict):
+        raise SlotError("拆槽结果不是 JSON 对象")
+    shots_raw = raw.get("shots")
+    if not isinstance(shots_raw, list) or not shots_raw:
+        raise SlotError("拆槽结果里一个镜头都没有")
+    if len(shots_raw) > MAX_SHOTS:
+        warn.append(f"输入拆出 {len(shots_raw)} 个镜头，超过上限 {MAX_SHOTS}，后面的丢掉")
+        shots_raw = shots_raw[:MAX_SHOTS]
+
+    shots = []
+    for i, r in enumerate(shots_raw):
+        if not isinstance(r, dict):
+            continue
+        sh, w = _clean_shot(r, i)
+        warn += w
+        if not sh["body"]:
+            continue
+        shots.append(sh)
+    if not shots:
+        raise SlotError("拆槽结果里所有镜头都没有画面描述")
+
+    # 模型有时无视「正文英文」照样返回中文 —— 这条不拦（拦了就等于吞掉顾客的话），
+    # 但必须让顾客看见，否则交付出去是一份过不了 B3 的提示词。
+    for i, sh in enumerate(shots):
+        cn = cjk_outside_quotes(sh["body"])
+        if cn:
+            warn.append(f"第 {i + 1} 镜正文里有 {len(cn)} 个汉字（引号外）—— 官方要求正文英文，需人工翻译")
+    for k in ("style", "soundscape", "music"):
+        cn = cjk_outside_quotes(str(raw.get(k) or ""))
+        if cn:
+            warn.append(f"{k} 里有 {len(cn)} 个汉字（引号外）—— 官方要求英文")
+
+    # 切点补全（补的是**时间**不是内容）：没给的按镜头数均分，并如实报出来。
+    n = len(shots)
+    for i, sh in enumerate(shots[1:], 1):
+        if "cut" not in sh:
+            sh["cut"] = round(duration * i / n, 3)
+    # 切点必须严格递增且落在时长内（官方 `base-en:86`）
+    prev = 0.0
+    for i, sh in enumerate(shots[1:], 1):
+        c = float(sh["cut"])
+        if c <= prev:
+            c = round(prev + 0.5, 3)
+            warn.append(f"第 {i + 1} 镜切点不是递增的，已调到 {c}s")
+        prev = c
+        sh["cut"] = c
+    if shots[-1].get("cut") and float(shots[-1]["cut"]) >= duration:
+        warn.append(f"最后一个切点超过时长 {duration}s —— 官方要求切点落在时长内，请调时长或减少镜头")
+
+    spec = {
+        "mode": "i2va" if has_image else "t2va",
+        "duration": duration,
+        "ratio": ratio,
+        "style": str(raw.get("style") or "").strip(),
+        "shots": shots,
+        "soundscape": str(raw.get("soundscape") or "").strip(),
+        "music": str(raw.get("music") or "").strip(),
+    }
+    if kind == "rewrite" and not spec["soundscape"]:
+        warn.append("环境声槽位是空的 —— rewrite 模式不补内容，需要顾客自己给")
+    return spec, warn
+
+
+def cjk_outside_quotes(s: str) -> str:
+    """去掉双引号包住的招牌文字后，剩下的汉字（官方要求正文英文 `h3-skill:33`）。"""
+    return "".join(_CJK.findall(_QUOTED.sub("", s or "")))
+
+
+def check_preserved(source: str, spec: dict) -> list[str]:
+    """客观护栏：输入里的**数字**和**双引号里的原文**必须原样出现在产出里。
+
+    🩸 只查这两类 —— 它们不随翻译变化，能机械对。**人名/形容词查不了**，
+    那属于"翻译得好不好"，不是"有没有丢掉"，不能拿它冒充判据。
+    """
+    out = json.dumps(spec, ensure_ascii=False)
+    miss = []
+    for n in set(_NUM.findall(source or "")):
+        if n not in out:
+            miss.append(f"数字 {n} 在产出的槽位里找不到")
+    for q in re.findall(r'"([^"\n]{1,60})"|“([^”\n]{1,60})”'
+                        r'|「([^」\n]{1,60})」|『([^』\n]{1,60})』', source or ""):
+        s = next((x for x in q if x), "").strip()
+        if s and s not in out:
+            miss.append(f"画面文字「{s}」在产出的槽位里找不到（应原样保留）")
+    return miss
+
+
+def _default_chat(sys_msg: str, user_msg: str, *, model: str = "") -> dict:
+    """真打方舟（**花钱**）。默认路径；测试一律注入桩函数，不走这里。
+
+    `model` 留空 = 用 `settings.vision_model`。选型对照时显式传型号名。
+    """
+    from app.core.config import settings
+
+    key = (settings.ark_api_key or "").strip()
+    if not key:
+        raise SlotError("方舟未配置：请设置 VT_ARK_API_KEY")
+    import httpx
+    body = {
+        "model": (model or settings.vision_model),
+        "messages": [{"role": "system", "content": sys_msg},
+                     {"role": "user", "content": user_msg}],
+        "response_format": {"type": "json_schema",
+                            "json_schema": {"name": "h3_slots", "schema": _SCHEMA}},
+        "temperature": 0.1,
+        # 与 `translate._chat` 同一条实测结论：不关思考 81.9s/6340 tokens，关掉 4.5s/699
+        "thinking": {"type": "disabled"},
+    }
+    try:
+        with httpx.Client(timeout=120) as c:
+            r = c.post(CHAT_URL, json=body, headers={
+                "Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+    except Exception as e:  # noqa: BLE001
+        raise SlotError(f"拆槽请求失败：{e}") from e
+    if r.status_code >= 400:
+        raise SlotError(f"拆槽接口 {r.status_code}：{r.text[:300]}")
+    try:
+        txt = r.json()["choices"][0]["message"]["content"]
+    except Exception as e:  # noqa: BLE001
+        raise SlotError(f"拆槽响应结构异常：{e}") from e
+    txt = re.sub(r"^\s*```(?:json)?\s*|\s*```\s*$", "", (txt or "").strip())
+    try:
+        return json.loads(txt)
+    except Exception as e:  # noqa: BLE001
+        raise SlotError(f"拆槽结果不是合法 JSON：{e}") from e
+
+
+def extract(text: str, *, kind: str = "rewrite", duration: float = 5.0,
+            ratio: str = "16:9", has_image: bool = False,
+            model: str = "", hint: str = "", chat=None) -> dict:
+    """顾客的话 → `{spec, warnings, prompt, params}`。
+
+    `chat` 可注入（测试用桩，零花费）；不传就走方舟（**会花钱**）。
+    `model` 留空 = 用 `settings.vision_model`；选型对照时显式传型号名。
+    """
+    t = (text or "").strip()
+    if not t:
+        raise SlotError("输入是空的")
+    if kind not in ("rewrite", "idea"):
+        raise SlotError(f"不认识的 kind：{kind!r}（只认 rewrite / idea）")
+
+    if not chat:
+        def chat(s: str, u: str) -> dict:          # noqa: F811
+            return _default_chat(s, u, model=model)
+
+    raw = chat(_sys_prompt(), user_message(
+        t, kind=kind, duration=duration, has_image=has_image, hint=hint))
+    spec, warn = to_spec(raw, kind=kind, duration=duration,
+                         ratio=ratio, has_image=has_image)
+    warn += check_preserved(t, spec)
+
+    from app.services.models import h3_base_compile as hbc
+    out = hbc.compile(spec)
+    return {"spec": spec, "warnings": warn + out["warnings"],
+            "prompt": out["text"], "params": out["params"]}

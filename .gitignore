@@ -1,0 +1,43 @@
+# 只装**源码和文档**。素材、模型、依赖、产物一律不进仓库。
+# 进仓库的判据：删掉它，别人拉下来就跑不起来 / 不知道该怎么改。
+
+# ── 依赖 ──
+node_modules/
+frontend/app/node_modules/
+.venv/
+venv/
+
+# ── 三方原样下载的东西（vendor/bgutil-src 自带 .git，是个独立仓库）──
+vendor/
+
+# ── 本机数据：用户素材、成片、缓存、临时 ──
+backend/data/clone/
+backend/data/tmp/
+backend/data/temp/
+backend/data/voice_demo/
+backend/data/ark_assets.json
+backend/data/prompt_snapshot.json
+
+# ── 模型权重（37MB onnx，本机装，不进仓库）──
+backend/data/models/
+*.onnx
+
+# ── 官方原文快照以外的 data（official 是代码依赖，单独放行）──
+backend/data/*
+!backend/data/official/
+
+# ── 构建产物 ──
+frontend/app/dist/
+frontend/demo/dist/
+
+# ── 日志 ──
+logs/
+backend/logs/
+*.log
+
+# ── 本机环境 ──
+.env
+.env.*
+__pycache__/
+*.pyc
+.DS_Store
