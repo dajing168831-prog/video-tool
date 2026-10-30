@@ -218,9 +218,14 @@ def revise(prompt: str, feedback: str, *, images: list[str],
     k = kind or guess_kind(src)
     sys_msg = h3_official.system_prompt(k, REVISE_GUARD)
 
-    msg = (f"【目标片长】{duration:g} 秒\n\n"
-           f"【现有提示词（完整）】\n{src}\n\n"
-           f"【顾客的反馈】\n{fb or '（顾客只给了截图，没说文字）'}")
+    # 🩸 修订**不传片长**（2026-10-30）：要改的那份稿自己带着时间码，片长以它为准。
+    # 原来这里硬写「目标片长 5 秒」，稿子是 15 秒时就是一句错话。实测（4,651 字/8 镜/13.4 秒
+    # 的成品喂进去、传 5）模型照样按原稿时间码走，8 镜不变、0 红 —— 也就是这行没起作用，
+    # 只会让指令自相矛盾。`duration > 0` 时（老调用方）才照旧带上。
+    dur_line = f"【目标片长】{duration:g} 秒\n\n" if duration and duration > 0 else ""
+    msg = (dur_line
+           + f"【现有提示词（完整）】\n{src}\n\n"
+             f"【顾客的反馈】\n{fb or '（顾客只给了截图，没说文字）'}")
     if images:
         msg += f"\n\n【出问题的画面截图】共 {len(images)} 张，见下。"
 

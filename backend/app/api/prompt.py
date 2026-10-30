@@ -354,7 +354,8 @@ class ReviseIn(BaseModel):
     feedback: str = Field("", description="哪儿不对，一句话说清（第几镜、什么现象）")
     images: list[str] = Field(default_factory=list,
                               description="出问题画面的截图，data URI（data:image/jpeg;base64,…）")
-    duration: float = Field(5.0, description="目标片长，官方 4–15 秒")
+    duration: float = Field(
+        0.0, description="片长；**0 = 沿用现有提示词自己的时间码**（修订本来就不该另定片长）")
     model: str = Field("", description="理解模型：lite / pro / deepseek，留空 = pro")
     sid: str = Field("", description="会话编号，同 /prompt/convert")
 
@@ -378,9 +379,11 @@ def _revise(body: ReviseIn) -> dict:
 
     kind = guess_kind(prompt)
     lo, hi = conv_route.VARIANTS["MiniMax-H3"]
-    dur = float(body.duration)
+    dur = float(body.duration or 0)          # 0 = 沿用原稿时间码，不另定
     note = ""
-    if dur < lo or dur > hi:
+    if dur <= 0:
+        pass                                 # 不校验、不补默认：修订没有自己的片长
+    elif dur < lo or dur > hi:
         fixed = float(max(lo, min(hi, dur)))
         note = f"片长 {dur:g} 秒超出范围（{lo}–{hi}），已按 {fixed:g} 秒修订"
         dur = fixed

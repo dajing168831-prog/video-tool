@@ -324,6 +324,16 @@ def main() -> int:
                    and REF_OUT[:40] in rseen[-1]["user"],
                    "R1c 现有提示词和反馈都传给了模型",
                    rseen[-1]["user"][:260])
+            # 🩸 2026-10-30 修订**不另定片长**：那份稿自己有「00:xx」时间码。
+            # 成对验：默认（不传）不带片长；老调用方显式传了才带。
+            expect("目标片长" not in rseen[-1]["user"],
+                   "R1d 不传片长 → 指令里没有「目标片长」（不替顾客定）",
+                   rseen[-1]["user"][:120])
+            client.post("/api/prompt/revise", json={
+                "prompt": REF_OUT, "feedback": "x", "duration": 8}).json()
+            expect("目标片长】8 秒" in rseen[-1]["user"],
+                   "R1e 显式传 8 → 仍然带上（老调用方不断）",
+                   rseen[-1]["user"][:120])
 
             # R2 截图真的进了多模态 content
             r = client.post("/api/prompt/revise", json={

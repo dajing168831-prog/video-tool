@@ -276,9 +276,8 @@ export default {
       // 返回的、中途没有流。不给秒数的话，60 秒不动 = 顾客以为卡死直接关页。
       waitSec: 0,
       timer: null,
-      // 🩸 时长不再在上方选：等聊到该定的时候由模型问（2026-10-30 主人）。
-      // 这个值只给「转换 / 修订」两条老路当兜底，对话路线传 0 = 还没定。
-      duration: 5,
+      // 🩸 片长界面上不选，也不再写死：对话路传 0 = 还没定，让模型问；
+      // 修订传 0 = 沿用那份稿自己的时间码（2026-10-30）。
       // 🩸 理解模型**没有默认**（2026-10-30 主人：「顾客前端选什么就选什么」）。
       // 原来预选成 lite —— 顾客一次都没选过，跑的就是 lite，还怪 agent 判得差。
       // 现在空着 = 还没选，第一次发送前必须选；选过记在本机，下次不用再选。
@@ -479,7 +478,8 @@ export default {
           prompt: has ? this.lastPrompt : text,
           feedback: has ? text : '',
           images: imgs,
-          duration: this.duration,
+          // 修订不另定片长：那份稿自己有「00:xx」时间码，传 0 = 沿用原稿
+          duration: 0,
           model: this.model,
           target: 'h3',
           sid: this.sid,
