@@ -218,7 +218,7 @@
 </template>
 
 <script>
-import { promptChat, promptConvert, promptRevise,
+import { promptChat, promptRevise,
   promptSessions, promptSession, promptSessionSave, promptSessionDel } from '@/api/request'
 
 // 可选的理解模型。🩸 只放后端白名单里的 key，别传任意模型名过去。
@@ -236,8 +236,16 @@ const TARGETS = [
 ]
 
 // 一眼能看出「这是一份现成稿」的记号：参考标签 / 镜头编号 / 时间码。
-// 命中就走转换（保真搬运）；命中不了才当"一句话想法"。
 const SCRIPT_HINT = /<\s*(picture|video|audio|subject)\b|第\s*\d+\s*[镜幕]|shot\s*\d+|00:\d{2}|\b\d{1,2}\s*[-–~]\s*\d{1,2}\s*s/i
+
+// 🩸 粘现成稿时，把「我是要转换、不是要重写」这句话写进顾客那条消息里（**看得见、能删**）。
+// 为什么非得带：同一份 8 镜稿实测（2026-10-30）——
+//   裸粘、一句话不说 → 模型自己补运镜、自己重写，原稿 31 句只剩 21 句（68%），还判 1 条红；
+//   带上这句       → 原稿 31 句保住 27 句（87%），一句运镜都没加，0 条红。
+// 这句话跟实测那句**只差开头半句**（实测写的是「这是别的模型写的一份视频提示词」，
+// 顾客也可能粘自己的稿，所以改成「这份是现成稿」），意图那半句一字不差。
+// 原稿没有运镜时不该出现运镜（主人：「小猫跳舞那 2.5 提示词本来就没有运镜」）。
+const SCRIPT_ASK = '这份是现成稿，帮我换成 H3 能用的格式。内容一个字都别改，人物、动作、画面这些都照原样。\n\n'
 
 //: 历史对话存在本地。只存文字（截图是 data URI，几张就能把 5MB 撑爆）。
 const SKEY = 'vt_prompt_sessions'
@@ -366,8 +374,13 @@ export default {
         const picked = await this.pickModel()
         if (!picked) return
       }
-      const text = this.draft.trim()
+      let text = this.draft.trim()
       const imgs = this.shots.slice()
+      // 粘的是一份现成稿（不是一句想法、也不是在改上一稿）→ 补上「只换格式别改内容」这句，
+      // 走对话路。原来这条路是直接扔给 /prompt/convert，那条路会自己编运镜、往里加内容。
+      if (this.target === 'h3' && !imgs.length && !this.lastPrompt && this.isScript(text)) {
+        text = SCRIPT_ASK + text
+      }
       // 🩸 这一轮属于哪个对话：顾客中途点「新对话」/关页面，回来还是这条号。
       // 结果由后端按这个号自己写进历史（`sid` 随请求一起发过去）。
       const sid0 = this.sid
@@ -446,11 +459,19 @@ export default {
       }
     },
 
+    // 一段话到底是"一句想法"还是"一份现成稿"：够长或有镜头/时间码记号
+    isScript(text) {
+      return text.length >= 200 || SCRIPT_HINT.test(text)
+    },
+
     /**
-     * 三条路自动分流，**不让人做选择题**：
+     * 两条路自动分流，**不让人做选择题**：
      *   已经出过稿 / 带截图 → 修订（只改那几处，不重写）
-     *   像一份现成稿        → 转换（保真搬运，不问）
      *   其余                → 对话（缺信息先问，够了直接写）
+     *
+     * 🩸 2026-10-30 转换这条路**下线**：它拿到 8 镜稿会自己补运镜、自己加内容
+     * （实测原稿 31 句只保住 22 句，还编了 5 句原稿没有的运镜），跟「只搬运」是反的。
+     * 粘稿改走对话路，意图那句由 `SCRIPT_ASK` 带过去。
      */
     route(text, imgs, history) {
       // Seedance 2.0 一支：**全部走对话**。2.0 官方 skill 自带「已有提示词就重写」
@@ -478,17 +499,6 @@ export default {
           duration: this.duration,
           model: this.model,
           target: 'h3',
-          sid: this.sid,
-        })
-      }
-      const isScript = text.length >= 200 || SCRIPT_HINT.test(text)
-      if (isScript) {
-        return promptConvert({
-          text,
-          duration: this.duration,
-          model: this.model,
-          target: 'h3',
-          assets: this.buildAssets(),
           sid: this.sid,
         })
       }

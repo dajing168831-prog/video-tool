@@ -957,3 +957,57 @@ AI 那一条的 `text` **永远是空字符串**（内容在 `data.prompt` / `da
 ①新浏览器打开是「选一下」②不选就发 → 弹框且**请求没发出去**③Pro 在选项里
 ④发出去的请求 `model=pro` ⑤刷新后还记得 —— **五条全绿**。
 另外 `prompt-history.js` / `prompt-leave.js` 跟着补了选模型那步，重跑仍全绿。
+
+### 13.15 2026-10-30 第九轮：**转换这条路从产品上摘掉，粘稿改走对话路**
+
+主人一句「不下线等着继续拦？」——**摘了。**
+
+**为什么摘**（同一份 2,918 字、8 镜的别家成稿，同一天真机对照）：
+
+| | 代码路 `/prompt/convert` | 对话路（带一句「内容一个字都别改」） |
+|---|---|---|
+| 耗时 | 292 s | 126 s |
+| 原稿 31 句保住 | 22 句（71%） | **27 句（87%）** |
+| 原稿没有、自己加的句子 | 28 句（含 **5 句自创运镜**） | 5 句（全是三字段名/切镜/声音段这类格式必需） |
+| 片长 | 写死 5 秒，界面改不了 | 它自己问，顾客也能定 |
+
+代码路那 5 句自创运镜（原稿一个运镜字都没有）：
+
+```
+The camera remains in a static shot, keeping the dog in shallow focus beyond the girl's shoulder.
+The camera trucks left with small amplitude at slow speed to keep her and the dog in frame.
+The camera remains in a static shot as the ball slows and stops directly in front of the dog's trembling paws.
+The camera tracks the dog as he runs out and returns.
+The camera remains in a static shot with shallow depth of field, keeping her smiling face …
+```
+
+「只搬运不改写」的工具往里加内容 = 方向反了。而且当天判它红的那条规则（B12）也是我自造的，已撤。
+
+**裸粘稿会怎样（这条决定了改法）**：
+
+| 怎么发 | 原稿句保住 | 自己加运镜 | 判红 |
+|---|---|---|---|
+| 只粘稿，一句话不说 | 21/31（**68%**） | 有 | 1 条 |
+| 粘稿 + 「帮我换成 H3 能用的格式。内容一个字都别改，人物、动作、画面这些都照原样。」 | 27/31（**87%**） | 没有 | 0 条 |
+
+所以不能只把路口扒掉 —— **得把「我是要转换、不是要重写」这句带过去**。
+
+**改法**（`frontend/app/src/pages/prompt/index.vue`）：
+
+- `send()` 里：写给 H3 + 没截图 + 不是在改上一稿 + 像一份现成稿（`isScript()`）
+  → 在顾客那条消息**前面加一句** `SCRIPT_ASK`。**看得见、能删、不是偷偷加的**。
+- `route()` 里删掉 `promptConvert` 那条分支；粘稿和一句话想法一样走 `/prompt/chat`，`duration` 传 0。
+- `promptConvert` 的 import 去掉。**后端 `/api/prompt/convert` 接口留着**（`p18` 还在测它），
+  但产品上已经走不到 —— 要删是另一件事。
+
+**判据**：`tools/e2e/prompt-paste.js`（桩后端，不打真模型）——
+①走的是 `chat` 不是 `convert` ②发出去的话里带着「内容一个字都别改」
+③原稿正文一字不少一起发了 ④`duration=0`（不是写死 5）⑤顾客那条气泡里看得到这句 —— **五条全绿**。
+回归：`prompt-leave` 4/4 · `prompt-history` 4/4 · `prompt-model` 5/5，全绿。
+
+**还留着的**：修订（`/prompt/revise`）仍然传 `duration=5`。它改的是已有时间码的成品，
+危害比转换小得多，**没动**（要改得先真机验，不能顺手改）。
+
+**E2E 踩坑**：发送按钮用坐标点不到（`.send` 的中心点落在了别的层上，点了没反应），
+`page.mouse.click` 和 `page.click('.send')` 都无效，**只能 `document.querySelector('.send').click()`**；
+往 textarea 里塞长文本也不能直接改 `value`，得 `page.type`（真敲才进 uni 的双向绑定）。

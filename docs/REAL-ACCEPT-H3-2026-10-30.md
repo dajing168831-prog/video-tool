@@ -126,3 +126,68 @@
 只有 **B28（运镜后必须有连接词）** 是从官方 3 个例句反推的，没有「必须」原句撑腰 ——
 但它依据的是 `base-en:117`「written as a natural English action」（句子要能读通），
 **先留着，你要撤也一句话的事**。
+
+## 对照实验：同一条原稿，代码路 vs 交给 agent（2026-10-30，主人批「跑」）
+
+问的是主人那句话：**「从另一家标准提示词转换成另一家的提示词就这么难吗？」**
+做法：同一条原稿（2,918 字，8 镜），一条走 `/prompt/convert`，一条走对话路让 agent 自己读
+H3 skill 转。顾客口吻只说一句：**「换成 H3 能用的格式，内容一个字都别改」**。
+
+脚本 `temp/agent_convert_try.py`；原始响应 `D:/tmp/h3accept/5-agent-convert.json`。
+
+| | 代码路 `/prompt/convert` | agent（对话路） |
+|---|---|---|
+| 耗时 | 292 s | **126 s**（问一句 33 s + 出稿 93 s） |
+| 成品 | 4,651 字 | 3,247 字 |
+| 原稿 31 句保住几句 | **22 / 31（71%）** | **27 / 31（87%）** |
+| 原稿没有、自己加的句子 | **28 句**，其中 5 句是纯自创运镜 | **5 句**，全是转换必需的（三字段名 / 切镜 / 声音段） |
+| 8 镜结构 | 8 个 `[Shot]` | 8 个 `[Shot]` |
+| 片长 | **写死 5 秒**（我手动改 15 才跑对） | **它主动问「多少秒」**，答「你定」它定 15 秒 |
+| 花费 | 取不到（这两条路没 run_log） | 53,995 tokens（20,369 + 33,626） |
+
+### 差距在哪：代码路自己编运镜
+
+代码路成品里这 5 句**原稿根本没有**、是模型自己补的：
+
+```
+The camera remains in a static shot, keeping the dog in shallow focus beyond the girl's shoulder.
+The camera trucks left with small amplitude at slow speed to keep her and the dog in frame.
+The camera remains in a static shot as the ball slows and stops directly in front of the dog's trembling paws.
+The camera tracks the dog as he runs out and returns.
+The camera remains in a static shot with shallow depth of field, keeping her smiling face …
+```
+
+原稿 8 个 SHOT 只写了「Extreme low-angle close-up」这种机位，**没有一句运镜指令**。
+转换这条路的本职是「只拆结构、只拼装」，补运镜 = **加内容**。
+agent 那版一句运镜都没编，原稿句几乎逐字搬过去。
+
+⚠️ **公平说明**：代码路那次跑的时候 B12 还没撤，所以它「1 条红」不是现在的行为；
+而且**它判红抓的正是上面这几句自己编的运镜** —— 自造规则去卡自造内容，两次都是我的问题。
+
+### agent 的两处真损失（如实记）
+
+1. 原稿 CONSISTENCY 段被并进 Shot 1（H3 没有一致性段，这是对的），
+   代价是 Shot 6「她仍穿军绿外套/卡其裤/棕靴」这种**回填**没有了 —— 代码路补了，agent 没补。
+2. `Audio: ONLY natural breathing, house ambience, dog sounds, foots` 这句两边都没保住 ——
+   **原稿本身就是断的**（采集那段代码块停在 `foots`），不是模型丢的。
+
+### 结论
+
+「转换」这个活，**agent 那条路已经是能用的**：顾客粘一份别家稿、选 H3、说一句「换格式别改内容」，
+它读 skill → 问时长 → 出稿，0 红、两分钟、内容保真 87%（代码路 71%）。
+代码路会自己加内容，跟「只搬运不改写」这个诉求方向是反的。
+
+另外顺带解决了一个产品毛病：**代码路把片长写死 5 秒、界面改不了；agent 会主动问。**
+
+### 追加：裸粘稿也不带指令会怎样（定改法用）
+
+| 怎么发 | 原稿句保住 | 自己加运镜 | 判红 | 耗时 |
+|---|---|---|---|---|
+| 只粘稿，一句话不说 | 21/31（**68%**） | 有 | 1 条 | 43 + 154 s |
+| 粘稿 + 「……换成 H3 能用的格式。内容一个字都别改……」 | 27/31（**87%**） | 没有 | 0 条 | 33 + 93 s |
+| 代码路 `/prompt/convert` | 22/31（71%） | **5 句自创运镜** | 1 条（规则已撤） | 292 s |
+
+原始响应：`D:/tmp/h3accept/6-agent-raw-paste.json`（裸粘）、`5-agent-convert.json`（带指令）。
+
+**落地**：转换这条路从产品上摘掉，粘稿改走对话路 + 自动带上那句意图（写在顾客自己的消息里，
+看得见、能删）。详见 `docs/MODEL-SEPARATION.md` §13.15；判据 `tools/e2e/prompt-paste.js` 5/5。
