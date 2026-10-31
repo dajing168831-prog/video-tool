@@ -675,17 +675,29 @@ _DESC_ASK = (
     "2. 不要写表情、动作、姿态、背景、光线、镜头、画质、年龄评价。\n"
     "3. 不要写泛化美词（漂亮、精致、气质好）。\n"
     "4. desc_zh 用中文名词短语，desc_en 用英文名词短语（对应官方示例的写法）。\n"
-    "5. 两个字段描述的必须是同一组特征。"
+    "5. 两个字段描述的必须是同一组特征。\n"
+    "6. 另外单独给一个 gender 字段：male / female / unspecified。\n"
+    "   看**这张图里的人本身**，不要按服装或场景推断；看不清就填 unspecified，"
+    "**绝对不要猜**。"
 )
 
+#: 🩸 2026-11-01 加 `gender`：H3 官方 `base-en:129` 把**性别**列为说话人/主体身份
+#: 的必要信息之一（"character type, age, gender, whether the person is on-screen…"）。
+#: 以前这份描述只有发型/五官/衣服，于是 agent 写主体定义时只能沿用**原片那个人**的
+#: 性别 —— 实测：上传的男性照片被写成 "female warrior"。
 _DESC_SCHEMA = {
     "type": "object",
     "properties": {
         "desc_zh": {"type": "string"},
         "desc_en": {"type": "string"},
+        "gender": {"type": "string", "enum": ["male", "female", "unspecified"]},
     },
-    "required": ["desc_zh", "desc_en"],
+    "required": ["desc_zh", "desc_en", "gender"],
 }
+
+#: 描述的版本号。改了提问/字段就加一 —— 老缓存会被当成过期重算
+#: （不加的话，用户重传同一张图仍拿回没有 gender 的旧描述）。
+_DESC_VERSION = 2
 
 
 def _image_inline(image: Path) -> str:
@@ -697,8 +709,12 @@ def _image_inline(image: Path) -> str:
     return f"data:image/{mime};base64,{b64}"
 
 
-def describe_person(cid: str, image: Path) -> dict:
+def describe_person(cid: str, image: Path, slot: str = "person") -> dict:
     """看一张人物参考图 → `{"desc_zh": …, "desc_en": …}`。
+
+    `slot` 决定缓存落在哪个文件：`person` = 第一个人，`person2` = 第二个人……
+    （`clone_store.subject_desc_path(cid, slot)`）。每个槽位**各存各的** ——
+    混用一个文件会让第 2 个人拿到第 1 个人的描述。
 
     🩸 失败一律返回 `{}`，绝不抛：这只是给提示词加一句特征，
     **不能因为视觉调用失败就让用户传不了图、出不了片**。
@@ -710,12 +726,14 @@ def describe_person(cid: str, image: Path) -> dict:
         if not p.exists() or not available():
             return empty
         sha = hashlib.sha1(p.read_bytes()).hexdigest()
-        cache = clone_store.subject_desc_path(cid)
+        cache = clone_store.subject_desc_path(cid, slot)
         if cache.exists():
             try:
                 data = json.loads(cache.read_text(encoding="utf-8"))
                 # 换了参考图就必须重算：sha 对不上说明图不是同一张
-                if data.get("desc_en") and data.get("_image_sha1") == sha:
+                # 描述版本变了也要重算（老版本没有 gender 字段）
+                if (data.get("desc_en") and data.get("_image_sha1") == sha
+                        and data.get("_v") == _DESC_VERSION):
                     return data
             except Exception:  # noqa: BLE001
                 pass
@@ -755,7 +773,13 @@ def describe_person(cid: str, image: Path) -> dict:
         en = str(data.get("desc_en") or "").strip().rstrip(".")
         if not zh or not en:
             return empty
-        out = {"desc_zh": zh, "desc_en": en, "_image_sha1": sha, "_model": settings.vision_model}
+        gender = str(data.get("gender") or "").strip().lower()
+        if gender not in ("male", "female", "unspecified"):
+            # 模型没按枚举给 → 按"看不出"算，绝不替它猜一个
+            gender = "unspecified"
+        out = {"desc_zh": zh, "desc_en": en, "gender": gender,
+               "_image_sha1": sha, "_model": settings.vision_model,
+               "_v": _DESC_VERSION}
         cache.write_text(json.dumps(out, ensure_ascii=False, indent=1),
                          encoding="utf-8")
         return out

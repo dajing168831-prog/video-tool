@@ -184,116 +184,6 @@ SPECS = {
         "edit_duration": None,
         "edit_ratio": "adaptive",
     },
-    # ------------------------------------------------------------------ 火山 2.0
-    "seedance-2-0-mini": {
-        "label": "火山 Seedance 2.0 Mini",
-        "min_sec": 4.0,
-        "max_sec": 15.0,
-        # 官方：2.0 mini 默认 720p；可选 480p、720p
-        "resolutions": ("480p", "720p"),
-        "default_resolution": "720p",
-        "max_ref_images": 9,
-        "max_ref_videos": 3,
-        # 参考视频**总时长**上限（官方：2.0 `seedance-20-guide.md:987` ≤15s；
-        # 2.5 `seedance-25-guide.md:117` ≤30s；H3 `mm-docs:8273` ≤15s）
-        "ref_video_total_sec": 15,
-        "max_ref_audio": 3,
-        # 人数标准：官方《Seedance 2.0 提示词指南》§「参考人物过多」原句 ——
-        # 「当参考人物数量超过 4 人时，模型输出稳定性下降，生成的视频可能出现
-        #  人物数量不符（如少人、多人）或人物重复等问题」。官方未给"可尝试上限"，
-        # 所以硬上限也定 4：要更多人就用 2.5。
-        "stable_subjects": 4,
-        "max_subjects": 4,
-        # 官方「全模态参考生视频」：音频 ≤3 段、单段 [2,15]s（2.0 系列）
-        "ref_audio": True,
-        # 🩸 官方 `volc-api:35`：2.0 系列 = 图 0-9 + 视频 0-3 + 音频 0-3 = **15**。
-        # （曾写成 50 —— 那是 2.5 的「素材合计 ≤50 份」，跨型号搬过来的；
-        #  该字段目前没有消费点，改正不影响行为，但不能留着错值当标准。）
-        "max_ref_total": 15,
-        "prompt_chars": None,          # 官方没给硬上限
-        "prompt_advised": "中文 ≤500 字 / 英文 ≤1000 词",
-        "ref_style": "@图片N / @视频N / @音频N",
-        # 2.0 系列官方 skill 强制挂画质包 + 稳定包 + 水印/Logo 兜底
-        "auto_constraint": True,
-        "negative_domain": True,
-        # 2.0 没有 omni_reference_task_type，靠提示词里 @视频N 直接指代来路由
-        "edit_task_param": False,
-        "edit_duration": None,
-        # 🩸 官方 `volc-api:506`：**2.0 系列**编辑/延长任务「支持 adaptive 或指定宽高比」。
-        # 「仅支持 adaptive、不支持另行设置」是 **2.5** 的（`volc-api:542-544`）——
-        # 2026-10-26 发现这里曾经把 2.5 的结论安在 2.0 头上。
-        # 我们 2.0 编辑链路在 `ark.edit_body` 里写死 `ratio="adaptive"`（输出跟原片一致），
-        # 这里留 None = "不由本表指定"，不是"官方不许指定"。
-        "edit_ratio": None,
-    },
-    "seedance-2-0-fast": {
-        "label": "火山 Seedance 2.0 极速版",
-        "min_sec": 4.0,
-        "max_sec": 15.0,
-        # 官方模型列表：fast 只有 480p、720p（没有 1080p / 4k）
-        "resolutions": ("480p", "720p"),
-        "default_resolution": "720p",
-        "max_ref_images": 9,
-        "max_ref_videos": 3,
-        # 参考视频**总时长**上限（官方：2.0 `seedance-20-guide.md:987` ≤15s；
-        # 2.5 `seedance-25-guide.md:117` ≤30s；H3 `mm-docs:8273` ≤15s）
-        "ref_video_total_sec": 15,
-        "max_ref_audio": 3,
-        # 人数标准：官方《Seedance 2.0 提示词指南》§「参考人物过多」原句 ——
-        # 「当参考人物数量超过 4 人时，模型输出稳定性下降，生成的视频可能出现
-        #  人物数量不符（如少人、多人）或人物重复等问题」。官方未给"可尝试上限"，
-        # 所以硬上限也定 4：要更多人就用 2.5。
-        "stable_subjects": 4,
-        "max_subjects": 4,
-        # 官方「全模态参考生视频」：音频 ≤3 段、单段 [2,15]s（2.0 系列）
-        "ref_audio": True,
-        # 🩸 官方 `volc-api:35`：2.0 系列 = 图 0-9 + 视频 0-3 + 音频 0-3 = **15**。
-        # （曾写成 50 —— 那是 2.5 的「素材合计 ≤50 份」，跨型号搬过来的；
-        #  该字段目前没有消费点，改正不影响行为，但不能留着错值当标准。）
-        "max_ref_total": 15,
-        "prompt_chars": None,
-        "prompt_advised": "中文 ≤500 字 / 英文 ≤1000 词",
-        "ref_style": "@图片N / @视频N / @音频N",
-        "auto_constraint": True,
-        "negative_domain": True,
-        "edit_task_param": False,
-        "edit_duration": None,
-        "edit_ratio": None,
-    },
-    "seedance-2-0": {
-        "label": "火山 Seedance 2.0 标准版",
-        "min_sec": 4.0,
-        "max_sec": 15.0,
-        # 官方：2.0 默认 720p；可选 480p、720p、1080p、4k
-        "resolutions": ("480p", "720p", "1080p", "4k"),
-        "default_resolution": "720p",
-        "max_ref_images": 9,
-        "max_ref_videos": 3,
-        # 参考视频**总时长**上限（官方：2.0 `seedance-20-guide.md:987` ≤15s；
-        # 2.5 `seedance-25-guide.md:117` ≤30s；H3 `mm-docs:8273` ≤15s）
-        "ref_video_total_sec": 15,
-        "max_ref_audio": 3,
-        # 人数标准：官方《Seedance 2.0 提示词指南》§「参考人物过多」原句 ——
-        # 「当参考人物数量超过 4 人时，模型输出稳定性下降，生成的视频可能出现
-        #  人物数量不符（如少人、多人）或人物重复等问题」。官方未给"可尝试上限"，
-        # 所以硬上限也定 4：要更多人就用 2.5。
-        "stable_subjects": 4,
-        "max_subjects": 4,
-        # 官方「全模态参考生视频」：音频 ≤3 段、单段 [2,15]s（2.0 系列）
-        "ref_audio": True,
-        # 🩸 官方 `volc-api:35`：2.0 系列 = 图 0-9 + 视频 0-3 + 音频 0-3 = **15**。
-        # （曾写成 50 —— 那是 2.5 的「素材合计 ≤50 份」，跨型号搬过来的；
-        #  该字段目前没有消费点，改正不影响行为，但不能留着错值当标准。）
-        "max_ref_total": 15,
-        "prompt_chars": None,
-        "prompt_advised": "中文 ≤500 字 / 英文 ≤1000 词",
-        "ref_style": "@图片N / @视频N / @音频N",
-        "auto_constraint": True,
-        "negative_domain": True,
-        "edit_task_param": False,
-        "edit_duration": None,
-        "edit_ratio": "adaptive",
-    },
     # ------------------------------------------------------------------ 火山 2.5
     "seedance-2-5": {
         "label": "火山 Seedance 2.5",
@@ -348,24 +238,42 @@ SPECS = {
 #   MiniMax https://platform.minimaxi.com/docs/api-reference/video-generation-v2-create
 # 1.0 pro / 1.0 pro fast 官方标「即将下线」，且不支持参考视频换主体，不放进选项。
 MODELS = {
+    # 🩸 2026-10-31 主人拍板：**2.0 三档全部下架**，界面不再提供。
+    #   依据：29 次真实换画面请求全是 2.0 Mini（2.5 零次），而 2.0 Mini
+    #     ① 分辨率天花板 720p；② 没有编辑任务身份（`edit_task_param=False`）；
+    #     ③ 强制挂「细节丰富/电影质感」兜底包（`volc20_compile.py:1272`），
+    #        与「保留原片」方向相反。
+    #   SPECS 里的 2.0 条目**已随下架删除**（2026-10-31，见 `SPECS` 上方注释）。
+    #   历史任务带旧 2.0 型号 ID 时不查表，`volc()` 直接回落 2.5 那一档 ——
+    #   「再生成」照样能跑，只是按 2.5 的 30s 上限切段。别再按旧注释去找 2.0 表。
     "volc": [
         ("doubao-seedance-2-5-260628", "Seedance 2.5"),
-        ("doubao-seedance-2-0-260128", "Seedance 2.0"),
-        ("doubao-seedance-2-0-fast-260128", "Seedance 2.0 极速"),
-        ("doubao-seedance-2-0-mini-260615", "Seedance 2.0 Mini"),
     ],
+    # 🔓 2026-11-01 解冻：复刻重新接上 H3（主人：「复刻这里接上 H3 模型」）。
+    #   四档型号 ID 与 `SPECS["h3-*"]` 的键一一对应（`model_specs.minimax()` 按
+    #   名字里的 `-max` / `-lite` / `-highspeed` 路由，基础档就是 `MiniMax-H3`）。
+    #   标签直接用 SPECS 里的 `label`，前端照原样显示。
     "minimax": [
         ("MiniMax-H3", "MiniMax H3"),
-        # 🩸 2026-10-28：官方 V2 的四个可用值，一个不漏地列出来
-        #   （`h3-models`）。少列 = 用户选不到官方给的能力。
-        ("MiniMax-H3-Highspeed", "MiniMax H3 Highspeed"),
-        ("MiniMax-H3-Lite", "MiniMax H3 Lite"),
-        ("MiniMax-H3-Max", "MiniMax H3 Max"),
+        ("MiniMax-H3-Max", "MiniMax H3-Max"),
+        ("MiniMax-H3-Highspeed", "MiniMax H3-Highspeed"),
+        ("MiniMax-H3-Lite", "MiniMax H3-Lite"),
     ],
 }
 
-# 默认（没配或认不出来时）按最保守的 2.0 走 —— 宁可切碎，也别让请求被拒
-_DEFAULT_VOLC = "seedance-2-0"
+# 出图型号（官方 Seedream 5.0 页「模型 ID」表，2026-10-31 实读原文：
+#   Seedream 5.0 pro `doubao-seedream-5-0-pro-260628` / Seedream 5.0 flash
+#   `doubao-seedream-5-0-flash-260915`；两者都支持「文生图」「单 / 多图生图」。
+#   出处 https://docs.volcengine.com/docs/ark/seedream-5-0-pro
+IMAGE_MODELS = [
+    ("doubao-seedream-5-0-flash-260915", "Seedream 5.0 Flash"),
+    ("doubao-seedream-5-0-pro-260628", "Seedream 5.0 Pro"),
+]
+
+# 默认（没配或认不出来时）落到 2.5 —— 2.0 已归档，火山只剩这一档在售。
+# 猜宽了会让请求被拒，猜窄了只是多切一刀；2.5 的上限比谁都宽，认错型号时
+# 宁可让它按自己的档位收窄（`_resolution_for` 会按型号再收一次）。
+_DEFAULT_VOLC = "seedance-2-5"
 _DEFAULT_MINIMAX = "minimax"
 
 
@@ -391,13 +299,8 @@ def volc(model: str) -> dict:
         return minimax(model)
     if "seedance-2-5" in m or "seedance-2.5" in m:
         return SPECS["seedance-2-5"]
-    if "seedance-2-0" in m or "seedance-2.0" in m:
-        if "mini" in m:
-            return SPECS["seedance-2-0-mini"]
-        # fast 只到 720p，认成标准版会把 1080p/4k 塞过去，请求直接被拒
-        if "fast" in m:
-            return SPECS["seedance-2-0-fast"]
-        return SPECS["seedance-2-0"]
+    # 🩸 2026-10-31：2.0 的参数表随复刻视频下架一并删除。传旧 2.0 型号
+    #   （历史请求/老前端缓存）会落到下面的默认档（2.5），不会 KeyError。
     return SPECS[_DEFAULT_VOLC]
 
 

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """H3 Ref2VA（六段式）**判据本体** —— 23 条规则 E1–E23。
 
-官方依据：`D:/tmp/official/h3/ref-en.txt`（341 行，官方 skill
+官方依据：`data/official/h3/ref-en.txt`（341 行，官方 skill
 `h3-prompt-writing` 的 references/ref-en.txt）。
 
 与 `h3_base.py`（三字段 B 系）**互不引用**：同一家模型，两种模式规则方向相反

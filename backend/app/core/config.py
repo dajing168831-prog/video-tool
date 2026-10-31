@@ -166,6 +166,18 @@ class Settings:
     # 默认走哪个通道：auto（按素材自动选）/ volc / minimax
     clone_channel: str = _env("VT_CLONE_CHANNEL", "auto")
 
+    # ---- DeepSeek **官方**（复刻的 agent 用它写逐段指令）----
+    # 🩸 2026-11-01 主人：「要调 deepseek 官方的，不要火山的」。
+    #   在此之前 agent 走的是方舟托管的 `deepseek-v4-1-flash-261017`
+    #   （`ark_chat.py`），花的是火山账户的钱。现在改官方端点，独立一把 key。
+    #   **没有 key 就直接报错**，不静默回落火山 —— 回落了用户以为切了其实没切。
+    deepseek_api_key: str = _env("VT_DEEPSEEK_API_KEY", "")
+    # 官方端点（OpenAI 兼容）：https://api.deepseek.com/chat/completions
+    deepseek_base: str = _env("VT_DEEPSEEK_BASE", "https://api.deepseek.com")
+    # 官方 `/models` 实测返回的唯一型号 id（DeepSeek-V4.1-Flash，1M 上下文、
+    # 原生读图、支持 function calling）。别填方舟那套 `deepseek-v4-1-flash-261017`。
+    deepseek_model: str = _env("VT_DEEPSEEK_MODEL", "deepseek-flash")
+
     # ---- 视觉盘点（换画面之前先看清原片里有谁、在第几秒）----
     # 走方舟 Chat API 的视频理解：直接送视频，官方按 fps 抽帧并给每帧打时间戳，
     # 不需要我们自己 ffmpeg 抽帧。默认 lite（便宜一个档），失败自动升 pro。

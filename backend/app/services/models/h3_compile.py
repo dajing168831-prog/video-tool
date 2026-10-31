@@ -309,6 +309,7 @@ def _minimax(spec: dict, c: dict, idx: dict[str, int],
              boundary_pic: int = 0,
              shot_cuts: list[float] | None = None,
              subject_look: dict | None = None,
+             subject_looks: dict[str, dict] | None = None,
              shot_looks: list[str] | None = None,
              shot_lines: list[list[dict]] | None = None,
              style_video: bool = False) -> str:
@@ -410,7 +411,15 @@ def _minimax(spec: dict, c: dict, idx: dict[str, int],
             #     dark hair, a blue cardigan, and a thin silver necklace.`
             #   · `:313` 连狗都列「thick white fur, pointed ears, a dark nose…」
             # 有描述就按官方骨架列出来，没有才退回 `shown there`。
-            look_en = _en_clean((subject_look or {}).get("en") or "")
+            # 🩸 2026-11-01：**一人一份**。以前整个循环都用同一个 `subject_look`
+            #   （= 第一个人那张图的描述），于是 `<Picture 2>` 那张真人男性照被写成
+            #   「古装女性、浅杏色深 V 薄纱长裙、红唇」—— 和第一张一字不差。模型只
+            #   能按文字换，换出来当然不对。现在按本槽位取；本槽位没有描述就退回
+            #   `shown there` 纯图号写法，**绝不借别的人那句**。
+            _lk = (subject_looks or {}).get(slot)
+            if _lk is None and slot == PERSON_SLOTS[0]:
+                _lk = subject_look   # 老调用方只传一个 `subject_look`，那是第一个人的
+            look_en = _en_clean((_lk or {}).get("en") or "")
             if look_en and not c.get("wardrobe"):
                 d = f"{lab} is the person in <Picture {pic}>, with {look_en}."
             else:

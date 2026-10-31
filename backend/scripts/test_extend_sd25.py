@@ -201,17 +201,11 @@ def main() -> int:
     check("2.5 提交层把 2 张图原序透传出去", seen_img, [[Path("a.jpg"),
                                                           Path("b.jpg")]])
 
-    # ③ 闸：2.0 的延长不支持带图，必须当场报错，不许静默丢掉
-    try:
-        _run(cid="__probe__", rid="r_gate", direction="back", seconds=5,
-             content="她转身", model="doubao-seedance-2-0-mini-260615",
-             resolution="720p", with_audio=False,
-             ref_images=[Path("D:/tmp/不存在.jpg")])
-        gate = "没拦住"
-    except RuntimeError as e:
-        gate = str(e)
-    check("2.0 带参考图 → 当场拒绝（不静默丢图）",
-          "不支持带参考图" in gate, True)
+    # ③ 🩸 2026-10-31：原来这里测「2.0 的延长不支持带图 → 当场拒绝」。2.0 的适配器
+    #   已随复刻视频下架归档、不再注册 ⇒ 传它的 ID 会回落成 2.5（**支持**带图），
+    #   这条断言没有承载型号了，而且回落路径会走到读文件把脚本崩掉。
+    #   2.5 带图的正向行为由上面两条（原序透传 / 视频永远第 1 条）覆盖。
+    #   ⚠️ 将来若再有型号声明「延长不支持带图」，这条要按那个型号恢复。
 
     print("\n== 预设续法：只有 2.5 有（`sd25-pe:528` 的四个类别）==")
     modes = models.adapter_for(model=MID).caps.extend_modes
@@ -229,7 +223,8 @@ def main() -> int:
         check(f"续法 {k} 能拼进延长模板", txt in p, True)
 
     # 别家一个都没有 → 前端不显示这一块，界面回到自由文本框
-    for other in ("doubao-seedance-2-0-mini-260615", "MiniMax-H3-Max"):
+    # （旧 2.0 型号已下架、回落到 2.5，不再算「别家」）
+    for other in ("MiniMax-H3-Max",):
         check(f"{other} 没有预设续法",
               dict(models.adapter_for(model=other).caps.extend_modes), {})
 

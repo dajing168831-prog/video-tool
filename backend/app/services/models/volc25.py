@@ -180,6 +180,13 @@ def _extend_submit(*, prompt, ref_src, seg, model, resolution, seconds,
 _raw = dict(model_specs.volc(DEFAULT_ID))
 _raw["prefixes"] = PREFIXES
 
+def _agent_module():
+    """本家「逐段指令」agent（`clone_agent` 就是 2.5 官方视频编辑模板那套）。"""
+    from app.services import clone_agent
+
+    return clone_agent
+
+
 adapter = register(ModelAdapter(
     dialect=CL25,
     caps=Caps(model_id=DEFAULT_ID, family="volc",
@@ -196,6 +203,9 @@ adapter = register(ModelAdapter(
               split_person_images=False,
               max_ref_images=int(_raw.get("max_ref_images") or 0),
               auto_prefer={"asset": 0, "none": 0, "file": 1},
+              # 🩸 2026-10-31：2.0 下架后，2.5 是火山唯一在售的编辑档，
+              #   由它担任通道代表（`adapter_for(channel="volc")` 的兜底 caps）。
+              is_channel_default=True,
               default_model_setting="ark_video_edit_model",
               display_name="火山 Seedance 2.5",
               boundary_by_edit_task=True,    # 2.5 有 {edit_task_param} → 照带
@@ -220,6 +230,7 @@ adapter = register(ModelAdapter(
     error_hint=_error_hint,
     ready=_ready,
     ready_error=_ready_error,
+    agent=_agent_module,
     extend_prompt=_extend_prompt,
     extend_submit=_extend_submit,
 ))

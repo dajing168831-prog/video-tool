@@ -38,8 +38,13 @@ FRONT = ROOT.parent / "frontend" / "app" / "src"
 rows: list[tuple[str, bool, str]] = []
 
 
-def chk(name: str, ok: bool, detail: str = "") -> None:
-    rows.append((name, bool(ok), detail))
+def chk(name: str, ok, detail: str = "") -> None:
+    """`ok=None` = **跳过**：不并进通过数，也不计成失败，单独列出来。
+
+    🩸 2026-10-31 加：判据对已下架的型号不成立时，报绿是假绿（空集不算通过），
+    报红又是假红。跳过必须看得见，理由是必填的 detail。
+    """
+    rows.append((name, ok if ok is None else bool(ok), detail))
 
 
 def use_root(p: Path) -> None:
@@ -96,7 +101,7 @@ def mk_fixture() -> tuple[str, dict, dict, list, Path]:
     # 🩸 fixture 必须和真跑用同一个调用形状：`_desired_units` 会按 rec["shots"]
     # 把镜头结构句（shot_cuts）编译进提示词。这里不传 → 签名的 prompt 天然对不上
     # → 每一次都判"输入变了"，A1/A5/B1 全绿变全红（2026-10-23 查出并修正）。
-    prompts = work._video_prompts(plan, spans, rec["shots"])
+    prompts = work._video_prompts(plan, spans, rec["shots"], rec=rec)
 
     rid = "b" * 32
     wdir = d / "render" / rid / "whole"
@@ -311,9 +316,21 @@ def phase_c() -> None:
     w = work.build(cid)
     r = work.plan(cid, w, intent)
     units = r["totals"]["units"]
-    chk("C1 真实任务：plan 的段数 == 真跑的段数",
-        units == int(meta.get("segments") or -1),
-        f'plan {units} / 真跑 {meta.get("segments")}')
+    # 🩸 2026-10-31：这条拿**历史真实出片**的快照比段数。现存的历史任务全是
+    #   2.0 跑的（15s/段 → 3 段），而 2.0 已从复刻爆款下架、plan 现按 2.5 的
+    #   30s 重算（→ 2 段）—— 型号换了，切法必然不同，两者不该相等。
+    #   真跑型号还在可选列表时照常比；已下架则跳过（不并进通过数）。
+    from app.services import model_specs as _ms
+    _ch = rec.get("regen_channel") or "volc"
+    _used = rec.get("regen_model") or ""
+    if _used and _used not in [x for x, _ in _ms.MODELS.get(_ch, [])]:
+        chk("C1 真实任务：plan 的段数 == 真跑的段数", None,
+            f"跳过：这条真跑用的是 {_used}，已下架；plan 按 2.5 重算 "
+            f"(plan {units} / 真跑 {meta.get('segments')})，不具可比性")
+    else:
+        chk("C1 真实任务：plan 的段数 == 真跑的段数",
+            units == int(meta.get("segments") or -1),
+            f'plan {units} / 真跑 {meta.get("segments")}')
     # 🩸 2026-10-22：人物参考图口径改成"一人一张、不裁头"后，提示词模板变了，
     # 历史出片**本来就该失配**（签名的定义里就含"编译后的提示词"，模板改了就不是同输入）。
     # 所以这里不再要求"必然复用"，改判两件真正能证明机制没坏的事：
@@ -406,11 +423,15 @@ def main() -> int:
             shutil.rmtree(SCRATCH, ignore_errors=True)
         use_root(REAL_DIR)
 
-    ok = sum(1 for _n, o, _d in rows if o)
+    done = [r for r in rows if r[1] is not None]
+    skipped = [r for r in rows if r[1] is None]
+    bad = [r for r in done if not r[1]]
     for n, o, d in rows:
-        print(f"{'PASS' if o else 'FAIL'}  {n}" + (f"  [{d}]" if d else ""))
-    print(f"\n{ok}/{len(rows)} 通过")
-    return 0 if ok == len(rows) else 1
+        mark = "SKIP" if o is None else ("PASS" if o else "FAIL")
+        print(f"{mark}  {n}" + (f"  [{d}]" if d else ""))
+    tail = f"（跳过 {len(skipped)}）" if skipped else ""
+    print(f"\n{len(done) - len(bad)}/{len(done)} 通过{tail}")
+    return 0 if not bad else 1
 
 
 if __name__ == "__main__":

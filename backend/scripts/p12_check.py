@@ -239,19 +239,13 @@ chk("S7 只勾了第 1 镜：第 1 镜 video，其余 keep（用户的选择优�
 # ---------------------------------------------------------------------------
 # S8 时长预算（官方总时长上限）
 
-chk("S8 型号表里有总时长上限，且 2.5=30 / 2.0=15 / H3=15",
+# 🩸 2026-10-31：2.0 的 15 秒总时长上限随参数表下架删除。旧型号传进来会回落
+#   2.5 那一档 ⇒ 它拿到的预算也是 30 秒，不再有「15 秒装不下」这条退路。
+chk("S8 型号表里有总时长上限，且 2.5=30 / H3=15",
     (model_specs.volc(V25)["ref_video_total_sec"] == 30
-     and model_specs.volc(V20)["ref_video_total_sec"] == 15
      and model_specs.minimax(H3)["ref_video_total_sec"] == 15), "")
-
-c13, e13 = video_edit.style_video_budget("volc", V20, [(0.0, 13.0)])
-chk("S8 2.0 + 13 秒母版段 → 拦下（15 秒装不下 13+2）", c13 == 0.0 and bool(e13),
-    f"{c13} {e13}")
-chk("S8 拦下的话说清楚了退路（改用参考图 / 换 2.5）",
-    "风格参考图" in e13 and "30" in e13, e13)
-c12, e12 = video_edit.style_video_budget("volc", V20, [(0.0, 12.0)])
-chk("S8 2.0 + 12 秒母版段 → 放行，且总时长不超 15",
-    not e12 and c12 > 0 and 12.0 + c12 <= 15.0, f"{c12} {e12}")
+chk("S8 已下架的 2.0 型号回落 2.5 → 预算按 30 秒算",
+    model_specs.volc(V20)["ref_video_total_sec"] == 30, "")
 
 c28, e28 = video_edit.style_video_budget("volc", V25, [(0.0, 28.0)])
 chk("S8 2.5 + 28 秒母版段 → 拦下（30 秒装不下 28+2）", c28 == 0.0 and bool(e28),
@@ -262,12 +256,12 @@ chk("S8 2.5 + 27 秒母版段 → 放行，且总时长不超 30",
 
 ch13, eh13 = video_edit.style_video_budget("minimax", H3, [(0.0, 13.0)])
 ch12, eh12 = video_edit.style_video_budget("minimax", H3, [(0.0, 12.0)])
-chk("S8 H3 跟 2.0 同口径（15 秒）：13 秒拦、12 秒放",
+chk("S8 H3 自己的 15 秒口径：13 秒拦、12 秒放",
     ch13 == 0.0 and bool(eh13) and not eh12 and ch12 > 0, f"{ch13}/{ch12}")
 
 cmulti, emulti = video_edit.style_video_budget(
-    "volc", V20, [(0.0, 5.0), (5.0, 12.5), (12.5, 14.0)])
-# 最长一段 7.5s（不是三段加起来 14s —— 加起来的话 15 秒必炸）；放得下就截满 3 秒
+    "volc", V25, [(0.0, 5.0), (5.0, 12.5), (12.5, 14.0)])
+# 最长一段 7.5s（不是三段加起来 14s）；放得下就截满 3 秒
 chk("S8 多段时按**最长的一段**算（最长 7.5s → 截满 3s，不是把段长加起来）",
     not emulti and abs(cmulti - video_edit.STYLE_CLIP_SEC) < 1e-6, f"{cmulti} {emulti}")
 
@@ -355,7 +349,8 @@ from app.services import ark as _ark_mod
 from app.services import minimax as _mm_mod
 from app.services import video_edit as _ve_mod
 from app.services.models import h3 as _h3_ad
-from app.services.models import volc20 as _v20_ad
+# 🩸 2026-10-31：2.0 已从复刻视频下架归档 → 火山侧改用现存 2.5 验接线
+from app.services.models import volc25 as _v25_ad
 
 _tmpbase = ROOT / "data" / "tmp"
 _tmpbase.mkdir(parents=True, exist_ok=True)
@@ -386,7 +381,7 @@ with _mock.patch.object(_ark_mod, "edit_video",
     try:
         from app.services import ark_ingest as _ing
         with _mock.patch.object(_ing, "available", lambda: False):
-            _v20_ad._submit(_ctx("volc", "doubao-seedance-2-0-mini-260615"))
+            _v25_ad._submit(_ctx("volc", "doubao-seedance-2-5-260628"))
     except Exception as e:  # noqa: BLE001
         _cap["volc_err"] = repr(e)
     try:

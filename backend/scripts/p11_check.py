@@ -214,14 +214,17 @@ def phase_e() -> None:
     # 🩸 判据要写「效果」不写「文件里有没有这句话」：以前这里 grep
     #    `known = {mid for …}`，代码一重构就假红，而实际校验是对的。
     from app.api import clone as _api
-    chk("E3 型号在册才收：认得的放行、乱填的拒、跨通道点名也拒",
+    # 🔓 2026-11-01 解冻 H3 后，E3 恢复成"两家都在"的形态：
+    #   乱填拒 / 2.5 放行 / H3 放行 / 跨通道错配拒。
+    #   （冻结机制本身没删，只是当前没有冻结的家族 → 冻结分支无可测对象。）
+    chk("E3 型号校验：认得的放行、乱填的拒、跨通道错配的拒",
         _api.regen_model_error("乱填的型号") == "未知的模型"
         and _api.regen_model_error(V25) == ""
         and _api.regen_model_error(H3) == ""
-        and _api.regen_model_error(H3, "volc") == "所选模型不属于该通道"
-        and _api.regen_model_error(H3, "auto") == "",
+        and _api.regen_model_error(V25, "minimax") == "所选模型不属于该通道",
         f'{_api.regen_model_error("乱填的型号")} | '
-        f'{_api.regen_model_error(V25)} | {_api.regen_model_error(H3, "volc")}')
+        f'{_api.regen_model_error(V25)} | {_api.regen_model_error(H3)} | '
+        f'{_api.regen_model_error(V25, "minimax")}')
     chk("E4 后台任务 submit_extend + 执行体都在",
         "def submit_extend" in jobs and "def _extend(" in jobs)
     # 🩸 2026-10-28：延长**从前端下架**（结果页入口、cloneExtend 封装、
@@ -397,8 +400,11 @@ def phase_h(tmp: Path) -> None:
         str(models.adapter_for(model=H3).caps.extend_ref_max_sec))
     chk("H10 H3 不按火山裁接缝（官方没给计帧规则 → 不裁）",
         extend.seam_frames(H3) == (0, 0), str(extend.seam_frames(H3)))
-    chk("H11 火山 2.0 的 6+1 帧规则没被带歪",
-        extend.seam_frames(V20) == (6, 1), str(extend.seam_frames(V20)))
+    # 🗑️ 2026-11-01 删掉 H11「火山 2.0 的 6+1 帧规则没被带歪」。
+    #   2.0（`doubao-seedance-2-0-260128`）已从型号表下架 —— 实测
+    #   `adapter_for(V20)` 回落成 2.5、`seam_frames(V20)` 恒为 (0,0)，这条断言
+    #   **测的是一个不存在的型号**，永远红。2.0 的接缝规则本身仍在 `phase_cd`
+    #   的 `SEL == "volc20"` 分支里，那一轮才轮到它。
 
     long_one = tmp / "long.mp4"
     _mk_two_tone(long_one, 15.0, 5.0)     # 20s：前 15s 红、后 5s 蓝

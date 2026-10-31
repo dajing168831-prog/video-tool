@@ -8,6 +8,7 @@
   D. 逐段分诊：两个人都在这段 → 换两个；只有一个人 → 只换他；都不在 → 留原片
   E. 界面契约：多选 chip / 各自上传 / 请求体带 person_ids / 参数真的传下去
   F. 素材：**一人一张原图**，不再派生大头照（2026-10-26 台账 D48；以前是「每人独立裁大头照」，已作废）
+  G. 尾段收口：生成段比计划区间短时，时间轴按**素材真实长度**收口（2026-10-31）
 
 跑法：python scripts/p9_check.py --model volc20|volc25|h3
 """
@@ -288,6 +289,48 @@ def phase_e() -> None:
 
 # ---------------------------------------------------------------------------
 
+def phase_g() -> None:
+    """G. 尾段收口：素材比这一段短时，时间轴**不许伸到素材之外**。
+
+    🩸 2026-10-31 真跑：2.5 编辑任务返回 25.375s，规划区间却到 25.751s，
+    超出的 0.38s 按"未覆盖 → 取原片"处理 ⇒ 成片最后几帧闪回原片里那张脸。
+    判据：区间止于**素材真实长度**，不是止于计划长度。
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    from app.services import clone_pipeline as P, media
+
+    ff = media.ffmpeg_path()
+    tmp = Path(tempfile.mkdtemp(prefix="p9f_", dir="D:/tmp"))
+    try:
+        def make(name: str, secs: float) -> Path:
+            p = tmp / name
+            subprocess.run([ff, "-hide_banner", "-loglevel", "error", "-y",
+                            "-f", "lavfi",
+                            "-i", f"color=c=black:s=64x64:r=30:d={secs}",
+                            "-c:v", "libx264", "-pix_fmt", "yuv420p", str(p)],
+                           check=True, capture_output=True)
+            return p
+
+        shots = [{"i": 0, "start": 0.0, "end": 2.5}]
+        short = make("short.mp4", 2.0)
+        long = make("long.mp4", 3.0)
+
+        iv = P._span_intervals([short], [(0.0, 2.5)], shots, only={0})
+        chk("G1 素材只有 2.0s、这一段要 2.5s → 区间收到 2.0s（不伸到素材外）",
+            bool(iv) and abs(iv[0][1] - 2.0) < 0.05,
+            str([(round(a, 2), round(b, 2)) for a, b, _, _ in iv]))
+
+        iv2 = P._span_intervals([long], [(0.0, 2.5)], shots, only={0})
+        chk("G2 素材够长 → 区间仍止于本段末尾 2.5s（没被削短）",
+            bool(iv2) and abs(iv2[0][1] - 2.5) < 1e-6,
+            str([(round(a, 2), round(b, 2)) for a, b, _, _ in iv2]))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main() -> int:
     global SEL
     from _model_gate import sel_or_exit
@@ -298,6 +341,7 @@ def main() -> int:
     phase_c()
     phase_d()
     phase_e()
+    phase_g()
 
     ok = sum(1 for _, v, _ in rows if v)
     for name, v, detail in rows:

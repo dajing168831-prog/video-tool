@@ -144,8 +144,8 @@ def _load_inventory(cid: str) -> dict | None:
 
 def _video_prompts(plan: dict, spans: list, shots: list | None = None,
                    audio_ref: bool | None = None,
-                   assume_present: bool = False) -> list[str]:
-    """按段复编译提示词 —— 和真跑（replace_spans）走同一个函数。
+                   rec: dict | None = None) -> list[str]:
+    """按段复编译提示词 —— 和真跑（`video_edit._gen_spans`）走同一套输入。
 
     🩸 这一条不能省：资产签名里如果只放"换了什么"，不放**编译后的提示词**，
     提示词模板一改（比如去掉「体型」两个字），旧资产会被误判成"同输入"，
@@ -155,30 +155,54 @@ def _video_prompts(plan: dict, spans: list, shots: list | None = None,
     短于 2s，就必须传 False —— 那一段真跑时不会喂音频，提示词里也不该出现
     `<Audio 1>` / `@音频1`。
 
-    `assume_present` 只给**出片前预览**用：预览不跑视觉盘点，`targets` 是空的，
-    而空 targets 会被理解成"这个人这一段不在画面里"，换人句和说话人绑定整段消失。
-    预览要展示的是"真跑大概长什么样"，所以这里按"每个人都在"补一份占位。
-    真跑（资产签名）**绝不能**开这个 —— 那会把签名算成另一个提示词。
+    🩸 2026-10-31 修「预览 ≠ 实发」：以前这里只传 `shot_cuts`，真跑还传
+    `shot_lines`（台词）、`frame_people`（这一段画面里有谁）、`boundary_pic`
+    （边界帧图号）—— 少三个输入 ⇒ 预览看到的句子和发出去的**不是同一句**
+    （2026-10-24 实测：预览「其中的人物」/ 实发「画面中央的人物（…）」）。
+    现在把 `rec` 传进来，按 `_gen_spans` 的同一套规则补齐。
+
+    ⚠️ 唯一算不准的是 `boundary_pic`：真跑要**取到尾帧**才带边界帧，取帧失败会
+    退化成不带。这里按"取帧成功"估算；预览和实发在这一个点上仍可能差一句。
+    彻底消除要等提示词落盘（单一真相源），那时预览直接读文件。
     """
-    from app.services import video_edit
+    from app.services import models, video_edit
 
     acts = video_edit._span_plan(plan, spans)
+    ad = models.adapter_for(model=plan.get("model") or "", channel=plan.get("ch") or "")
+    n_refs = len(plan.get("ordered") or [])
     out = []
-    for sp in spans:
-        act, target = acts.get(sp, ("", None))
-        if assume_present and not target and act != "keep":
-            target = [{"id": pid, "present": True}
-                      for pid in (plan.get("person_ids") or [])]
+    prev_generated = False
+    for n, sp in enumerate(spans, 1):
+        a, b = float(sp[0]), float(sp[1])
+        act, target = acts.get((a, b), ("", None))
+        if act == "keep":
+            # 这一段真跑时直接留原片（不发请求）。清单仍与 spans 一一对应，
+            # 提示词按 `_span_prompt` 的老行为给 `plan["prompt"]` 占位。
+            prev_generated = False
         # 镜头结构句也进签名：真跑（`_gen_spans`）带 shot_cuts，这里不带就成了
         # "签名算的和实际发的不一样"，切点不同的两条片会被误判成同输入
         cuts = None
         if shots is not None:
-            a, b = float(sp[0]), float(sp[1])
             cuts = [round(float(s["start"]) - a, 3) for s in shots
                     if a + 0.15 < float(s["start"]) < b - 0.15]
+        # 逐句台词 / 这一段画面里有谁 / 边界帧图号 —— 三个都和真跑同规则
+        seg_lines = video_edit._span_lines(rec, a, b, cuts) if rec else None
+        frame_ppl = None
+        if rec and plan.get("inventory"):
+            from app.services import vision_plan as _vp
+
+            frame_ppl = _vp.people_in(plan.get("inventory"), a, b)
+        # 边界帧：上一段是重画的、紧挨着、且切点不在原片镜头切换上（同 `_gen_spans`）
+        adjacent = (n >= 2 and prev_generated
+                    and abs(float(spans[n - 2][1]) - a) < 1e-3
+                    and not video_edit._at_shot_cut(rec, a))
+        bf_pic = (n_refs + 1) if (adjacent and bool(ad.caps.boundary_pic)) else 0
+        prev_generated = True
         try:
-            out.append(video_edit._span_prompt(plan, target, drop_person=(act == "text"),
-                                               audio_ref=audio_ref, shot_cuts=cuts))
+            out.append(video_edit._span_prompt(
+                plan, target, drop_person=(act == "text"),
+                audio_ref=audio_ref, boundary_pic=bf_pic, shot_cuts=cuts,
+                shot_lines=seg_lines, frame_people=frame_ppl))
         except Exception:  # noqa: BLE001
             out.append("")
     return out
@@ -486,7 +510,7 @@ def _desired_units(cid: str, work: dict, intent: dict) -> list[dict]:
                                   channel=channel, model=model, inventory=inv,
                                   style_video=_sv)
         spans, _ = video_edit.plan_spans(src, rec, plan)
-        prompts = _video_prompts(plan, spans, rec.get("shots") or [])
+        prompts = _video_prompts(plan, spans, rec.get("shots") or [], rec=rec)
         return [{"engine": "video", "span": _span(a, b), "shots": [], "prompt": p,
                  **_resolved(plan)}
                 for (a, b), p in zip(spans, prompts)]
@@ -511,7 +535,7 @@ def _desired_units(cid: str, work: dict, intent: dict) -> list[dict]:
         subject_image=subject if subject.exists() else None, subject_asset="",
         refs=refs, inventory=inv, audio_mode=audio, speech_spans=speech_spans,
     )
-    prompts = _video_prompts(d["plan"], d["spans"], rec.get("shots") or [])
+    prompts = _video_prompts(d["plan"], d["spans"], rec.get("shots") or [], rec=rec)
     units = [{"engine": "video", "span": _span(a, b), "shots": [], "prompt": p,
               **_resolved(d["plan"])}
              for (a, b), p in zip(d["spans"], prompts)]

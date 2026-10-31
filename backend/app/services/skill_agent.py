@@ -58,6 +58,9 @@ class AgentResult:
     reads: list = field(default_factory=list)
     trace: list = field(default_factory=list)   # 前端进度用
     truncated: str = ""                          # 超上限时说明原因
+    #: 调用方自定义工具交付的**结构化产物**（复刻的逐段编辑指令放这里）。
+    #: 默认空 dict —— 原有四条路的产物仍走 `prompt` / `note`，互不影响。
+    payload: dict = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------- skill 包
@@ -211,8 +214,8 @@ TOOLS = [
 # ---------------------------------------------------------------- 执行
 
 def _post(messages: list[dict], *, model: str, key: str,
-          timeout: float = 300.0) -> dict:
-    body = {"model": model, "messages": messages, "tools": TOOLS,
+          timeout: float = 300.0, tools: list[dict] | None = None) -> dict:
+    body = {"model": model, "messages": messages, "tools": tools or TOOLS,
             "tool_choice": "auto", "temperature": 0.2}
     try:
         return ark_chat.post(body, key=key, timeout=timeout)
@@ -251,7 +254,8 @@ def _clean(messages: list[dict]) -> list[dict]:
 
 def run(root: Path, *, system: str, messages: list[dict], model: str, key: str,
         judge=None, max_steps: int = MAX_STEPS, max_tokens: int = MAX_TOKENS,
-        post=None, on_step=None, nudge: bool = False) -> AgentResult:
+        post=None, on_step=None, nudge: bool = False,
+        tools: list[dict] | None = None, on_tool=None) -> AgentResult:
     """跑一轮 agent 对话。
 
     `post` 可注入桩（`post(messages)`，零费用测试）。
@@ -260,6 +264,13 @@ def run(root: Path, *, system: str, messages: list[dict], model: str, key: str,
     `nudge` 默认关：模型不调工具直接说话时，是否先提醒它一次再谈收下。
     **只有点名要的调用方（目前是 2.0）才打开** —— 打开就改变交付路径，
     不该由执行器替某一家决定。
+
+    `tools` / `on_tool`：给**别的产品线**开的口子（2026-10-31 复刻要一次交
+    多段编辑指令，`deliver_prompt` 只能交一段）。默认 None = 原有四个工具、
+    原有分派，行为一字不变。
+      · `tools` 替换整张工具表（调用方自己拼，可复用本模块的 `TOOLS`）；
+      · `on_tool(name, args, res, step) -> (out, stop) | None`：返回 None 表示
+        "我不认识这个工具"，交回默认分派。
     """
     hist = _clean(messages)
     if not hist:
@@ -286,7 +297,7 @@ def run(root: Path, *, system: str, messages: list[dict], model: str, key: str,
             res.truncated = f"token 已到上限（{res.tokens}/{max_tokens}）"
             break
         d = (post(msgs) if post else
-             _post(msgs, model=model, key=key))
+             _post(msgs, model=model, key=key, tools=tools))
         res.calls += 1
         res.tokens += (d.get("usage") or {}).get("total_tokens") or 0
         try:
@@ -372,6 +383,11 @@ def run(root: Path, *, system: str, messages: list[dict], model: str, key: str,
                         step("deliver", f"交付 {len(p)} 字符")
                         stop = True
                         out = "已交付"
+            elif on_tool is not None and (
+                    _r := on_tool(name, args, res, step)) is not None:
+                # 调用方自己的工具（复刻的 `deliver_segments` 走这里）。
+                # 返回 (给模型看的回执, 是否结束本轮) —— 与上面四个工具同语义。
+                out, stop = _r
             else:
                 out = f"错误：没有这个工具 {name}"
 

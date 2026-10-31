@@ -64,6 +64,16 @@ def adapters_by_family() -> dict[str, ModelAdapter]:
     return out
 
 
+def frozen_families() -> frozenset[str]:
+    """当前产品线**不接**的家族（由适配器自己声明 `Caps.frozen`）。
+
+    🩸 2026-10-31：复刻冻结 H3 时，这条名单原本写在 `app/api/clone.py` 里
+    （`frozenset({"minimax"})`）—— 分离门当场报「核心文件里新增厂商耦合」。
+    厂商名只能出现在 `models/<家>.py`；核心问注册表。
+    """
+    return frozenset(ad.family for ad in _REGISTRY.values() if ad.caps.frozen)
+
+
 def adapter_for(model: str = "", channel: str = "") -> ModelAdapter:
     """按型号取适配器；型号为空就按通道取那一族的默认。
 
@@ -96,9 +106,16 @@ def adapter_for(model: str = "", channel: str = "") -> ModelAdapter:
     return _REGISTRY[_DEFAULT_VOLC]
 
 
-_DEFAULT_VOLC = "doubao-seedance-2-0-mini-260615"
+# 🩸 2026-10-31：2.0 三档已下架（`model_specs.MODELS`），兜底必须指向还活着的型号。
+#   这里只是「注册表里找不到时拿谁的适配器」的最后一道，选 2.5（火山唯一在售编辑档）。
+_DEFAULT_VOLC = "doubao-seedance-2-5-260628"
 _DEFAULT_MINIMAX = "MiniMax-H3"
 
 
 # 各家的模块在末尾 `register()` 自己；放在这里是为了避免循环导入。
-from app.services.models import h3, volc20, volc25  # noqa: E402,F401
+# 🩸 2026-10-31 主人：「复刻视频直接下架 2.0 模型，以后都不需要用到」。
+#   `volc20.py` / `volc20_compile.py` 是**复刻视频**的适配器与编译器（编译 2.0 提示词、
+#   调方舟出片），已归档到 `backend/_archive/sd20/`，这里不再注册。
+#   ⚠️ 提示词优化**不受影响**：那条线走 `sd20_skill` → `volc20_pe`（独立的规则校验），
+#   以及 `model_specs` 的 2.0 参数表，两者都不经过注册表。
+from app.services.models import h3, volc25  # noqa: E402,F401

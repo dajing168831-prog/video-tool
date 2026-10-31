@@ -122,18 +122,18 @@ def main() -> int:
     check("声音模式", r3["audio"]["mode"], "original")
     check("配音秒数=原片", r3["audio"]["voice_seconds"], 6.0)
 
-    # 🩸 提示词建议字数（2026-10-28，官方 `/d/tmp/volc-api:175` 原话：
-    #   「中文提示词不超过 500 字，英文提示词不超过 1000 词。字数过多**易**导致
-    #    信息分散…」）—— 是**建议不是硬限**：超了照发，只提示。
-    #   这几条判的是「用户点出片之前能不能看见」，所以走生产入口 `preview_render`，
-    #   不是单独调 `prompt_advice`。
-    print("== 提示词建议字数：超了只提示，不拦 ==")
+    # 🩸 2026-10-31：这组原来用 2.0 Mini 触发「中文 ≤500 字」的建议。
+    #   2.0 已从**复刻爆款**下架（主人拍板）⇒ 这条预览入口只会拿到 2.5，
+    #   而 2.5 官方 skill 明写「不设置固定字数上限」（`sd25-pe:522`，参数表
+    #   `prompt_advised` 留空）⇒ 长提示词**不该**再出这条提醒。
+    #   判据跟着型号走：短/长都给空，且长提示词照样放行（超字不拦）。
+    print("== 提示词建议字数：2.5 不设固定上限 → 不提示、不拦 ==")
     _short = {"audio": "original",
               "change": {"product": True, "product_desc": "白色陶瓷面霜罐"}}
     r7 = clone_pipeline.preview_render(
         Path("unused.mp4"), REC, script=None, edit_spec=_short,
         refs={"product": Path("nope.jpg")},
-        regen_channel="volc", regen_model="doubao-seedance-2-0-mini-260615",
+        regen_channel="volc", regen_model="doubao-seedance-2-5-260628",
     )
     check("短提示词：不给提醒（成对的下半）", r7.get("prompt_advice"), "")
 
@@ -149,13 +149,11 @@ def main() -> int:
         Path("unused.mp4"), REC, script=None, edit_spec=_big,
         refs={s: Path("nope.jpg") for s in ("person", "product", "scene")},
         subject_image=Path("nope2.jpg"),
-        regen_channel="volc", regen_model="doubao-seedance-2-0-mini-260615",
+        regen_channel="volc", regen_model="doubao-seedance-2-5-260628",
     )
-    check("长提示词：带出提醒", bool(r8.get("prompt_advice")), True)
-    check("提醒里报了官方建议的 500 字（从规格表解析，不写死）",
-          "≤500" in (r8.get("prompt_advice") or ""), True)
-    check("提醒给了可执行的下一步", "分两条片子出" in (r8.get("prompt_advice") or ""), True)
-    check("🩸 只是建议：预览仍然通过（超字不拦）", r8["ok"], True)
+    # 成对的上半：2.5 不设固定上限 ⇒ 再长也不给建议字数提醒
+    check("长提示词：2.5 无固定字数上限 → 不给提醒", r8.get("prompt_advice"), "")
+    check("长提示词照样放行（超字不拦）", r8["ok"], True)
     check("提醒不进 warnings（前端确认框只显示 warnings[0]，会被挤掉）",
           any("建议中文" in w for w in r8.get("warnings") or []), False)
 

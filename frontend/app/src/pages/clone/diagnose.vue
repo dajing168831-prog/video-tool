@@ -968,9 +968,19 @@
             <view class="peek-item" v-for="(seg, i) in peekSegments" :key="i">
               <view class="peek-tag">
                 第 {{ i + 1 }} 段 · {{ seg.start }}–{{ seg.end }} 秒（{{ seg.duration }} 秒）·
-                {{ seg.audio ? '带音频' : '不带音频' }}
+                {{ seg.audio ? '带音频' : '不带音频' }} ·
+                {{ seg.prompt_source === 'agent' ? '官方 skill 现写' : '机器按规则拼' }}
               </view>
               <text class="peek-text">{{ seg.prompt }}</text>
+            </view>
+            <!-- 机器拼的版本每段句式一样，换人时容易"两张脸不一样、动作也对不上"。
+                 点这里让 agent 读官方 skill 逐段现写，写完整份落盘，出片直接用这一版。 -->
+            <view class="peek-ai" v-if="peekSegments.length">
+              <button class="peek-ai-btn" :loading="peekAiLoading"
+                      :disabled="peekAiLoading" @click="genPeekPrompts(false)">
+                {{ peekAiLoading ? '官方 skill 正在写…' : '用官方 skill 逐段重写（会调一次模型）' }}
+              </button>
+              <text class="peek-ai-tip" v-if="peekAiMsg">{{ peekAiMsg }}</text>
             </view>
             <view class="peek-tip" v-if="peek && peek.blocked">{{ peek.blocked }}</view>
           </view>
@@ -987,7 +997,8 @@
 
 <script>
 import {
-  cloneDetail, clonePlan, cloneRender, cloneFileUrl, cloneModels, cloneUploadRef,
+  cloneDetail, clonePlan, clonePrompts, cloneRender, cloneFileUrl, cloneModels,
+  cloneUploadRef,
   cloneDeleteRef, cloneUploadStyleVideo, cloneDeleteStyleVideo,
   cloneUploadAudio, cloneDeleteAudio,
   cloneReusePlan,
@@ -1046,6 +1057,8 @@ export default {
       peekOn: false,
       peekLoading: false,
       peek: null,
+      peekAiLoading: false,
+      peekAiMsg: '',
       reuseTimer: null,
       // 要排除的镜头（空 = 全部参与）。用"排除法"而不是"选中法"，
       // 这样默认全选，用户点一下就是取消一镜，不用先把所有镜勾一遍
@@ -1196,11 +1209,9 @@ export default {
         { v: 5, t: '前 5 秒' },
         { v: 8, t: '前 8 秒' },
       ],
-      channels: [
-        { v: 'auto', t: '自动' },
-        { v: 'volc', t: '火山' },
-        { v: 'minimax', t: 'MiniMax' },
-      ],
+      // 🩸 2026-10-31：通道列表改由后端型号表推导（见 computed.channels）。
+      //   以前这里写死三项，跟后端 `model_specs.MODELS` 不同源 ——
+      //   冻结一个通道（比如 H3）要改两处，漏一处界面上还留着入口。
       slots: [
         // 🩸 人物**不给描述框**：换人后的长相只认参考图（`<Picture N>`），
         // 文字不参与生成（`edit_spec._clauses` 人物分支根本没用 person_desc）。
@@ -1245,6 +1256,20 @@ export default {
   computed: {
     busy() {
       return this.d.state === 'queued' || this.d.state === 'analyzing'
+    },
+    // 通道列表 = 后端 `/clone/models` 里**真实出现过**的通道。
+    // 🩸 单一真相源是 `model_specs.MODELS`：那里没有的通道，这里就不会出现。
+    //   2026-10-31 冻结 H3 = 后端清空 `MODELS["minimax"]`，前端自动跟着消失，
+    //   不用再记得改两处。中文名只是显示用，认不出来的通道直接显示原名。
+    channels() {
+      const labels = { volc: '火山', minimax: 'MiniMax' }
+      const out = [{ v: 'auto', t: '自动' }]
+      for (const m of (this.models || [])) {
+        if (m.channel && !out.some((x) => x.v === m.channel)) {
+          out.push({ v: m.channel, t: labels[m.channel] || m.channel })
+        }
+      }
+      return out
     },
     // 出片预览里的逐段提示词（后端已经把 "带不带音频" 也算好了）
     peekSegments() {
@@ -1541,16 +1566,18 @@ export default {
       }
       return `${subj}；单段最长 ${m.max_sec} 秒，更长的片子会自动切段拼接`
     },
-    // 清晰度跟着型号走：2.0 Mini 只到 720p，H3-Max 没有 2K。
-    // 没选型号时只给两档通用的，别让用户挑一个实际会被降档的值。
+    // 清晰度跟着型号走：能出哪几档由型号自己的 `resolutions` 决定
+    // （`/clone/models` 每个型号都带着）。
+    // 🩸 型号选「默认」时，按**这一单实际会用的型号**列 —— 也就是所选通道的型号。
+    //   以前这里写死了一张「720p / 1080p」的兜底表，专门给"没选型号"用；
+    //   2.0/H3 下架后那张表没人更新，2.5 的 **480p 直接被它挡掉了**
+    //   （2026-10-31 主人指出）。兜底只能来自型号自己的表，不能再写死。
     resolOpts() {
       const m = this.models.find((x) => x.id === this.regenModel)
-      if (!m) {
-        return [
-          { v: 'auto', t: '自动' },
-          { v: '720p', t: '720p' },
-          { v: '1080p', t: '1080p' },
-        ]
+        || this.models.find((x) => x.channel === this.regenChannel)
+        || this.models[0]
+      if (!m || !(m.resolutions || []).length) {
+        return [{ v: 'auto', t: '自动' }]
       }
       return [{ v: 'auto', t: '自动' }].concat(
         (m.resolutions || []).map((r) => ({ v: r, t: r }))
@@ -1838,6 +1865,25 @@ export default {
         this.peek = null
       } finally {
         this.peekLoading = false
+      }
+    },
+    // 官方 skill 逐段重写：这一下会调一次对话模型（**花钱**），写完落盘。
+    // 落盘后出片读的就是这一版；勾选/参考图/文案/型号任一变了签名就变，
+    // 出片会回落到上面的机器版 —— 所以改完参数再点一次。
+    async genPeekPrompts(force) {
+      if (this.peekAiLoading) return
+      this.peekAiLoading = true
+      this.peekAiMsg = ''
+      try {
+        const s = (this.script || '').trim()
+        const opts = this.buildRenderOpts(this.openingOn ? this.openingShots : null, s)
+        this.peek = await clonePrompts(
+          this.cid, s || (this.d.speech_text || ''), opts, !!force)
+        this.peekAiMsg = '已写入，出片会用这一版'
+      } catch (e) {
+        this.peekAiMsg = (e && e.message) ? e.message : '没写成，出片仍用机器版'
+      } finally {
+        this.peekAiLoading = false
       }
     },
     async loadReuse() {
@@ -3353,6 +3399,29 @@ export default {
   color: #111827;
   word-break: break-all;
   white-space: pre-wrap;
+}
+/* 官方 skill 逐段重写（会调一次模型，所以按钮上把花费写出来） */
+.peek-ai {
+  margin-top: 20rpx;
+  padding-top: 16rpx;
+  border-top: 1rpx dashed #e5e7eb;
+}
+.peek-ai-btn {
+  margin: 0;
+  font-size: 23rpx;
+  line-height: 2.4;
+  color: #ffffff;
+  background: #4b5563;
+  border-radius: 10rpx;
+}
+.peek-ai-btn[disabled] {
+  opacity: 0.6;
+}
+.peek-ai-tip {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 21rpx;
+  color: #6b7280;
 }
 .mode-row {
   display: flex;

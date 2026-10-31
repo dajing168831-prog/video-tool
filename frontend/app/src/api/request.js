@@ -290,6 +290,25 @@ export function clonePlan(id, script, opts = {}) {
   })
 }
 
+/**
+ * 用官方 skill 现写这一单的逐段编辑指令（**会调用一次对话模型，花钱**）。
+ * 写好后落盘，出片直接用它；参数（勾选/参考图/文案/型号）改了签名就变，
+ * 出片会回落代码编译版 —— 所以改完参数再点一次。
+ */
+export function clonePrompts(id, script, opts = {}, force = false) {
+  return request(`/api/clone/${id}/prompts${force ? '?force=true' : ''}`, {
+    method: 'POST',
+    data: cloneRenderBody(script, opts),
+    // 要读官方 skill 再逐段写，默认 120s 不够（实测 2 段 40–90s，段多更久）
+    timeout: 600000,
+  })
+}
+
+/** 看这一单当前落盘的逐段指令（零费用，不调模型） */
+export function clonePromptsView(id) {
+  return request(`/api/clone/${id}/prompts`, { method: 'GET' })
+}
+
 /** 这次能复用几段、要重画几段、为什么 —— 全本地算，不花钱 */
 export function cloneReusePlan(id, script, opts = {}) {
   return request(`/api/clone/${id}/reuse-plan`, {

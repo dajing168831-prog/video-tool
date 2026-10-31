@@ -22,6 +22,7 @@
         <view class="meta-sub" v-if="voiceNote">{{ voiceNote }}</view>
         <view class="meta-sub warn" v-if="qcNote">{{ qcNote }}</view>
         <view class="meta-sub" :class="{ warn: idBad }" v-if="idNote">{{ idNote }}</view>
+        <view class="meta-sub" :class="{ warn: contractBad }" v-if="contractNote">{{ contractNote }}</view>
       </view>
       <view class="meta-tag" :class="{ warn: !qcOk }">{{ qcOk ? '可发布' : '需复核' }}</view>
     </view>
@@ -105,7 +106,10 @@ export default {
     // 新记录以 qc.ok 为准。
     qcOk() {
       const q = (this.d && this.d.qc) || {}
-      return q.ok !== false
+      // 成品契约（口型）不合格也不该标「可发布」——技术指标全绿但嘴对不上，
+      // 就是旧版那套「工具全绿、成片是废的」。旧记录没有 contract 字段，按通过处理。
+      const c = (this.d && this.d.contract) || {}
+      return q.ok !== false && c.ok !== false
     },
     // 成片质检：定格 / 音画时长差 / 总时长偏离。后端本地 ffmpeg 跑的，不额外花钱。
     // 有问题先说清楚，别让用户自己播到一半才发现。
@@ -150,6 +154,29 @@ export default {
       }
       if (ps.some((p) => p.verdict === 'no_ref')) {
         return '身份核对：参考图里认不出人脸，这一版核对不了'
+      }
+      return ''
+    },
+    // 成品契约（第 3 步）：口型跟没跟上原声。后端本地算的，零成本、每片自动跑。
+    // 只有口型有判据（|滞后| ≤300ms 且包络相关 ≥0.3）；段间身份和背景仍是只报数，
+    // 标定样本不够，不在这里打勾 —— 见 `backend/app/services/contract.py` 顶部。
+    contractBad() {
+      const c = (this.d && this.d.contract) || {}
+      return (c.items || []).some((i) => i.verdict === 'fail')
+    },
+    contractNote() {
+      const c = (this.d && this.d.contract) || {}
+      const lips = (c.items || []).filter((i) => String(i.key || '').startsWith('lip'))
+      if (!lips.length) return ''
+      const bad = lips.filter((i) => i.verdict === 'fail')
+      if (bad.length) {
+        return '⚠ 口型没跟上原声：'
+          + bad.map((i) => `${i.label}滞后 ${Math.abs(i.lag_ms)}ms`).join('、')
+          + '（超过 300ms 就算对不上）'
+      }
+      const ok = lips.filter((i) => i.verdict === 'pass')
+      if (ok.length) {
+        return `口型核对：${ok.length} 段都跟上了原声（滞后 ${ok.map((i) => `${i.lag_ms}ms`).join(' / ')}）`
       }
       return ''
     },

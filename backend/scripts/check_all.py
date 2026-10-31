@@ -63,7 +63,7 @@ REGISTRY: list[tuple[str, str, tuple[str, ...], bool, bool]] = [
     ("全链路接线", "test_whole_wiring.py", (), True, False),
     ("人声分离+混音", "test_separate.py", (), True, False),
     # ---------------- 延长（按型号挑一个）----------------
-    ("延长·2.0", "test_extend.py", (), True, False),
+    # 🩸 2026-10-31：`test_extend.py`（2.0）随复刻视频下架归档，只剩 2.5 这一条。
     ("延长·2.5", "test_extend_sd25.py", (), True, False),
     ("参考图顺序·2.5", "test_ref_order_sd25.py", (), True, False),
     ("分段台词·2.5", "test_spans_sd25.py", (), True, False),
@@ -115,6 +115,9 @@ EXTRA = {
     # 结构化五段 —— 每一条都和 2.0 相反，断言不能共用。
     "volc25": [
         ("提示词优化·2.5 接口层", "p25_check.py", (), True, False),
+        # 复刻的逐段编辑指令只走 2.5（H3 已冻结，见 `model_specs.MODELS`）。
+        # 零费用：全程 `post` 桩，不调模型、不出片。
+        ("复刻·逐段指令", "p30_check.py", (), True, False),
     ],
     "h3": [
         ("尺子·创作模式自证", "ruler_h3_base.py", ("--probes",), False, False),
@@ -130,6 +133,9 @@ EXTRA = {
         # p18 验的是旧的「一次调用」那条路，这条验新的。
         ("提示词优化·agent 读 skill", "p21_check.py", (), True, False),
         ("p17 JPG采样", "p17_check.py", (), True, False),
+        # 复刻的逐段指令：H3 自己那套（英文六段式）。零费用：全程 `post` 桩。
+        # 和 2.5 的 p30 平级、不共用断言 —— 两套模板不通用。
+        ("复刻·逐段指令·H3", "p46_check.py", (), True, False),
     ],
 }
 

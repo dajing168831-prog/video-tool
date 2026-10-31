@@ -108,8 +108,8 @@ def subject_path(cid: str) -> Path:
     return ref_path(cid, "person")
 
 
-def subject_desc_path(cid: str) -> Path:
-    """参考图里那个人的外观描述（2–3 个稳定静态特征）。
+def subject_desc_path(cid: str, slot: str = "person") -> Path:
+    """**某一个**人物槽位的参考图外观描述（2–3 个稳定静态特征）。
 
     🩸 为什么要有：官方两家都要求主体**用具体特征定义**，不是只给个图号。
       · 火山《Seedance 2.0 提示词指南》§1「定义主体」：用 2–3 个清晰、稳定的
@@ -119,8 +119,28 @@ def subject_desc_path(cid: str) -> Path:
          a blue cardigan, and a thin silver necklace.`
     以前我们只写「@图片N中的人物」「with the face… shown there」——图号有了，
     特征一个没写。这份文件补的就是这一步。
+
+    🩸 2026-11-01：**一人一份**。以前整个任务只有一个 `subject_desc.json`
+    （= 第一个人的），编译器把它套到每一张人物参考图上 —— 第二个人（上传的
+    真人男性照）被定义成「古装女性」，换人只能换错。现在按槽位分开存：
+    `person` 沿用历史文件名（老任务不能因为改名就找不到），
+    `person2` → `subject_desc_person2.json`，以此类推。
     """
-    return task_dir(cid) / "subject_desc.json"
+    if slot == "person":
+        return task_dir(cid) / "subject_desc.json"
+    if slot not in REF_SLOTS:
+        raise ValueError(f"未知的素材槽位: {slot!r}")
+    return task_dir(cid) / f"subject_desc_{slot}.json"
+
+
+def prompts_path(cid: str) -> Path:
+    """agent 读官方 skill 现写的**逐段编辑指令**。
+
+    🩸 两家（2.5 / H3）写**同一个文件**：出片只读一份，谁写的就是谁的。
+    靠内容里的 `agent` 标记 + 签名区分 —— 签名带型号和 skill 指纹，
+    换了家必不命中（`clone_agent.cached` / `h3_agent.cached` 各自判）。
+    """
+    return task_dir(cid) / "prompts.json"
 
 
 def segment_dir(cid: str) -> Path:
@@ -337,11 +357,6 @@ def speech_lines(task: dict) -> list[dict]:
             for r, w in zip(rows, work):
                 r["person"] = str(w.get("speaker") or "")
     return rows
-
-
-def latest_render(task: dict) -> dict | None:
-    rs = task.get("renders") or []
-    return rs[-1] if rs else None
 
 
 def history(limit: int = 50) -> list[dict]:

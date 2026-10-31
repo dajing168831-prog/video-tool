@@ -106,7 +106,11 @@ def submit(ctx: dict, *, generate_audio: bool = True) -> tuple:
     video_edit._write_request(work, n, ch="volc", plan=plan, dur=dur,
                               prompt=seg_prompt, video_url=video_url,
                               refs=refs_use, has_audio=bool(seg_audio),
-                              ref_video=style_clip)
+                              ref_video=style_clip,
+                              # 形状签名由 `_gen_spans` 在发请求前算好；
+                              # 2.5 不跑那道闸，ctx 里没有这个键 → 空串。
+                              shape=str(ctx.get("shape") or ""),
+                              master_audio=bool(ctx.get("master_audio")))
     ark.edit_video(
         seg_prompt, video_url=video_url, out=ctx["out"],
         ref_images=refs_use,

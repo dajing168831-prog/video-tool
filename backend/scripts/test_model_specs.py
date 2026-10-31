@@ -38,25 +38,20 @@ def main() -> int:
     from _model_gate import sel_or_exit
     sel_or_exit()
 
-    print("== 火山：2.0 和 2.5 不是一套标准 ==")
+    # 🩸 2026-10-31：2.0 已从复刻视频下架（适配器/编译器归档、参数表删除），
+    #   火山只剩 2.5 一档。下面同时守着「旧 2.0 型号不崩、回落 2.5」。
+    print("== 火山：只剩 2.5 一档 ==")
     s25 = model_specs.volc("doubao-seedance-2-5-260628")
     s20 = model_specs.volc("doubao-seedance-2-0-260128")
-    mini = model_specs.volc("doubao-seedance-2-0-mini-260615")
     check("2.5 单段上限", s25["max_sec"], 30.0)
-    check("2.0 单段上限", s20["max_sec"], 15.0)
-    check("2.0 Mini 单段上限", mini["max_sec"], 15.0)
     check("2.5 参考图上限", s25["max_ref_images"], 30)
-    check("2.0 参考图上限", s20["max_ref_images"], 9)
-    check("2.0 Mini 分辨率只到 720p", mini["resolutions"], ("480p", "720p"))
     check("2.5 支持 1080p", "1080p" in s25["resolutions"], True)
-    # 官方：「Seedance 2.5 输出 1080p…Seedance 2.0 输出的 4k」—— 4k 是 2.0 独有的
-    check("2.0 支持 4k", "4k" in s20["resolutions"], True)
     check("2.5 不支持 4k", "4k" in s25["resolutions"], False)
-    # 只有 2.5 有 omni_reference_task_type，2.0 靠提示词语法路由
     check("2.5 有任务类型参数", s25["edit_task_param"], True)
-    check("2.0 没有任务类型参数", s20["edit_task_param"], False)
     check("2.5 编辑任务 duration 固定 -1", s25["edit_duration"], -1)
-    check("2.0 不传 duration=-1", s20["edit_duration"], None)
+    check("2.5 禁止自动加兜底包", s25["auto_constraint"], False)
+    check("2.0 参数表已移除", "seedance-2-0-mini" not in model_specs.SPECS, True)
+    check("旧 2.0 型号回落 2.5 档", s20 is s25, True)
 
     print("== MiniMax：官方四档各是一档（`h3-models`）==")
     h3 = model_specs.minimax("MiniMax-H3")
@@ -80,11 +75,12 @@ def main() -> int:
           model_specs.volc("MiniMax-H3-Lite") is h3lite, True)
     check("volc() 与 minimax() 同源：Highspeed",
           model_specs.volc("MiniMax-H3-Highspeed") is h3hs, True)
-    # 界面上能选到的型号 = 官方四个可用值，一个不多一个不少
-    check("型号清单含官方四档",
+    # 🔓 2026-11-01 解冻 H3：界面候选恢复成官方四档（`h3-models`，2026-10-28 抓取）。
+    check("复刻界面可选 H3 四档",
           [m for m, _ in model_specs.MODELS["minimax"]],
-          ["MiniMax-H3", "MiniMax-H3-Highspeed", "MiniMax-H3-Lite",
-           "MiniMax-H3-Max"])
+          ["MiniMax-H3", "MiniMax-H3-Max", "MiniMax-H3-Highspeed", "MiniMax-H3-Lite"])
+    check("H3 参数表仍在（冻结 ≠ 删除）",
+          model_specs.minimax("MiniMax-H3")["max_sec"], 15.0)
     check("H3 时长下限 4s", h3["min_sec"], 4.0)
     check("H3-Max 时长下限 5s", h3max["min_sec"], 5.0)
     check("H3 默认 768P", h3["default_resolution"], "768P")
@@ -97,9 +93,7 @@ def main() -> int:
     # 🩸 mini**max** 本身含 "max"，用 in 判断会把 H3 误认成 H3-Max
     check("H3 没被误认成 Max", h3["label"], "MiniMax H3")
     check("H3 走的是 4s 下限", h3 is not h3max, True)
-    # 官方 skill 自己就分两派：2.0 强制挂兜底包，2.5 明令禁止自动加
-    check("2.0 强制挂兜底包", s20["auto_constraint"], True)
-    check("2.5 禁止自动加兜底包", s25["auto_constraint"], False)
+    # 官方 skill 自己就分两派：2.0 强制挂兜底包（已下架），2.5 明令禁止自动加
     check("H3 没有兜底包这套", h3["auto_constraint"], False)
 
     print("== 分诊/切段按当前配置的模型取上限 ==")
@@ -108,9 +102,8 @@ def main() -> int:
     try:
         for model, want in (
             ("doubao-seedance-2-5-260628", 30.0),
-            ("doubao-seedance-2-0-260128", 15.0),
-            ("doubao-seedance-2-0-fast-260128", 15.0),
-            ("doubao-seedance-2-0-mini-260615", 15.0),
+            # 旧 2.0 型号：参数表已随下架删除，按 2.5 的 30s 切（不能崩、不能回落成 0）
+            ("doubao-seedance-2-0-mini-260615", 30.0),
         ):
             object.__setattr__(settings, "ark_video_edit_model", model)
             check(f"{model.split('-')[-2]}-{model.split('-')[-1]} 切段上限",
@@ -133,9 +126,10 @@ def main() -> int:
 
     print("== 分辨率按型号收口 ==")
     try:
+        # 旧 2.0 型号 → 回落 2.5，1080p 该被接受（不再退回 720p）
         object.__setattr__(settings, "ark_video_edit_model", "doubao-seedance-2-0-mini-260615")
-        check("2.0 Mini 要 1080p → 退回 720p",
-              video_edit._resolution_for("volc", {"resolution": "1080p"}, 1920), "720p")
+        check("旧 2.0 型号要 1080p → 按 2.5 接受",
+              video_edit._resolution_for("volc", {"resolution": "1080p"}, 1920), "1080p")
         object.__setattr__(settings, "ark_video_edit_model", "doubao-seedance-2-5-260628")
         check("2.5 要 1080p → 接受",
               video_edit._resolution_for("volc", {"resolution": "1080p"}, 1920), "1080p")
@@ -152,10 +146,11 @@ def main() -> int:
     print("== 界面选的型号优先于配置默认 ==")
     try:
         object.__setattr__(settings, "ark_video_edit_model", "doubao-seedance-2-5-260628")
-        # 配置是 2.5（30s），但界面选了 Mini（15s）→ 必须按 Mini 的 15s 切，
-        # 否则切出一段 20s 会被模型直接拒掉
-        check("显式选 Mini → 走 15s 上限",
-              video_edit._limit_for("volc", "doubao-seedance-2-0-mini-260615"), 15.0)
+        # 🩸 2026-10-31：2.0 已从复刻爆款下架（主人拍板），老前端/缓存把 Mini 的
+        #   ID 传进来时，入口必须回落成 2.5 再切 —— 否则会按 15s 切出一堆短段，
+        #   实际却发给 30s 上限的模型。
+        check("显式选已下架的 2.0 Mini → 回落 2.5 的 30s 上限",
+              video_edit._limit_for("volc", "doubao-seedance-2-0-mini-260615"), 30.0)
         check("不选型号 → 回落到配置的 2.5",
               video_edit._limit_for("volc"), 30.0)
         object.__setattr__(settings, "minimax_video_model", "MiniMax-H3")
@@ -167,7 +162,10 @@ def main() -> int:
         check("MiniMax 通道收到火山型号 → 回落配置型号",
               video_edit._model_for("minimax", "doubao-seedance-2-0-260128"), "MiniMax-H3")
         check("同族型号照用不误",
-              video_edit._model_for("volc", "doubao-seedance-2-0-260128"), "doubao-seedance-2-0-260128")
+              video_edit._model_for("volc", "doubao-seedance-2-5-260628"), "doubao-seedance-2-5-260628")
+        # 🩸 成对的上半：族别对、但已下架 ⇒ 必须回落（不能照用）
+        check("同族但已下架的 2.0 型号 → 回落 2.5",
+              video_edit._model_for("volc", "doubao-seedance-2-0-260128"), "doubao-seedance-2-5-260628")
     finally:
         object.__setattr__(settings, "ark_video_edit_model", real_v)
         object.__setattr__(settings, "minimax_video_model", real_m)
@@ -182,10 +180,17 @@ def main() -> int:
     check("4k 源自动档封顶 1080p", video_edit._ark_res(3840, 2160), "1080p")
 
     print("== 可选型号表自洽 ==")
-    check("火山 4 个可选型号", len(model_specs.MODELS["volc"]), 4)
+    # 🩸 2026-10-31：原来 4 档（2.0 标准/极速/Mini + 2.5）—— 2.0 已从复刻视频下架，
+    #   适配器/编译器归档、参数表一并删除，界面只剩 2.5。
+    check("火山 1 个可选型号（只剩 2.5）", len(model_specs.MODELS["volc"]), 1)
     # 官方 V2「当前可用值」就是这四个（`h3-models`，2026-10-28 抓取）
-    check("MiniMax 4 个可选型号", len(model_specs.MODELS["minimax"]), 4)
+    check("MiniMax 候选四档", len(model_specs.MODELS["minimax"]), 4)
     for ch, items in model_specs.MODELS.items():
+        # 🩸 空清单必须单独断言：下面那组检查对空列表**恒真**（0 == 0），
+        #   不拦住就会把"一条候选都没有"报成"每个型号都有自己那一档"的假绿。
+        if not items:
+            check(f"{ch} 候选不能为空", bool(items), True)
+            continue
         pick = model_specs.volc if ch == "volc" else model_specs.minimax
         got = [id(pick(mid)) for mid, _ in items]
         # 每个选项都必须认得自己那一档：都落进同一个默认档 = 选项是摆设

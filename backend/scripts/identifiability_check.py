@@ -135,9 +135,10 @@ def _volc_h3_clauses(ch: str, model: str, n: int, ppl: list[dict],
     idx = {slot: i + 1 for i, slot in enumerate(slots)}
     # 🩸 2026-10-28：`_clauses` 不再有 `edit_task` 开关 —— 句式口径由各家的
     #   `Dialect` 提供。判据按型号取那一家自己的方言（本来就是一轮只跑一家）。
-    from app.services.models import volc20_compile, volc25_compile
-    _dialect = (volc25_compile.CL25 if (model and "2-5" in model)
-                else volc20_compile.CL20)
+    # 🩸 2026-10-31：2.0 的适配器与编译器已随复刻视频下架归档（主人拍板），
+    #   火山只剩 2.5 一套方言 ⇒ 不再按型号分派。
+    from app.services.models import volc25_compile
+    _dialect = volc25_compile.CL25
     cl = edit_spec._clauses(ch, spec["change"], idx, dialect=_dialect,
                             people=ppl, desc_by_id=None)
     # 第二位（"有没有定位词"）只有 H3 量：H3 的两种写法一眼能分

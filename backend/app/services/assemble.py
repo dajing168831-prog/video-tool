@@ -261,6 +261,19 @@ def plan_intervals(
         else:
             clips.append(_clip(video, x, dur, label=f"seg{n:03d}", kind="source"))
 
+    # 🩸 2026-10-31：段边界吸附到整数秒后，替换段会停在一个整数上（18.000），
+    #   原片却到 18.033 —— 这 <0.12s 的零头按下面"未覆盖 → 取原片"处理，
+    #   成片最后一帧就会闪回原片里的人（实测 render 5f5c5a72：主人一眼看到
+    #   "最后一帧回到了原脸"）。零头就在 `_PAD_MAX` 这个"取整误差"口径内，
+    #   所以并进前一段冻住最后一帧，**不回灌原片**。
+    if (len(clips) >= 2 and clips[-1]["kind"] == "source"
+            and clips[-1]["end"] - clips[-1]["start"] <= _PAD_MAX + 1e-6):
+        tail = clips.pop()
+        prev = clips[-1]
+        prev["freeze"] = round(float(prev.get("freeze") or 0)
+                               + (tail["end"] - tail["start"]), 6)
+        log.info("片尾零头 %.3fs 并进前一段冻帧（不回灌原片）",
+                 tail["end"] - tail["start"])
     if not clips:
         raise RuntimeError("时间轴没有任何片段")
     log.info("时间轴算好: %d 段，替换区间 %d 个", len(clips), len(resolved))

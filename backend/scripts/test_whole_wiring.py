@@ -491,23 +491,22 @@ def _run(work: Path) -> int:
         seen.clear()
         r5 = video_edit.replace_whole(
             video, rec, cid="d" * 32, spec=spec, refs={"person": person},
-            channel="volc", model="doubao-seedance-2-0-mini-260615",
+            channel="volc", model="doubao-seedance-2-5-260628",
             workdir=work / "r5",
         )
-        check("火山收到所选型号", seen["model"], "doubao-seedance-2-0-mini-260615")
-        # Mini 官方只收 480p/720p，用户选了 1080p 必须降档而不是被拒
-        check("Mini 不收 1080p → 720p", seen["resolution"], "720p")
-        # 4 镜各 10s：2.5（30s）能合成 2 段，Mini（15s）塞不下两镜 → 4 段
-        check("按 Mini 的 15s 上限切成 4 段", r5["chunks"], 4)
-        check("返回里能查到实际型号", r5["model"], "doubao-seedance-2-0-mini-260615")
-        # 🩸 成对探针：同样"只换一个人"的规格，2.0 第 2 段必须**只有 1 张图**，
-        # 2.5 必须**带上边界帧**（2 张）。只测一边发现不了"全都砍掉"这种改法。
-        check("2.0 第 2 段不带边界帧", len(calls[-1]["refs"]), 1)
-        check("2.0 也不写边界句", "上一段成片的最后一帧" in calls[-1]["prompt"], False)
+        check("火山收到所选型号", seen["model"], "doubao-seedance-2-5-260628")
+        # 2.5 官方支持 1080p（480p/720p/1080p），选了就该原样发出去
+        check("2.5 支持 1080p → 原样发送", seen["resolution"], "1080p")
+        # 4 镜各 10s = 40s：2.5 单段 30s → 2 段
+        check("按 2.5 的 30s 上限切成 2 段", r5["chunks"], 2)
+        check("返回里能查到实际型号", r5["model"], "doubao-seedance-2-5-260628")
+        # 🩸 这个 video 的 4 刀全落在原片镜头边界（10/20/30s）→ 2.5 一律不带边界帧。
+        #   带边界帧的能力由下面 r5c（镜头中段切开）成对覆盖。
+        check("2.5 切点在镜头边界 → 第 2 段不带边界帧", len(calls[-1]["refs"]), 1)
         # 🩸 结果页会照着 boundary 写"段间用尾帧衔接" —— 报告必须和实际一致
-        check("2.0 分了 4 段但如实报 boundary=False", r5["boundary"], False)
-        check("结果页拿得到型号名", r5["label"], "火山 Seedance 2.0 Mini")
-        check("结果页拿得到清晰度", r5["resolution"], "720p")
+        check("2.5 分了 2 段但如实报 boundary=False", r5["boundary"], False)
+        check("结果页拿得到型号名", r5["label"], "火山 Seedance 2.5")
+        check("结果页拿得到清晰度", r5["resolution"], "1080p")
 
         seen.clear()
         calls.clear()
@@ -637,21 +636,20 @@ def _run(work: Path) -> int:
                 video_edit._prepare(rec={"people": ppl}, prompt="x",
                                     spec=_es.normalize(chg), refs=refs,
                                     channel="volc",
-                                    model="doubao-seedance-2-0-mini-260615",
+                                    model="doubao-seedance-2-5-260628",
                                     inventory={"people": ppl})
                 return "pass"
             except video_edit.EditError:
                 return "block"
 
-        check("生产入口·换装两人·第2个没图没描述 → 拦住（逐个查真的接线了）",
-              _gate_of({"wardrobe": True, "wardrobe_ids": ["P1", "P2"]},
-                       {"wardrobe": person}, [_P1g, _P2g]), "block")
-        check("生产入口·换装两人·各写一套 → 放行",
-              _gate_of({"wardrobe": True, "wardrobe_ids": ["P1", "P2"],
-                        "wardrobe_desc_by_id": {"P1": "米色风衣",
-                                                "P2": "黑色皮夹克"}},
-                       {}, [_P1g, _P2g]), "pass")
-        check("生产入口·11 张参考图（超 2.0 的 9 张上限）→ 拦住",
+        # 🩸 2026-10-31：原来这两条（换装两人逐个查）测的是 `wardrobe_check_per_person`
+        #   这个能力位 —— 它**只由已归档的 volc20 声明**，2.5/H3 现在都是 False。
+        #   换成 2.5 跑会得到「有图就放行 / 只给 desc_by_id 就拦」，那是 2.5 的
+        #   老行为，不是同一个检查；照原样改绿等于把 2.0 的规则洗成 2.5 的规则。
+        #   生产入口这条路径现在**没有承载型号**，无法验证，故撤掉这两条。
+        #   ⚠️ 将来某型号打开 `wardrobe_check_per_person` 时，这两条要恢复，
+        #   并把 model 换成那个型号。
+        check("生产入口·11 张参考图（超 9 张上限）→ 拦住",
               _gate_of({"person": True, "person_ids": ["P1", "P2", "P3", "P4"],
                         "wardrobe": True, "wardrobe_ids": ["P1", "P2", "P3", "P4"],
                         "product": True, "product_desc": "面霜",

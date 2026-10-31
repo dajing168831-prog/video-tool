@@ -497,6 +497,11 @@ def _auto_decision(video: Path, rec: dict, *, spec, regen_prompt: str,
     hard = list(spans)
     spans = video_edit.refine_cuts(video, spans, shots, min_sec=span_min,
                                    max_sec=span_max)
+    # 🩸 2026-10-31：分诊这条路自己算 spans，不走 `plan_spans` —— 上一版把
+    #   整数秒吸附只加在 `plan_spans`，预览于是还报 8.520s、真跑却发 9s。
+    #   统一走 `snap_for_plan`（预览与真跑共用这一份决策）。
+    spans = video_edit.snap_for_plan(plan, spans, min_sec=span_min,
+                                     max_sec=span_max)
     regen_meta = {
         "mode": "auto", "segments": len(spans),
         "cuts_refined": sum(1 for x, y in zip(hard, spans)
@@ -837,6 +842,9 @@ def render(
     # 没给（整片重制 / 没换画面）就还是拿整条源。
     visual_clips = None
     replaced = 0
+    # 成片结尾比原片短多少秒（0 = 不短）。只有「尾段模型少给」这一种情况会 >0，
+    # 见 `_gen_spans` 里 `_TAIL_TOL` 那段：不冻帧、不回灌原片，成片跟着短。
+    tail_cut = 0.0
     used_channel = ""
     used_model = ""
     # 换画面这一侧的自述：分了几段、几个切点被挪到画面最静处、段间有没有尾帧衔接。
@@ -997,8 +1005,21 @@ def render(
                     }, ensure_ascii=False, indent=1), encoding="utf-8")
                 except Exception as e:  # noqa: BLE001
                     log.warning("决策记录没写成（不影响出片）：%s", e)
+                # 🩸 尾段模型少给（≤0.45 秒）时，`_gen_spans` 已经按实际长度出片。
+                #   时间轴到这里就结束，**不拿原片补尾巴** —— 补了就是
+                #   "最后一帧变回原脸"（2026-10-31 实测过的那个病）。
+                #   成片跟着短，是主人 2026-10-31 拍板的口径。
+                if intervals:
+                    vis_end = max(float(h) for _, h, _, _ in intervals)
+                    gap = float(src_total) - vis_end
+                    if 0 < gap <= 0.45:
+                        tail_cut = round(gap, 3)
+                        tl_notes.append(
+                            f"成片结尾比原片短 {tail_cut:.2f} 秒"
+                            "（模型给的这一段就短这么多，没有拿原片回灌）")
                 visual_clips = assemble.plan_intervals(
-                    video, intervals, total=src_total, notes=tl_notes,
+                    video, intervals, total=max(0.5, float(src_total) - tail_cut),
+                    notes=tl_notes,
                 )
                 if tl_notes:
                     regen_meta["warnings"] = tl_notes
@@ -1042,6 +1063,11 @@ def render(
         # 0.85 仍留一层灰影，0.95 才读不出来
         mask = (0, src_h - h, src_w, h, 0.95)
 
+    if tail_cut > 0:
+        # 画面就止于 `src_total - tail_cut`：音轨**一起收口**，不冻帧补够
+        # （冻帧等于拿静止画面顶时长，主人 2026-10-31 要的是"成片跟着短"）。
+        src_total = max(0.5, float(src_total) - tail_cut)
+        voice_dur = min(float(voice_dur), src_total)
     # 配音比画面长时，把最后一帧冻住补够，别让音轨被截断
     pad = max(0.0, voice_dur - src_total) if voice is not None else 0.0
     # 成片时长 = 画面和配音里更长的那个；画面短了 tpad、音轨短了 apad。
@@ -1101,6 +1127,17 @@ def render(
     except Exception as e:  # noqa: BLE001
         id_res = {"ok": True, "skipped": f"核对没跑成：{e}", "people": []}
         log.warning("身份核对没跑成（不影响出片）：%s", e)
+    # 🩸 成品契约（第 3 步）：口型 / 段间身份 / 背景 —— 量的是**产品**，
+    # 与上面那条「成片 vs 参考图」互补。前三项都不查代码，只读出片目录里的
+    # `gen/` `piece_*` `decisions.json`。永不阻断出片。
+    try:
+        from app.services import contract
+
+        contract_res = contract.measure(workdir=Path(workdir), video=Path(video),
+                                        out=out)
+    except Exception as e:  # noqa: BLE001
+        contract_res = {"ok": True, "verdict": "skipped", "items": [], "why": str(e)}
+        log.warning("成品契约没量成（不影响出片）：%s", e)
     cover = compose.make_cover(out, workdir / "cover.jpg", at=min(2.0, voice_dur / 3))
 
     _p(progress, "done", 100)
@@ -1115,6 +1152,9 @@ def render(
         # 身份核对：ok / skipped / people[{slot,best_sim,at,faces_seen,verdict}]
         # 判 swapped / not_swapped / no_face / no_ref —— 换脸到底换上了没有
         "identity": id_res,
+        # 成品契约：口型滞后 / 段间身份 / 背景保住 —— 量产品，不量代码。
+        # 结构 {ok, verdict: pass|fail|info|skipped, items[], failed[]}
+        "contract": contract_res,
         "replaced_shots": replaced,
         "regen_channel": used_channel,
         "regen_model": used_model,
@@ -1151,6 +1191,8 @@ def preview_render(
     lang: str = "",
     cid: str = "",
     speech_rate: int | None = None,
+    with_agent: bool = False,
+    agent_force: bool = False,
 ) -> dict:
     """出片前预览：**全本地计算，不调 TTS / 图 / 视频模型，不传 OSS，不花钱**。
 
@@ -1391,8 +1433,12 @@ def preview_render(
             except Exception as e:  # noqa: BLE001
                 log.warning("预览探测原片音轨失败：%s", e)
                 audio_on = False
+        # 🩸 2026-10-31 修「预览 ≠ 实发」：以前这里传 `assume_present=True`，
+        #   按"每个人都在画面里"补占位 —— 那是**预览不读盘点**时代的补丁。
+        #   现在预览已经读了盘点缓存（见上），占位反而会盖掉「这一段这个人不在」
+        #   的真实结论，写出真跑不会发的那句话。直接按同一套输入算。
         prompts = work_mod._video_prompts(plan, spans, rec.get("shots") or [],
-                                          audio_ref=audio_on, assume_present=True)
+                                          audio_ref=audio_on, rec=rec)
         for (a, b), p in zip(spans, prompts):
             segments.append({
                 "start": round(a, 3),
@@ -1401,12 +1447,47 @@ def preview_render(
                 # 判据和 `video_edit._seg_audio` 一致：短于 2s 的那段不喂
                 "audio": bool(audio_on and (min(b, src_total) - a) >= 2.0),
                 "prompt": p,
+                # 这段指令是**代码拼的**还是 **agent 读官方 skill 现写的**。
+                # 同一段文字两种来源，效果不一样（2026-10-31 实测两段会写重）；
+                # 界面必须能标出来，不然用户分不清看的是哪一版。
+                "prompt_source": "code",
             })
         if want_audio and not audio_on:
             warnings.append("原片没有音轨：这一段不会喂音频，口型只能靠原片表演")
         if plan.get("person_ids"):
             warnings.append("预览不做视觉盘点：换人句按「这个人在这段里出现」写，"
                             "真跑时还会带上盘点给的外观定位（长相以参考图为准，不变）")
+
+    # 🩸 agent 版逐段指令（2026-10-31）：界面点「用官方 skill 重新生成」才走这条。
+    #   默认关闭 —— `/clone/{cid}/plan` 是"零费用"的语义，不能偷偷调模型烧钱。
+    #   生成完会落盘（`prompts.json`），出片路径读的是**同一份**（`clone_agent.cached`），
+    #   所以这里生成过一次，出片不再花钱第二次、也不会发出另一版。
+    agent_error = ""
+    if with_agent and segments and plan is not None and spans:
+        # 🩸 2026-11-01：**按型号分派** —— 2.5 和 H3 是两套不通用的官方模板
+        #   （中文五段标记 vs 英文六段式），各挂在自己的适配器上。
+        from app.services import models as _models
+
+        _agent = _models.adapter_for(model=plan.get("model") or "",
+                                     channel=plan.get("ch") or "").agent
+        if not cid:
+            agent_error = "缺少任务号，无法落盘逐段指令"
+        elif _agent is None:
+            agent_error = "这个型号没有 agent 版逐段指令，用代码编译的那一版"
+        else:
+            _ca = _agent()
+            try:
+                data = _ca.generate(cid, plan, rec, spans, force=agent_force)
+                got = {int(s.get("index") or 0): str(s.get("prompt") or "").strip()
+                       for s in (data.get("segments") or [])}
+                for i, seg in enumerate(segments, 1):
+                    if got.get(i):
+                        seg["prompt"] = got[i]
+                        seg["prompt_source"] = "agent"
+                warnings.append("逐段指令已由官方 skill 生成并落盘，出片用的就是这一版")
+            except Exception as e:  # noqa: BLE001
+                agent_error = str(e)
+                log.warning("逐段指令生成失败，仍用代码编译版：%s", e)
 
     target = max(src_total, voice_dur)
     frames = int(round(target * fps)) if fps > 0 else 0
@@ -1448,6 +1529,12 @@ def preview_render(
         "change": change,
         # 逐段「发给模型的东西」—— 出片前逐字可看，别靠花钱试
         "segments": segments,
+        # 这一版提示词是谁写的：`code` = 代码按规则拼，`agent` = 读官方 skill 现写。
+        # 出片时只有**签名对得上**的 agent 版才会被采用（见 `clone_agent.cached`），
+        # 界面据此说明"现在看到的就是要发出去的"。
+        "prompt_source": ("agent" if any(s.get("prompt_source") == "agent"
+                                         for s in segments) else "code"),
+        "agent_error": agent_error,
         "contract": {
             "duration": round(target, 3),
             "fps": fps,
@@ -1503,14 +1590,22 @@ def _span_intervals(
     起点往回借，见 `triage._split_run`），但时间轴上的画面不能重复 ——
     上一段已经排过的范围直接跳过。
     """
+    from app.services import assemble as _asm
+
     out: list[tuple[float, float, Path, float]] = []
     covered = 0.0
     for (a, b), clip in zip(spans, clips):
+        # 这一段素材**实际有多长**：2.5 的编辑任务会比输入短（官方最多约 0.3 秒），
+        # 尾段没有多余原片可补时 `_gen_spans` 就按实际长度出片 —— 这里必须按
+        # 素材的真实长度收口，否则时间轴会伸到素材之外，后面只能回灌原片
+        # （那正是"最后一帧变回原脸"）。
+        clip_dur = _asm._probe_duration(Path(clip))
         for s in shots:
             if int(s["i"]) not in only:
                 continue
             lo = max(float(a), float(s["start"]), covered)
-            hi = min(float(b), float(s["end"]))
+            hi = min(float(b), float(s["end"]),
+                     float(a) + clip_dur if clip_dur > 0 else float(b))
             if hi - lo < 0.05:
                 continue
             out.append((lo, hi, Path(clip), lo - float(a)))

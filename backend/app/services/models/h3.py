@@ -31,6 +31,7 @@ def _compile(spec: dict, *, channel: str = "minimax", **kw) -> str:
         boundary_pic=int(kw.get("boundary_pic") or 0),
         shot_cuts=kw.get("shot_cuts"),
         subject_look=kw.get("subject_look") or {},
+        subject_looks=kw.get("subject_looks") or {},
         shot_looks=kw.get("shot_looks"), shot_lines=kw.get("shot_lines"),
         style_video=bool(kw.get("style_video")))
 
@@ -100,7 +101,7 @@ def _pre_compile(spec: dict, **kw) -> None:
 def _extend_prompt(direction: str, content: str) -> str:
     """H3 的续写提示词：不是火山那套句式，是官方六段式 + `[video continuation]`。
 
-    依据（本机 `D:/tmp/official/h3/ref-en.txt`）：
+    依据（工程内 `data/official/h3/ref-en.txt`，与官方 skill 同一份，sha1 一致）：
     - `:137` 任务类型 `video continuation` = "New content continues, extends, resumes,
       or transitions from an existing source video"；
     - `:32/:81` `<Video N>` 的用途原文含 "continuation starting point"、示例
@@ -187,6 +188,16 @@ _H3_VIDEO_LIMITS = {"min_px": 0, "max_px": 0, "side": (256, 5760),
 _raw = dict(model_specs.minimax(DEFAULT_ID))
 _raw["prefixes"] = PREFIXES
 
+
+def _agent_module():
+    """本家「逐段指令」agent：H3 的英文六段式（`h3_agent`），**不是** 2.5 那套。
+
+    🩸 两套模板不通用（中文五段标记 vs 英文六段式），所以各挂各的。
+    """
+    from app.services import h3_agent
+
+    return h3_agent
+
 adapter = register(ModelAdapter(
     # H3 走六段式，不经过 `edit_spec._clauses` —— 占位即可（真被调到就报错）。
     dialect=NoDialect(),
@@ -194,6 +205,10 @@ adapter = register(ModelAdapter(
               max_dur=float(_raw.get("max_sec") or 15),
               min_dur=float(_raw.get("min_sec") or 4),
               ref_audio=bool(_raw.get("ref_audio")),
+              # 🔓 2026-11-01 解冻：复刻重新接上 H3（主人：「复刻这里接上 H3 模型」）。
+              #   冻结机制保留（`models.frozen_families()` 由各家的 `Caps.frozen`
+              #   声明），但这里不再声明冻结。
+              frozen=False,
               edit_task_param=False,
               default_resolution=str(_raw.get("default_resolution") or "768P"),
               asset_id=False, auto_res_from_frame=False,
@@ -216,7 +231,7 @@ adapter = register(ModelAdapter(
               resolutions=H3_RESOLUTIONS, resolution_alias=H3_RES_ALIAS,
               # 延长：官方没给任何接缝计帧规则（也没有保真度承诺）→ 不裁
               extend_seam=(0, 0), extend_transition=False,
-              # H3 官方输入限制（本机 `D:/tmp/official/h3/ref-en.txt` / `CLONE-CHANNELS.md` §17）：
+              # H3 官方输入限制（`data/official/h3/ref-en.txt` / `CLONE-CHANNELS.md` §17）：
               # 参考视频 ≤3 段、**单段 [2,15]s、总时长 ≤15s**、单文件 ≤50MB。
               extend_ref_mode="clip",
               extend_ref_max_sec=15.0, extend_ref_max_mb=50.0,
@@ -230,6 +245,7 @@ adapter = register(ModelAdapter(
     submit=_submit,
     ready=_ready,
     ready_error=_ready_error,
+    agent=_agent_module,
     extend_prompt=_extend_prompt,
     extend_submit=_extend_submit,
 ))

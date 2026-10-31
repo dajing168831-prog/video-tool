@@ -119,7 +119,10 @@ adapter = register(ModelAdapter(
               ref_audio=bool(_raw.get("ref_audio")),
               edit_task_param=False,
               default_resolution=str(_raw.get("default_resolution") or "720p"),
-              is_channel_default=True,
+              # 🩸 2026-10-31：2.0 已从复刻爆款下架，**不再是火山通道代表**
+              #   （代表 = 2.5）。适配器本身照旧注册 —— 提示词优化那条线要按
+              #   型号取 2.0 的真实参数（`prompt_advice` 的 500 字建议靠它）。
+              is_channel_default=False,
               asset_id=True, auto_res_from_frame=True,
               # 🩸 2026-10-26：**默认一张**。回原文逐句核过（台账 D48）：
               #   · `sd2-pe:66`「角色图 **1–2**（大头照 + 全身照）」→ 一张合规；

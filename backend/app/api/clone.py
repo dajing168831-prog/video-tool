@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import os
 import re
@@ -54,14 +55,25 @@ def regen_model_error(model_id: str, ask_channel: str = "") -> str:
     🩸 以前这段在三处各写一遍，靠 `in ("volc", "minimax")` 认通道、靠
     `model_specs.MODELS` 拼反查表 —— 加第 4 家三处都要改，而且两处写的是
     「文件里有没有这段字」，代码一改判据就假红。现在合成一处，问注册表。
+
+    🧊 2026-10-31 复刻冻结 H3：冻结名单也**问注册表**（`models.frozen_families()`）。
+    厂商名只能写在 `models/<家>.py` 的 `Caps.frozen` 里 —— 这里写一个
+    `"minimax"` 字面量，分离门当场报「核心文件里新增厂商耦合」（已发生过一次）。
     """
+    frozen = models.frozen_families()
+    ask = (ask_channel or "").strip().lower()
+    # 🩸 2026-11-01 解冻 H3 后，这里不再写「只支持 2.5」这种会过期的原因 ——
+    #   文案只说明"不可用"，具体是哪一家由 `Caps.frozen` 决定。
+    if ask in frozen:
+        return "这条通道暂不可用"
     m = (model_id or "").strip()
     if not m:
         return ""
     fam = models.family_of_model(m)
     if fam is None:
         return "未知的模型"
-    ask = (ask_channel or "").strip().lower()
+    if fam in frozen:
+        return "这个型号暂不可用"
     if ask in models.adapters_by_family() and fam != ask:
         return "所选模型不属于该通道"
     return ""
@@ -331,8 +343,9 @@ async def clone_models(channel: str = Query(
         "", description="具体通道名（见 /health 的 channels），留空返回全部")):
     """可选型号 + 每个型号各自收的清晰度档位。
 
-    清晰度必须跟着型号走：2.0 Mini / 极速只到 720p，H3-Max 没有 2K。
-    前端如果按通道写死档位，用户选了 Mini 还能挑 1080p，提交上去直接 400。
+    清晰度必须跟着型号走：不同型号能出的档位不一样（复刻现在只有 2.5：
+    480p / 720p / 1080p）。前端如果写死一张档位表，就会出现「界面上能选、
+    提交上去被降档或直接 400」—— 档位只能取这个接口给的。
     注意本路由必须排在 `/clone/{cid}` 前面，否则会被当成任务号。
     """
     from app.services import model_specs, models
@@ -395,7 +408,8 @@ async def clone_recipe(cid: str):
         "renders": [
             {k: v for k, v in (r or {}).items()
              if k not in ("segments", "voice_meta", "regen_meta", "identity",
-                          "state", "pct", "stage", "error", "duration")}
+                          "contract", "state", "pct", "stage", "error",
+                          "duration")}
             for r in (task.get("renders") or [])
         ],
     })
@@ -695,10 +709,11 @@ async def _save_ref(cid: str, slot: str, file: UploadFile):
     }
     task["meta"]["subject"] = task["meta"]["refs"]["person"]
     store.save(task)
-    if slot == "person":
+    if slot in edit_spec.PERSON_SLOTS:
         # 官方两家都要求主体定义写具体特征（不是只给图号）：后台看一眼这张图，
         # 写下 2–3 个稳定静态特征，出片时写进提示词。失败不影响上传。
-        _describe_person_async(cid, dest)
+        # 🩸 一人一份：描述跟着**这个槽位**存，别让第二个人拿到第一个人的描述。
+        _describe_person_async(cid, dest, slot)
     return ok({"slot": slot, "width": info.get("width"), "height": info.get("height")})
 
 
@@ -723,8 +738,8 @@ async def clone_ref_delete(cid: str, slot: str):
     p = store.ref_path(cid, slot)
     p.unlink(missing_ok=True)
     # 换了/删了参考图，旧的外观描述必须一起清 —— 否则下次拿旧描述去描述新人
-    if slot == "person":
-        store.subject_desc_path(cid).unlink(missing_ok=True)
+    if slot in edit_spec.PERSON_SLOTS:
+        store.subject_desc_path(cid, slot).unlink(missing_ok=True)
     task.setdefault("meta", {})["refs"] = {
         s: store.ref_path(cid, s).exists() for s in store.REF_SLOTS
     }
@@ -733,7 +748,7 @@ async def clone_ref_delete(cid: str, slot: str):
     return ok({"slot": slot, "removed": True})
 
 
-def _describe_person_async(cid: str, image: Path) -> None:
+def _describe_person_async(cid: str, image: Path, slot: str = "person") -> None:
     """后台看一遍人物参考图，写下 2–3 个静态外观特征。
 
     🩸 **只有 MiniMax H3 会用这份描述**（火山 2.0 / 2.5 编辑任务的 `<新特征>`
@@ -749,7 +764,7 @@ def _describe_person_async(cid: str, image: Path) -> None:
         try:
             from app.services import vision_plan
 
-            vision_plan.describe_person(cid, image)
+            vision_plan.describe_person(cid, image, slot)
         except Exception as e:  # noqa: BLE001
             log.warning("参考图外貌描述失败 cid=%s: %s", cid, e)
 
@@ -1195,6 +1210,61 @@ def clone_inventory(cid: str,
     return ok(vision_plan.summary(inv))
 
 
+def _check_render_in(body: RenderIn) -> tuple[str, int]:
+    """`/plan` 与 `/prompts` 共用的入参校验。返回 (错误文案, 业务码)，空串 = 通过。
+
+    🩸 两条路必须同口径：`/prompts` 生成的提示词会**直接进出片**，
+    它接受的参数比 `/plan` 宽，就等于留了一个绕开校验的口子。
+    """
+    regen_mode = (body.regen_mode or "auto").strip().lower()
+    if regen_mode not in ("shots", "auto", "whole"):
+        return "未知的换画面模式", 8
+    # 型号校验和出片接口同一条口径：填了就必须认得、且和通道同族
+    _bad = regen_model_error((body.regen_model or "").strip(), body.regen_channel)
+    if _bad:
+        return _bad, 8
+    spec = edit_spec.normalize(body.edit.model_dump()) if body.edit else None
+    script = (body.script or "").strip()
+    if not script and (spec or {}).get("audio", "tts") != "original":
+        return "文案不能为空", 6
+    if len(script) > 2000:
+        return "文案太长（上限 2000 字）", 6
+    return "", 0
+
+
+def _preview_call(cid: str, task: dict, body: RenderIn, **extra) -> dict:
+    """把 `RenderIn` 摊成 `preview_render` 的入参。两条接口共用这一处 ——
+    段号、参考图编号、提示词必须出自同一条计算，不能各拼一套。"""
+    subject = store.subject_path(cid)
+    refs = {
+        slot: store.ref_path(cid, slot)
+        for slot in store.REF_SLOTS
+        if store.ref_path(cid, slot).exists()
+    }
+    return clone_pipeline.preview_render(
+        store.source_path(cid), task["recipe"],
+        script=(body.script or "").strip() or None,
+        script_lines=body.script_lines or None,
+        regen_prompt=(body.regen_prompt or "").strip(),
+        regen_ratio=body.regen_ratio,
+        regen_shots=body.regen_shots or None,
+        regen_mode=(body.regen_mode or "auto").strip().lower(),
+        regen_channel=body.regen_channel,
+        regen_model=(body.regen_model or "").strip(),
+        subject_image=subject if subject.exists() else None,
+        subject_asset=(body.subject_asset or "").strip(),
+        edit_spec=edit_spec.normalize(body.edit.model_dump()) if body.edit else None,
+        refs=refs,
+        pronounce=pronounce_mod.clean(body.pronounce),
+        tts_voice=(body.tts_voice or "").strip(),
+        allow_stretch=bool(body.allow_stretch),
+        lang=(body.lang or "").strip().lower(),
+        speech_rate=body.speech_rate,
+        cid=cid,
+        **extra,
+    )
+
+
 @router.post("/clone/{cid}/plan")
 async def clone_plan(cid: str, body: RenderIn):
     """出片前预览：**不调 TTS / 图 / 视频模型，不花钱**。
@@ -1208,56 +1278,72 @@ async def clone_plan(cid: str, body: RenderIn):
         return fail("任务不存在或已过期", biz_code=404)
     if not task.get("recipe"):
         return fail("原片还没分析完，请稍候", biz_code=5)
-
-    regen_mode = (body.regen_mode or "auto").strip().lower()
-    if regen_mode not in ("shots", "auto", "whole"):
-        return fail("未知的换画面模式", biz_code=8)
-
-    # 型号校验和出片接口同一条口径：填了就必须认得、且和通道同族
-    regen_model = (body.regen_model or "").strip()
-    _bad = regen_model_error(regen_model, body.regen_channel)
+    _bad, _code = _check_render_in(body)
     if _bad:
-        return fail(_bad, biz_code=8)
-
-    spec = edit_spec.normalize(body.edit.model_dump()) if body.edit else None
-    script = (body.script or "").strip()
-    if not script and (spec or {}).get("audio", "tts") != "original":
-        return fail("文案不能为空", biz_code=6)
-    if len(script) > 2000:
-        return fail("文案太长（上限 2000 字）", biz_code=6)
-
-    subject = store.subject_path(cid)
-    refs = {
-        slot: store.ref_path(cid, slot)
-        for slot in store.REF_SLOTS
-        if store.ref_path(cid, slot).exists()
-    }
+        return fail(_bad, biz_code=_code)
     try:
-        preview = clone_pipeline.preview_render(
-            store.source_path(cid), task["recipe"],
-            script=script or None,
-            script_lines=body.script_lines or None,
-            regen_prompt=(body.regen_prompt or "").strip(),
-            regen_ratio=body.regen_ratio,
-            regen_shots=body.regen_shots or None,
-            regen_mode=regen_mode,
-            regen_channel=body.regen_channel,
-            regen_model=regen_model,
-            subject_image=subject if subject.exists() else None,
-            subject_asset=(body.subject_asset or "").strip(),
-            edit_spec=spec,
-            refs=refs,
-            pronounce=pronounce_mod.clean(body.pronounce),
-            tts_voice=(body.tts_voice or "").strip(),
-            allow_stretch=bool(body.allow_stretch),
-            lang=(body.lang or "").strip().lower(),
-            speech_rate=body.speech_rate,
-            cid=cid,
-        )
+        preview = _preview_call(cid, task, body)
     except Exception as e:  # noqa: BLE001
         log.warning("出片预览失败：%s", e)
         return fail(str(e), biz_code=8)
     return ok(preview)
+
+
+@router.post("/clone/{cid}/prompts")
+async def clone_prompts(cid: str, body: RenderIn, force: bool = False):
+    """用官方 skill 现写这一单的**逐段编辑指令**，落盘，返回预览。
+
+    🩸 这是**唯一会花钱的预览接口**（调用一次对话模型）。`/plan` 仍然零费用。
+    写好后出片直接读落盘（`clone_agent.cached`），不会再花第二次；
+    勾选 / 参考图 / 文案 / 型号任一变了，签名变，出片会自动回落到代码编译版 ——
+    所以改完参数点一下这个接口，再出片。
+    """
+    task = store.load(cid)
+    if not task:
+        return fail("任务不存在或已过期", biz_code=404)
+    if not task.get("recipe"):
+        return fail("原片还没分析完，请稍候", biz_code=5)
+    _bad, _code = _check_render_in(body)
+    if _bad:
+        return fail(_bad, biz_code=_code)
+    try:
+        preview = _preview_call(cid, task, body, with_agent=True, agent_force=force)
+    except Exception as e:  # noqa: BLE001
+        log.warning("逐段指令生成失败：%s", e)
+        return fail(str(e), biz_code=8)
+    # 明确失败就明确报错：用户点的是"用官方 skill 生成"，悄悄返回代码版 =
+    # 让他以为看到的是官方版，然后拿去出片。
+    if preview.get("agent_error"):
+        return fail(str(preview["agent_error"]), biz_code=8)
+    return ok(preview)
+
+
+@router.get("/clone/{cid}/prompts")
+async def clone_prompts_view(cid: str):
+    """看这一单**当前落盘的**逐段指令（零费用，不调模型）。
+
+    🩸 直接读文件，不问是哪一家写的：2.5 和 H3 写的是同一个 `prompts.json`，
+    文件里自带 `agent` 标记和型号。界面要的是"现在盘上是什么"，不是"某一家的"。
+    """
+    data = None
+    try:
+        p = store.prompts_path(cid)
+        if p.is_file():
+            data = json.loads(p.read_text(encoding="utf-8"))
+    except Exception as e:  # noqa: BLE001
+        log.warning("逐段指令读不出来：%s", e)
+    if not isinstance(data, dict):
+        return ok({"exists": False, "segments": [], "sig": ""})
+    return ok({
+        "exists": True,
+        "sig": str(data.get("sig") or ""),
+        "source": str(data.get("source") or ""),
+        # 这份是谁按哪套模板写的（`sd25` 的五段式 / `h3` 的六段式）
+        "agent": str(data.get("agent") or ""),
+        "model": str(data.get("model") or ""),
+        "created": int(data.get("created") or 0),
+        "segments": data.get("segments") or [],
+    })
 
 
 @router.post("/clone/{cid}/reuse-plan")
@@ -1275,6 +1361,11 @@ async def clone_reuse_plan(cid: str, body: RenderIn):
         return fail("任务不存在或已过期", biz_code=404)
     if not task.get("recipe"):
         return fail("原片还没分析完，请稍候", biz_code=5)
+    # 冻结点也要在这条路上拦：`/plan` 和 `/render` 各有一道，这里不拦的话
+    # 复用清单会照 minimax 算一遍，用户看到"能复用 0 段"才发现选不了。
+    _bad = regen_model_error((body.regen_model or "").strip(), body.regen_channel)
+    if _bad:
+        return fail(_bad, biz_code=8)
 
     spec = edit_spec.normalize(body.edit.model_dump()) if body.edit else None
     intent = {
@@ -1591,6 +1682,8 @@ async def clone_render_detail(cid: str, rid: str):
                 "qc": r.get("qc") or {},
                 # 身份核对：换脸到底换上了没有（swapped / not_swapped / no_face / no_ref）
                 "identity": r.get("identity") or {},
+                # 成品契约：口型滞后 / 段间身份 / 背景保住（量产品，不量代码）
+                "contract": r.get("contract") or {},
                 # 延长出来的版本：方向、秒数、接缝处理了没有、基于哪一版
                 "kind": r.get("kind") or "render",
                 "extend": r.get("extend") or None,

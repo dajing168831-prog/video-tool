@@ -5,7 +5,7 @@
 规则**方向相反**（风格句 base 写在 `[Shot 1]` 之内 `base-en:78`，ref 写在之前
 `ref-en:230`），合并必然抄错一边。
 
-官方依据：`D:/tmp/official/h3/base-en.txt`（222 行）。
+官方依据：`data/official/h3/base-en.txt`（222 行，与官方 skill 同一份）。
 规则编号 B1–B28 与 `docs/PROMPT-AUDIT-H3-BASE.md` 一一对齐。
 
 🩸 这里只放**规则**。官方语料校准、正反样本探针、多变数扫描、全维度穷举
