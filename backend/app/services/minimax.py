@@ -219,7 +219,7 @@ def generate_video(
 
     cfg = _cfg()
     model = (model or "").strip() or cfg.minimax_video_model
-    # 官方四档各不一样（`h3-models`）：H3 4–15s/768P·2K；Highspeed 4–15s/768P；
+    # 官方四档各不一样（`h3-models`）：H3 4–15s/768P·2K；Highspeed 4–15s/480P·768P；
     # Lite 4–15s/480P·768P 且**不收 adaptive**；Max 5–15s/480P·768P。
     # 一套写死会让某档收到它不收的 4s、2K 或 adaptive。
     spec = model_specs.minimax(model)

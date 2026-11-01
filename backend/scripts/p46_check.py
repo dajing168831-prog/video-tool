@@ -185,6 +185,21 @@ def main() -> int:
     b6 = A.as_brief(dict(PLAN, looks={"person": {"en": "short black hair"}}), REC, SPANS)
     check("老描述没有性别字段 → 也不编一个", "（男性）" in A.brief_text(b6), False)
 
+    # 🩸 2026-11-01 主人：「上传了定妆图和没定妆图肯定有区别的，绝对不能混一起。」
+    #   有图 → 外观交给 <Picture N>（`ref-en:57`）；没图 → 外观来自原片本身（`ref-en:47`）。
+    #   这两条路必须各说各的，不是同一段话换个主语。
+    t_has = A.brief_text(b3)                       # 有定妆图 + 有外观描述
+    t_nop = A.brief_text(                          # 没勾换人 = 压根没有定妆图
+        A.as_brief(dict(PLAN, slots=[], ordered=[], looks={}, person_ids=[],
+                        spec={"audio": "original",
+                              "change": {"person": False}}), REC, SPANS))
+    check("有定妆图 → 明说外观交给 <Picture N> 且不写五官",
+          "换人参考图里那个人" in t_has and "不要把五官/脸型写进" in t_has, True)
+    check("没有定妆图 → 明说外观来自原片，且不出现换人参考图那段",
+          "本单**没有**定妆参考图" in t_nop, True)
+    check("两条路不串味：没图的规格书里没有换人参考图那段",
+          "换人参考图里那个人" in t_nop, False)
+
     print("\n== ③ 硬闸：好样本放行 ==")
     check("合格样本 0 红", A.check(brief, [{"index": 1, "prompt": GOOD},
                                           {"index": 2, "prompt": GOOD}]), [])
@@ -194,7 +209,23 @@ def main() -> int:
               '<Audio 1> continues unchanged, and he says, <d>[Chinese] 你好</d>.')},
               {"index": 2, "prompt": GOOD}]), [])
 
+    # 🩸 换人的写法交给 skill 自己定，这里**不设**换人专属闸。
+    #   2026-11-01 曾设过「subject_definitions 必须写 `is replaced by`」的闸，
+    #   那个句式是自造的（官方 `ref-en` / `base-en` / skill references 四份
+    #   文件里 0 次出现），而且逼 agent 把原片那个人的外观写进提示词。
+    #   换人样本仍要过**其余全部**格式闸 —— 这条守着"别误伤"。
+    check("换人样本（GOOD）放行",
+          A.check(b3, [{"index": 1, "prompt": GOOD},
+                       {"index": 2, "prompt": GOOD}]), [])
+
     print("\n== ③ 硬闸：坏样本必红（成对探针）==")
+    # 🩸 `ref-en:278`：retention_analysis 里不写 (Sx)。成对验：好样本放行、坏样本必红。
+    ret_bad = GOOD.replace("<Audio 1>: fully_copy -", "<Audio 1> (S1): fully_copy -")
+    check("retention 里写了 (S1) → 红（官方 :278）",
+          any("(Sx)" in r or "说话人号" in r for r in red_of(b3, ret_bad)), True)
+    check("retention 没写 (Sx) → 不误伤（GOOD 本身）",
+          any("说话人号" in r for r in red_of(
+              b3, [{"index": 1, "prompt": GOOD}, {"index": 2, "prompt": GOOD}])), False)
     check("少一段 → 报段数不对",
           any("段数对不上" in r for r in A.check(
               brief, [{"index": 1, "prompt": GOOD}])), True)

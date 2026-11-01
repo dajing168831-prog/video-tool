@@ -133,8 +133,11 @@ SPECS = {
         "min_sec": 4.0,
         "max_sec": 15.0,
         "fps": 24,
-        # 官方：「分辨率 768P，不支持 2K」—— 只有一档
-        "resolutions": ("768P",),
+        # 🩸 2026-11-01 主人贴的官方价目表（H3 系列旗舰模型）：
+        #   Highspeed 768P ¥0.40/s、**480P ¥0.26/s** —— 480P 是有的。
+        #   旧注释「只有一档 768P」来自 2026-10-28 的 create 页摘录，价目表更全。
+        #   2K 依旧没有（两处口径一致）。
+        "resolutions": ("480P", "768P"),
         "default_resolution": "768P",
         "max_ref_images": 9,
         "max_ref_videos": 3,
@@ -249,15 +252,16 @@ MODELS = {
     "volc": [
         ("doubao-seedance-2-5-260628", "Seedance 2.5"),
     ],
-    # 🔓 2026-11-01 解冻：复刻重新接上 H3（主人：「复刻这里接上 H3 模型」）。
-    #   四档型号 ID 与 `SPECS["h3-*"]` 的键一一对应（`model_specs.minimax()` 按
-    #   名字里的 `-max` / `-lite` / `-highspeed` 路由，基础档就是 `MiniMax-H3`）。
-    #   标签直接用 SPECS 里的 `label`，前端照原样显示。
+    # 🧊 2026-11-01 主人要求冻住 H3、切到 2.5 验证：入口不再提供。
+    #   `SPECS` 里四档（`h3` / `h3-max` / `h3-highspeed` / `h3-lite`）**一字未动** ——
+    #   历史任务带旧型号 ID 进来时照样查得到档位，只是出片接口会按
+    #   `Caps.frozen`（`models/h3.py`）拒绝。
+    #   解冻：把下面四档填回来，并把 `models/h3.py` 的 `frozen` 改回 False。
     "minimax": [
-        ("MiniMax-H3", "MiniMax H3"),
-        ("MiniMax-H3-Max", "MiniMax H3-Max"),
-        ("MiniMax-H3-Highspeed", "MiniMax H3-Highspeed"),
-        ("MiniMax-H3-Lite", "MiniMax H3-Lite"),
+        # ("MiniMax-H3", "MiniMax H3"),
+        # ("MiniMax-H3-Max", "MiniMax H3-Max"),
+        # ("MiniMax-H3-Highspeed", "MiniMax H3-Highspeed"),
+        # ("MiniMax-H3-Lite", "MiniMax H3-Lite"),
     ],
 }
 

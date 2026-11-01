@@ -205,10 +205,11 @@ adapter = register(ModelAdapter(
               max_dur=float(_raw.get("max_sec") or 15),
               min_dur=float(_raw.get("min_sec") or 4),
               ref_audio=bool(_raw.get("ref_audio")),
-              # 🔓 2026-11-01 解冻：复刻重新接上 H3（主人：「复刻这里接上 H3 模型」）。
-              #   冻结机制保留（`models.frozen_families()` 由各家的 `Caps.frozen`
-              #   声明），但这里不再声明冻结。
-              frozen=False,
+              # 🧊 2026-11-01 主人要求「冻住 H3，切 2.5 验证是否存在同样的问题」。
+              #   冻结 = 入口下架（`model_specs.MODELS` 里这一家留空）+ 出片接口
+              #   按 `models.frozen_families()` 拒绝。**代码一行没删**：解冻只需要
+              #   把这里改回 False、型号表填回去。
+              frozen=True,
               edit_task_param=False,
               default_resolution=str(_raw.get("default_resolution") or "768P"),
               asset_id=False, auto_res_from_frame=False,

@@ -75,6 +75,10 @@ REGISTRY: list[tuple[str, str, tuple[str, ...], bool, bool]] = [
     ("可指认性穷举", "identifiability_check.py", (), True, False),
     ("型号注册表", "model_registry_check.py", (), True, False),
     ("模型分离门", "model_separation_check.py", (), False, False),
+    # 🩸 2026-11-01（主人：「两家混一起真的怕出错」）：`clone_brief.py` 是两家共用的
+    #   事实层，它一改两家同时变。这条把 9 种典型规格书 × 两家输出逐字存基线，
+    #   改动后多/少一行立刻红 —— 改共用层必须两家全门都绿才 `--update`。
+    ("规格书金标准（两家共用层）", "brief_golden_check.py", (), False, False),
     # ---------------- p 系列（历史关卡，全留着防回退）----------------
     ("p4 静帧", "p4_check.py", (), True, False),
     ("p5 参数", "p5_check.py", (), True, False),

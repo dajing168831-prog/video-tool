@@ -371,7 +371,7 @@ def _shot_plan(cuts: list[float]) -> str:
 def _scope_closure() -> str:
     """范围闭环 —— **官方逐字**，不许改写成变体。
 
-    出处 `sd25-pe:556-558`：「每条视频编辑 Prompt 都必须包含以下两种范围闭环之一，
+    出处 `sd25-pe:552-555`：「每条视频编辑 Prompt 都必须包含以下两种范围闭环之一，
     不能省略范围闭环：- 局部修改：`除以上明确修改对象外，@视频1中其他可见人物、
     道具和背景元素保持原样，不参与替换或删除。`」
 
@@ -962,7 +962,7 @@ def _volc_25(spec: dict, c: dict, idx: dict[str, int], *,
     nochange = _keep_sentence("volc", spec, only=tuple(_keep_only), verb="不修改")
     if nochange:
         scope_lines.append(nochange)
-    # 🩸 **无条件写**。`sd25-pe:556`「每条视频编辑 Prompt **都必须**包含以下两种
+    # 🩸 **无条件写**。`sd25-pe:552`「每条视频编辑 Prompt **都必须**包含以下两种
     # 范围闭环之一，不能省略范围闭环」—— 没有"这一单没什么可改的"这种豁免。
     # 以前挂了 `if parts`，只有补充要求（自由文本）时整段没有闭环。
     scope = _scope_closure()

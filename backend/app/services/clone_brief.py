@@ -27,10 +27,29 @@ def _change_of(spec: dict | None) -> dict:
         "product": bool(c.get("product")),
         "scene": bool(c.get("scene")),
         "wardrobe": bool(c.get("wardrobe")),
-        "style": str(s.get("style") or ""),
+        # 🩸 2026-11-01 实测：`style` 在 `change` 里（`edit_spec.defaults`），
+        #   原来这里写 `s.get("style")` 读的是**顶层** → 永远拿到空串，
+        #   前端选「动漫 / 3D / 胶片」时规格书里一个字都没有，agent 只能按实拍写。
+        "style": str(c.get("style") or ""),
+        # 🩸 补充说明（`extra`）：代码编译版一直会拼进提示词
+        #   （`edit_spec:1667/:1805`、`h3_compile:199`），规格书却没抄 → agent 版丢词。
+        "extra": str(s.get("extra") or ""),
+        # 🩸 谁在说话：代码编译版用它发 `<Subject N> (Sx)` 号
+        #   （`h3_compile:739`、`volc25_compile:1061`），规格书一直没抄。
+        #   漏了它，多说话人场景里号码只能靠猜（官方 `base-en:127`：不开口的人不发号）。
+        "speaker_ids": [str(x) for x in (c.get("speaker_ids") or []) if str(x).strip()],
+        # 🩸 风格参考**视频**（`style_video`）：它不进图片编号表（有自己的一套标号），
+        #   `refs` 里也不会出现；不在这里说一句，agent 根本不知道还有第二个参考视频。
+        "style_video": bool(c.get("style_video")),
         "person_ids": [str(x) for x in (c.get("person_ids") or []) if str(x).strip()],
         "wardrobe_ids": [str(x) for x in (c.get("wardrobe_ids") or []) if str(x).strip()],
+        # 🩸 2026-11-01 主人：「人物那里是一定有参考图的，其他地方才有参考图或描述 2 选 1。」
+        #   `product_target` 是**被换掉的那件东西**（定位词，盘点给的外观）；
+        #   `product_desc` 才是**换成什么**。代码编译版一直按这个二分
+        #   （`edit_spec:1766-1772`：有图 `换成图N里的产品` / 没图 `换成 product_desc`），
+        #   规格书原来只抄了定位词、把"换成什么"整个丢了。
         "product_target": str(c.get("product_target") or ""),
+        "product_desc": str(c.get("product_desc") or ""),
         "scene_desc": str(c.get("scene_desc") or ""),
         "wardrobe_desc": str(c.get("wardrobe_desc") or ""),
         "wardrobe_desc_by_id": dict(c.get("wardrobe_desc_by_id") or {}),
@@ -269,13 +288,21 @@ def as_text(brief: dict, *, body_lang: str = "中文",
     if c.get("person"):
         who = "、".join(c.get("person_ids") or []) or "画面主角"
         changed.append(f"- 换人：{who} → 换成对应的人物参考图里的人")
+    # 🩸 2026-11-01 主人：「人物那里是一定有参考图的，其他地方才有参考图或描述 2 选 1。」
+    #   这一段的每一句都要能回答**换成什么**：有图就说图，没图必须说文字。
+    #   口径照代码编译版（`edit_spec:1766-1772`）：有图 `换成图N里的产品` /
+    #   没图 `换成 product_desc`。原来一律写"换成产品参考图里的东西"，
+    #   没传图的那一单就是在骗 agent 去找一张不存在的图。
+    _have = {str(r.get("slot") or "") for r in (brief.get("refs") or [])}
     if c.get("product"):
         tgt = c.get("product_target")
-        changed.append("- 换产品" + (f"：画面里的「{tgt}」→ 换成产品参考图里的东西"
-                                     if tgt else "：换成产品参考图里的东西"))
+        what = f"「{tgt}」" if tgt else "画面里的产品"
+        to = ("换成产品参考图里的东西" if "product" in _have
+              else f"换成{c.get('product_desc') or '（没写换成什么）'}")
+        changed.append(f"- 换产品：{what} → {to}")
     if c.get("scene"):
-        changed.append("- 换场景" + (f"：{c.get('scene_desc')}" if c.get("scene_desc")
-                                     else "：换成场景参考图里的环境"))
+        changed.append("- 换场景：" + ("换成场景参考图里的环境" if "scene" in _have
+                                       else (c.get("scene_desc") or "（没写换成什么）")))
     if c.get("wardrobe"):
         per = c.get("wardrobe_desc_by_id") or {}
         if per:
@@ -283,8 +310,10 @@ def as_text(brief: dict, *, body_lang: str = "中文",
                 changed.append(f"- 换装：{pid} → {desc}" if desc else f"- 换装：{pid}")
         elif c.get("wardrobe_desc"):
             changed.append(f"- 换装：{c.get('wardrobe_desc')}")
-        else:
+        elif "wardrobe" in _have:
             changed.append("- 换装：换成服装参考图里的衣服")
+        else:
+            changed.append("- 换装：（没写换成什么）")
     if c.get("style"):
         changed.append(f"- 整体风格：{c.get('style')}")
     if not changed:
@@ -293,6 +322,14 @@ def as_text(brief: dict, *, body_lang: str = "中文",
     lines.append("")
     lines.append(f"## 要保留的\n- {brief.get('keep')}")
     lines.append("")
+
+    # 🩸 补充说明是用户自己写的一句话，代码编译版一直照拼（`edit_spec:1667`），
+    #   规格书漏抄就等于 agent 版把它吞了。原样放，不加解释、不扩写。
+    _ex = str(c.get("extra") or "").strip()
+    if _ex:
+        lines.append("## 用户补充说明（原样照做，不要改写或扩写）")
+        lines.append(f"- {_ex}")
+        lines.append("")
 
     lines.append("## 素材与编号（提示词里按这个编号引用）")
     for r in (brief.get("refs") or []):
@@ -303,7 +340,46 @@ def as_text(brief: dict, *, body_lang: str = "中文",
             lines.append(f"- {audio} = {r['role']}")
         elif r.get("pic"):
             lines.append(f"- {pic.format(n=r['pic'])} = {r['role']}")
+    # 🩸 风格参考**视频**没有图片编号，`refs` 里也不会出现它。
+    #   不在这里说一句，agent 只当原片是唯一的视频。
+    if c.get("style_video"):
+        lines.append("- 另有一个**风格参考视频**（不是原片，标号自成一套）："
+                     "只参考它的风格、色调与质感，不复制它的画面内容")
+    # 🩸 2026-11-01 主人：「人物那里是一定有参考图的，其他地方才有参考图或描述 2 选 1。」
+    #   上面只列了**有图**的槽位。勾了产品/场景/服装但没传图时，原来这里一个字不说，
+    #   agent 会以为它也有一张图，去找一个根本不存在的 <Picture N>（或 @图片N）。
+    _by_text = [
+        # `product_target` 是"被换掉的那件"（定位词），"换成什么"是 `product_desc`
+        ("产品", c.get("product_desc"), "product"),
+        ("场景", c.get("scene_desc"), "scene"),
+        ("服装", c.get("wardrobe_desc") or "、".join(
+            f"{k}：{v}" for k, v in (c.get("wardrobe_desc_by_id") or {}).items()),
+         "wardrobe"),
+    ]
+    _only_text = [(lab, str(v or "").strip()) for lab, v, key in _by_text
+                  if c.get(key) and key not in _have and str(v or "").strip()]
+    if _only_text:
+        lines.append("")
+        lines.append("## 只有文字、**没有**参考图的（提示词里没有对应的图号）")
+        for lab, v in _only_text:
+            lines.append(f"- {lab}：{v} —— 按这段文字写，不要引用图号")
+        lines.append("")
+    # 人物是唯一**必须**有图的槽位；走到这里说明上游把图弄丢了，先说出来别让
+    # agent 拿原片的人顶替（那等于把换人悄悄变成不换）。
+    if c.get("person") and "person" not in _have:
+        lines.append("## ⚠️ 勾了换人，但这一单没有人物参考图")
+        lines.append("- 换人**必须有参考图**（产品/场景/服装才可以只给文字）。"
+                     "没有图就不要写换人，照实说明画面里是谁。")
+        lines.append("")
     lines.append("")
+
+    # 🩸 谁在说话（`speaker_ids`）：**只陈述事实** —— 名单外的人不开门。
+    #   怎么发号（`(Sx)` / `<Subject N>`）是写法层的事，由各家官方 skill 决定，这里不写。
+    _spk = [str(x) for x in (c.get("speaker_ids") or []) if str(x).strip()]
+    if _spk:
+        lines.append("## 说话的人")
+        lines.append(f"- {'、'.join(_spk)}：名单外的人在画面里不开口")
+        lines.append("")
 
     ppl = brief.get("people") or []
     if ppl:

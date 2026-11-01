@@ -55,32 +55,43 @@ SYSTEM = """## 你在做什么
 3. 给**每一段**写一条完整的六段式提示词。
 4. 全部写完，用 `deliver_segments` 一次交齐。
 
-## 硬要求（每条都是官方原文，出处写在括号里）
+## 六段式的格式（全部是官方原文，行号在括号里）
 
 - 六段齐全，顺序固定：`subject_definitions` → `summary` → `retention_analysis`
   → `detailed_description` → `overall_soundscape` → `non_diegetic_music`（`ref-en:13-22`）。
   每段标题单独一行，写成 `subject_definitions:` 这种带冒号的形态。
-- **正文全部英文**；只有 `<d>` 里的台词/歌词和画面里可见的文字保留原语言（`ref-en:5`）。
+- **正文全部英文**；只有 `<d>` 里的台词/歌词和画面里可见的文字保留原语言
+  （`ref-en:5`、`:274`）。`<d>` 里的字**逐字照抄**用户给的原话，不翻译、不改写；
+  听不清的写 `[unclear]`，不要猜，也不要转述（`:274`）。
 - 标号只有四种，全程同义：`<Subject N>` / `<Picture N>` / `<Video N>` / `<Audio N>`
   （`ref-en:26-35`）。规格书里的「@图片N」= `<Picture N>`，「@音频1」= `<Audio 1>`，
   「原片」= `<Video 1>`。
-- `summary` 第一行是方括号任务类型（`ref-en:123`）。复刻是在原片上直接改 →
-  用 `video editing`（`ref-en:136`）；原片原声保留时再加 ` + audio reuse`（`ref-en:141`）。
-- 复刻的 `summary` 在任务类型后面必须接这一句原话：
-  `The target video is an edited version of <Video 1>.`（`ref-en:149-153`）。
-- 每一个被引用的标号，都必须在 `subject_definitions` 里单独一行定义过（`ref-en:35`）；
-  定义时写清它指什么、参考角色是什么、要跟随的主要特征（`ref-en:37`）。
+- `subject_definitions` 每个标号单独一行，写清三件事：它指什么、它的参考角色、
+  **要跟随的主要特征**（`ref-en:37`）。
 - 图只用来定义人物/场景/服装/风格时，**不要**给 `<Picture N>` 单独开一行 ——
   在对应的 `<Subject N>` 定义里直接引用那张图就行（`ref-en:68`）。
   只有这张图本身就是某一镜的首帧/关键帧/尾帧/构图锚点时，才单独写 `<Picture N>`
   （`ref-en:62`）。
-- `retention_analysis` 每条标号一行，关系标记只能用固定英文值（`ref-en:157-168`）：
+- `summary` 第一行是方括号任务类型（`ref-en:123`）；多个关系用 ` + ` 连接、不重复
+  （`:141`）。复刻是在原片上直接改 → `video editing`（`:136`）；原片原声还在响 →
+  再加 ` + audio reuse`（`:145`）。
+- 复刻的 `summary` 在任务类型后面必须接这一句原话：
+  `The target video is an edited version of <Video 1>.`（`ref-en:149-153`）。
+- `retention_analysis` 每条标号一行（`ref-en:157`），关系标记只能用固定英文值
+  （`:163-168`、`:190-197`）：
   视觉 `fully_preserved` / `partially_preserved` / `attribute_transfer` / `weak_reference`；
-  音频 `fully_copy` / `partially_copy` / `reference` / `weak_reference`（`ref-en:190-197`）。
-  换人 = `attribute_transfer`（`ref-en:167`）。
-- `detailed_description` 按镜次写：`[Shot 1]` 不带时间戳，后面用
-  `[Shot N] At MM:SS.mmm, ...`（`ref-en:218`）。
-  重要主体第一次清晰出现时，要写清它被参考的特征、在画面中的位置、当下的动作（`ref-en:246`）。
+  音频 `fully_copy` / `partially_copy` / `reference` / `weak_reference`。
+  换人用 `attribute_transfer`（`:167`）。**`retention_analysis` 里不写 `(Sx)`**（`:278`）。
+- `detailed_description` 按镜次写：`[Shot 1]` 不带时间戳，之后 `[Shot N] At MM:SS.mmm, ...`
+  （`ref-en:218`）。一两句风格/光线/画质的开场白写在 `[Shot 1]` **之前**（`:230`）。
+  重要主体第一次清晰出现时，写清它被参考的特征、画面里的位置、当下的动作 ——
+  **只写这一镜里实际看得见的东西**（`:246`）。
+- 说话的人：按实际发声顺序发 `(S1)`、`(S2)`，**不开口的人不发号**（`ref-en:127`）；
+  同一个人全片同一个号，同时说话写 `(S1,S2)`（`:127`）。说话人第一次出现要给出建立
+  身份的信息：角色类型、年龄、性别、在不在画内、音高、音色、语速、口音（`:129`）。
+  台词跨切点用 `<scenetrans>`，被片尾截断用 `<cutoff>`（`:142`）。
+- `overall_soundscape` 只管环境声和物理声（`ref-en:154`）；观众才听得见的配乐放
+  `non_diegetic_music`（`:162`）。
 - 复刻任务的描述长度**跟着原片复杂度走**，不用凑生成任务的 350–500 词（`ref-en:242`）。
 
 ## 每一段写它自己那一段
@@ -89,14 +100,57 @@ SYSTEM = """## 你在做什么
   两段写成几乎一样 = 这一单没做完。
 - 段数只能等于规格书给的段数，编号一一对应，不多不少。
 
-## 两个真跑翻过的坑
+## 换人怎么写（官方只有一句定义，方向千万别弄反）
 
-**① 口型/原声。** 这一段带原片音轨时，`detailed_description` 里要写明原声是怎么用的，
-并且在 `retention_analysis` 给 `<Audio 1>` 单独一行（`ref-en:118` / `:232`）。
-不要因为换人重新设计动作、口型时点、镜头或剪辑节奏。
+官方对换人的全部定义，就是 `retention_analysis` 里的一个关系标记（`ref-en:167`）：
 
-**② 换人是全片的。** 全片始终只有一位替换后的人物，不出现第二个相同形象，
-也不出现原人物的残留形象（`ref-en:167` 的 `attribute_transfer` 就是"特征转移到另一个目标"）。
+```text
+attribute_transfer - Referenced characteristics are transferred to a different
+identifiable target subject
+```
+
+拆开读：
+- `Referenced characteristics` = **参考素材里的特征**，也就是 `<Picture N>` 上那个人；
+- `transferred to` = 转移到；
+- `a different identifiable target subject` = 画面里那个可识别的目标主体。
+
+**方向是「图里那个人的特征 → 转移到画面里那个人身上」。**
+不要写成「原片那个人的特征被图片替换」——那是把主语放到了原片身上，
+模型读到的是原片那套外观，就会照着画。
+
+`<Subject N>` 怎么分配：`ref-en:88` 说「来自参考视频的人若作为可见内容复用，仍归
+`<Subject N>`」。官方给了两种写法，按这一段实际复用了什么自己选：
+
+```text
+合并（ref-en:55-58）：
+<Subject 1> is the woman whose appearance comes from <Picture 1>
+and whose walking motion comes from <Video 1>.
+
+分开（ref-en:51）：
+<Subject 1> is the young woman in <Picture 1>, with long dark hair, a blue cardigan,
+and a thin silver necklace.
+```
+
+**写外观时抄哪些特征**：官方所有示例指认一个人，写的都是**发型 + 服装 + 配饰**：
+
+- `ref-en:51`：`with long dark hair, a blue cardigan, and a thin silver necklace`
+- `ref-en:314`：`with long blonde hair and a light-pink button-down shirt with rolled-up sleeves`
+- `ref-en:324`：`identity, long hair, and light-pink shirt`
+- `ref-en:330`：`the young woman with long blonde hair and a light-pink button-down shirt`
+
+**官方全文没有一处写五官**（脸型、眼睛、眉骨、肤色，一处都没有）。
+五官交给 `<Picture N>` 那张图本身，用文字去写它只会让模型改按文字造脸。
+
+**别写画面里没有的东西**：`ref-en:246` 要求只写 "within what is actually visible in
+the shot"。所以不要写「原片那套黑发、开衫、牛仔裤不再出现」这种否定句 ——
+那等于把要删掉的外观原样念了一遍给模型听。
+
+## 口型 / 原声
+
+这一段带原片音轨时，`detailed_description` 里要写明原声是怎么用的，并且在
+`retention_analysis` 给 `<Audio 1>` 单独一行（`ref-en:108-118`、`:232`）。
+不要因为换人重新设计动作、口型时点、镜头或剪辑节奏 —— 复刻的定义就是原片是唯一
+母版，改的只是点名的那几样。
 
 ## 合规底线
 
@@ -239,6 +293,21 @@ def check(brief: dict, segments: list[dict]) -> list[str]:
         if has_audio and "<Audio 1>" not in p:
             red.append(f"第 {i} 段这段带原片音轨，但提示词里没有 <Audio 1>"
                        "（原声是这段的一条参考，官方 `ref-en:118` / `:232`）")
+        # 🩸 官方明写：`retention_analysis` 里不写说话人号（`ref-en:278`
+        #   "Do not write `(Sx)` in `retention_analysis`"）。这条以前没闸。
+        if re.search(r"\(S\d", ret):
+            red.append(f"第 {i} 段的 retention_analysis 里写了 (Sx) —— "
+                       "官方 `ref-en:278` 明写这里不写说话人号")
+
+        # 换人的写法由 skill 自己定（见 SYSTEM ②）。这里**不设**换人专属闸：
+        # 🩸 2026-11-01 曾在此加过「必须写 `is replaced by <Subject 1>`」的闸，
+        #   那个句式是我自造的 —— 官方 `ref-en.txt` / `base-en.txt` /
+        #   `skills/h3-prompt-writing/references/*` 四份文件里出现 **0 次**
+        #   （官方 `replace` 全文只有 `:88` / `:195` 两处无关用法）。
+        #   闸门要求它出现在 subject_definitions，agent 为了过闸就必须把原片那个人
+        #   定义成一个主体、再按官方 `:47` 的格式写他的外观 ——
+        #   结果是把原片的脸用最大篇幅描述进了提示词，再要求模型别画它。
+        #   机制只在 `ref-en:167` 一句定义里，句式没有官方样例，不该由我们裁定。
 
         # --- 没替换的占位符 ---
         leftovers = [x for x in _ANGLE.findall(p) if not _KNOWN_ANGLE.fullmatch(x)]
@@ -350,12 +419,16 @@ def brief_text(brief: dict) -> str:
                                pic="<Picture {n}>", audio="<Audio 1>")
     tl = brief.get("target_looks") or []
     if tl:
-        lines = ["", "## 换人参考图里那个人**实际长什么样**（英文原文，写 "
-                     "subject_definitions 用）",
-                 "（这是看图写下来的，和图上那个人一致；用它写 "
-                 "`<Subject N>` 要跟随的特征，别自己编。括号里是**这个人的性别**："
-                 "写了男性/女性就按它写主语；写「看不出」就用中性说法"
-                 "（the person / they），**不要**沿用原片那个人物的性别）"]
+        lines = ["", "## 换人参考图里那个人（看图记下来的，**只用来判断性别和大致类别**）",
+                 "（🩸 **不要把五官/脸型写进 `subject_definitions`。** H3 官方"
+                 "全文没有一处描述人的五官 —— 官方示例指认一个人只用**发型 + 服装"
+                 "+ 配饰**（`ref-en:47`：`with long dark hair, a blue cardigan, "
+                 "and a thin silver necklace`），外观本身一律用 "
+                 "`whose appearance comes from <Picture N>` 交给图片（`ref-en:57`）；"
+                 "retention 里也只写 `identity`（`ref-en:324`）。"
+                 "下面这些词是用来看图判断性别/类别的，**不是**抄进提示词用的。"
+                 "括号里是**这个人的性别**：写了男性/女性就按它写主语；写「看不出」"
+                 "就用中性说法（the person / they），**不要**沿用原片那个人物的性别）"]
         for r in tl:
             g = str(r.get("gender") or "").strip()
             # 🩸 性别只说**图上那个人**（官方把它列为身份信息 `base-en:129`）。
@@ -365,6 +438,20 @@ def brief_text(brief: dict) -> str:
                    "unspecified": "（性别看不出）"}.get(g, "")
             lines.append(f"- <Picture {r['pic']}>{tag}：{r['en']}")
         text = text + "\n" + "\n".join(lines)
+    elif brief.get("people"):
+        # 🩸 2026-11-01 主人：「上传了定妆图和没定妆图肯定有区别的，绝对不能混一起。」
+        #   有图时上面那段明说了"外观交给 <Picture N>"；**没图时原来整段不存在**
+        #   —— agent 没有任何一句关于"人怎么写"的指令，只能自己猜。
+        #   这里把没图那条路也写死：外观来自原片本身（`ref-en:47` 的写法）。
+        #   只在**画面里确实有人**时才说 —— 纯场景/纯产品单里，人根本不出场，
+        #   多这段是噪音，还会把 agent 的注意力拽到不存在的角色上。
+        text = text + "\n" + "\n".join([
+            "", "## 本单**没有**定妆参考图",
+            "（这一段画面里出现的所有人，外观全部来自原片本身。按 `ref-en:47` 的写法"
+            "只写**发型 + 服装 + 配饰**（`with long dark hair, a blue cardigan, "
+            "and a thin silver necklace`），**不描述五官/脸型**；"
+            "外观用 `the woman in <Video 1>` 这种方式交给原片，靠文字锁不住脸）",
+        ])
     return text
 
 

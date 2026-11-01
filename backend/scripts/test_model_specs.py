@@ -61,7 +61,9 @@ def main() -> int:
     # 🩸 2026-10-28：官方「当前可用值：MiniMax-H3、MiniMax-H3-Highspeed、
     #   MiniMax-H3-Lite、MiniMax-H3-Max」。以前只认两档，另两个名字会被当成
     #   基础 H3 ⇒ 放行 2K ⇒ 接口直接拒（两档官方都「不支持 2K」）。
-    check("Highspeed 只有 768P", h3hs["resolutions"], ("768P",))
+    # 🩸 2026-11-01 主人贴的官方价目表：Highspeed 768P ¥0.40/s、480P ¥0.26/s
+    #   —— 480P 是有的，旧断言只放 768P 等于把便宜档挡住了。
+    check("Highspeed 480P/768P", h3hs["resolutions"], ("480P", "768P"))
     check("Highspeed 不收 2K", "2K" in h3hs["resolutions"], False)
     check("Highspeed 时长下限 4s", h3hs["min_sec"], 4.0)
     check("Lite 480P/768P", h3lite["resolutions"], ("480P", "768P"))
@@ -75,9 +77,13 @@ def main() -> int:
           model_specs.volc("MiniMax-H3-Lite") is h3lite, True)
     check("volc() 与 minimax() 同源：Highspeed",
           model_specs.volc("MiniMax-H3-Highspeed") is h3hs, True)
-    # 🔓 2026-11-01 解冻 H3：界面候选恢复成官方四档（`h3-models`，2026-10-28 抓取）。
-    check("复刻界面可选 H3 四档",
+    # 🧊 2026-11-01 冻住 H3：界面候选应为空。断言**跟着 `Caps.frozen` 走**，
+    #   不写死某一态 —— 否则每次冻结/解冻都要回来改一次判据（以前就是这样漏的）。
+    from app.services import models as _models
+    _h3_frozen = "minimax" in _models.frozen_families()
+    check("冻住 H3 → 界面不提供型号" if _h3_frozen else "复刻界面可选 H3 四档",
           [m for m, _ in model_specs.MODELS["minimax"]],
+          [] if _h3_frozen else
           ["MiniMax-H3", "MiniMax-H3-Max", "MiniMax-H3-Highspeed", "MiniMax-H3-Lite"])
     check("H3 参数表仍在（冻结 ≠ 删除）",
           model_specs.minimax("MiniMax-H3")["max_sec"], 15.0)
@@ -183,13 +189,18 @@ def main() -> int:
     # 🩸 2026-10-31：原来 4 档（2.0 标准/极速/Mini + 2.5）—— 2.0 已从复刻视频下架，
     #   适配器/编译器归档、参数表一并删除，界面只剩 2.5。
     check("火山 1 个可选型号（只剩 2.5）", len(model_specs.MODELS["volc"]), 1)
-    # 官方 V2「当前可用值」就是这四个（`h3-models`，2026-10-28 抓取）
-    check("MiniMax 候选四档", len(model_specs.MODELS["minimax"]), 4)
+    # 官方 V2「当前可用值」就是这四个（`h3-models`，2026-10-28 抓取）；
+    # 冻住时按 0 断言，解冻后自动回到 4。
+    check("MiniMax 候选四档" if not _h3_frozen else "冻住 H3 → MiniMax 候选为空",
+          len(model_specs.MODELS["minimax"]), 0 if _h3_frozen else 4)
     for ch, items in model_specs.MODELS.items():
         # 🩸 空清单必须单独断言：下面那组检查对空列表**恒真**（0 == 0），
         #   不拦住就会把"一条候选都没有"报成"每个型号都有自己那一档"的假绿。
         if not items:
-            check(f"{ch} 候选不能为空", bool(items), True)
+            # 🧊 冻结的家族可以是空的（入口下架 = 预期），没冻结的必须报红。
+            want_empty = ch in _models.frozen_families()
+            check(f"{ch} 候选为空（{'已冻结' if want_empty else '⚠️ 未冻结却也空'}）",
+                  bool(items), not want_empty)
             continue
         pick = model_specs.volc if ch == "volc" else model_specs.minimax
         got = [id(pick(mid)) for mid, _ in items]

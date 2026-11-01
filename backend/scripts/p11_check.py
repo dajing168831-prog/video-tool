@@ -214,14 +214,19 @@ def phase_e() -> None:
     # 🩸 判据要写「效果」不写「文件里有没有这句话」：以前这里 grep
     #    `known = {mid for …}`，代码一重构就假红，而实际校验是对的。
     from app.api import clone as _api
-    # 🔓 2026-11-01 解冻 H3 后，E3 恢复成"两家都在"的形态：
-    #   乱填拒 / 2.5 放行 / H3 放行 / 跨通道错配拒。
-    #   （冻结机制本身没删，只是当前没有冻结的家族 → 冻结分支无可测对象。）
-    chk("E3 型号校验：认得的放行、乱填的拒、跨通道错配的拒",
+    # 🧊 2026-11-01 冻住 H3：断言跟着 `Caps.frozen` 走，不写死某一态。
+    #   冻结：H3 →「这个型号暂不可用」；2.5 走 minimax 通道 →「这条通道暂不可用」。
+    #   解冻：恢复成 H3 放行 / 跨通道「所选模型不属于该通道」。
+    from app.services import models as _models
+    _frozen = "minimax" in _models.frozen_families()
+    _h3_want = "这个型号暂不可用" if _frozen else ""
+    _cross_want = "这条通道暂不可用" if _frozen else "所选模型不属于该通道"
+    chk("E3 型号校验：认得的放行、乱填的拒、跨通道错配的拒"
+        + ("（H3 已冻结）" if _frozen else ""),
         _api.regen_model_error("乱填的型号") == "未知的模型"
         and _api.regen_model_error(V25) == ""
-        and _api.regen_model_error(H3) == ""
-        and _api.regen_model_error(V25, "minimax") == "所选模型不属于该通道",
+        and _api.regen_model_error(H3) == _h3_want
+        and _api.regen_model_error(V25, "minimax") == _cross_want,
         f'{_api.regen_model_error("乱填的型号")} | '
         f'{_api.regen_model_error(V25)} | {_api.regen_model_error(H3)} | '
         f'{_api.regen_model_error(V25, "minimax")}')
