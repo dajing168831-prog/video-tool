@@ -61,12 +61,13 @@ def submit_render(cid: str, rid: str, *, script: str | None,
                   regen_shots: list[int] | None = None,
                   regen_mode: str = "shots",
                   regen_channel: str = "auto",
-                  edit_spec: dict | None = None) -> bool:
+                  edit_spec: dict | None = None,
+                  max_segments: int = 0) -> bool:
     if not _claim(cid, rid):
         return False
     _POOL.submit(_render, cid, rid, script, mask_bottom,
                  regen_prompt, regen_ratio, regen_shots,
-                 regen_mode, regen_channel, edit_spec)
+                 regen_mode, regen_channel, edit_spec, max_segments)
     return True
 
 
@@ -128,7 +129,7 @@ def _render(cid: str, rid: str, script: str | None, mask_bottom: bool,
             regen_prompt: str = "", regen_ratio: float = 0.0,
             regen_shots: list[int] | None = None,
             regen_mode: str = "shots", regen_channel: str = "auto",
-            edit_spec: dict | None = None) -> None:
+            edit_spec: dict | None = None, max_segments: int = 0) -> None:
     t0 = time.time()
     task = store.load(cid)
     if not task or not task.get("recipe"):
@@ -174,6 +175,7 @@ def _render(cid: str, rid: str, script: str | None, mask_bottom: bool,
             allow_stretch=bool(item.get("allow_stretch")),
             lang=(item.get("lang") or "").strip(),
             speech_rate=item.get("speech_rate"),
+            max_segments=int(max_segments or 0),
         )
         item["state"] = "done"
         item["pct"] = 100
@@ -187,6 +189,9 @@ def _render(cid: str, rid: str, script: str | None, mask_bottom: bool,
         item["voice_meta"] = res.get("voice_meta") or {}
         # 换画面怎么拆的请求：多少段、切点挪没挪、段间有没有尾帧衔接
         item["regen_meta"] = res.get("regen_meta") or {}
+        # 🩸 只出了前几段（`max_segments`）：前端据此显示"这是片段、不是成片"，
+        #   并给出「继续出全部」。不是失败，别让结果页报错。
+        item["partial"] = bool(res.get("partial"))
         # 成片质量门（定格/音画时长差/总时长偏离），本地 ffmpeg 跑，零成本
         item["qc"] = res.get("qc") or {}
         # 身份核对（换脸到底换上了没有），本地 OpenCV 跑，零成本

@@ -210,6 +210,11 @@ class RenderIn(BaseModel):
     # 配音和画面长度差太多时，默认**不**硬出片。
     # 打开这个开关 = 用户明确接受"结尾补静音（配音短）/ 冻帧（配音长）"。
     allow_stretch: bool = Field(False, description="允许配音与画面强行对齐（结尾会补静音或冻帧）")
+    # 🩸 只出前 N 段（2026-11-01 主人：「超过 1 段不能先生成一段满意再继续吗」）。
+    #   0 / 不传 = 全部（老行为）。>0 = 只跑前 N 段、不拼接成片，先给用户看效果；
+    #   确认后同样参数再出一次，前面的段命中缓存不重复扣费。
+    max_segments: int = Field(0, ge=0, le=20,
+                              description="只出前 N 段预览（0=全部）；继续出全部用同样的参数再调一次")
 
 
 class ExtendIn(BaseModel):
@@ -1554,6 +1559,10 @@ async def clone_render(cid: str, body: RenderIn):
         # 试听里手动调好的语速，出片必须沿用它 —— 否则前台调了半天，出片又变回自动值
         "speech_rate": body.speech_rate,
         "allow_stretch": bool(body.allow_stretch),
+        # 只出前 N 段（预览）；0 = 全部。落进任务记录便于对账"这次是不是预览"
+        "max_segments": int(body.max_segments or 0),
+        # 续出全部（`/continue`）要用同一套参数重建请求，遮罩开关也得留着
+        "mask_bottom": bool(body.mask_bottom),
     }
     task.setdefault("renders", []).append(item)
     store.save(task)
@@ -1565,8 +1574,54 @@ async def clone_render(cid: str, body: RenderIn):
         regen_mode=regen_mode,
         regen_channel=body.regen_channel,
         edit_spec=spec,
+        max_segments=int(body.max_segments or 0),
     )
     return ok({"id": cid, "render_id": rid})
+
+
+@router.post("/clone/{cid}/render/{rid}/continue")
+async def clone_render_continue(cid: str, rid: str):
+    """把「只出前 N 段」的预览继续出完。
+
+    🩸 同参数重跑全片：已经生成过的段命中缓存（键含这一段最终发出去的提示词），
+    **不重复扣费**；只有没生成过的段真花钱。参数全部取自这一版任务记录 ——
+    前端不用重新填，也不会因为表单状态丢了而出成另一个东西。
+    """
+    task = store.load(cid)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    src = next((x for x in (task.get("renders") or [])
+                if x.get("id") == rid), None)
+    if src is None:
+        raise HTTPException(status_code=404, detail="这一版不存在")
+    if not src.get("partial"):
+        return fail("这一版本来就是完整成片，不用继续出", biz_code=8)
+
+    # 只剔除**上一次的结果字段**，输入字段（型号、通道、规格、文案）原样带走
+    _OUTPUT_ONLY = {"id", "created_at", "state", "stage", "pct", "error",
+                    "error_file", "duration", "regen_meta", "qc", "identity",
+                    "partial", "replaced_shots", "voice_meta", "segments"}
+    import time as _t
+
+    new_rid = store.new_id()
+    item = {k: v for k, v in src.items() if k not in _OUTPUT_ONLY}
+    item.update({"id": new_rid, "created_at": _t.time(), "state": "queued",
+                 "stage": "", "pct": 0, "error": "", "duration": None,
+                 "max_segments": 0, "partial": False})
+    task.setdefault("renders", []).append(item)
+    store.save(task)
+    clone_jobs.submit_render(
+        cid, new_rid, script=item.get("script"),
+        mask_bottom=bool(item.get("mask_bottom")),
+        regen_prompt=item.get("regen_prompt") or "",
+        regen_ratio=float(item.get("regen_ratio") or 0),
+        regen_shots=item.get("regen_shots") or None,
+        regen_mode=item.get("regen_mode") or "auto",
+        regen_channel=item.get("regen_channel") or "auto",
+        edit_spec=item.get("edit"),
+        max_segments=0,
+    )
+    return ok({"id": cid, "render_id": new_rid})
 
 
 @router.post("/clone/{cid}/extend")

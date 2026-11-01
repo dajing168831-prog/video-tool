@@ -16,8 +16,9 @@
 
     <view class="meta">
       <view class="meta-left">
-        <view class="meta-title">复刻成片</view>
+        <view class="meta-title">{{ partial ? '片段预览' : '复刻成片' }}</view>
         <view class="meta-sub">时长 {{ duration }} · 文案 {{ segments.length }} 句</view>
+        <view class="meta-sub warn" v-if="partial">{{ partialNote }}</view>
         <view class="meta-sub" v-if="regenNote">{{ regenNote }}</view>
         <view class="meta-sub" v-if="voiceNote">{{ voiceNote }}</view>
         <view class="meta-sub warn" v-if="qcNote">{{ qcNote }}</view>
@@ -41,6 +42,10 @@
     </view>
 
     <view class="actions">
+      <button v-if="partial" class="btn-primary" :loading="continuing"
+              :disabled="continuing" @click="continueAll">
+        {{ continuing ? '提交中…' : '继续出全部（已出的段不重复扣费）' }}
+      </button>
       <button class="btn-ghost" @click="saveVideo">保存到本地</button>
       <button class="btn-ghost" @click="again">再出一版</button>
     </view>
@@ -67,6 +72,7 @@
 import {
   cloneFileUrl,
   cloneRenderDetail,
+  cloneRenderContinue,
   cloneDetail,
 } from '@/api/request'
 
@@ -77,6 +83,8 @@ export default {
       rid: '',
       d: null,
       versions: [],
+      // 预览片段「继续出全部」提交中
+      continuing: false,
     }
   },
   computed: {
@@ -88,6 +96,19 @@ export default {
     },
     segments() {
       return (this.d && this.d.segments) || []
+    },
+    // 🩸 只出了前 N 段（预览）：这不是成片，标题和提示都要说清楚，
+    //   否则用户会以为整条片子就这么短、或者后面几段被吞了。
+    partial() {
+      return !!(this.d && this.d.partial)
+    },
+    partialNote() {
+      const m = (this.d && this.d.regen_meta) || {}
+      const done = m.done_segments || 1
+      const total = m.total_segments || 0
+      return `这是前 ${done} 段${total ? `（共 ${total} 段）` : ''}的预览，不是完整成片。`
+        + '满意就点「继续出全部」——已出的这一段会复用，不重复扣费；'
+        + '觉得不对就回去改提示词再出，避免后面的段白花钱。'
     },
     duration() {
       const s = (this.d && this.d.duration) || 0
@@ -263,6 +284,22 @@ export default {
     },
     again() {
       uni.navigateBack()
+    },
+    // 🩸 继续出全部：后端拿这一版存下来的参数原地重跑，已生成的段命中缓存
+    //   （缓存键含每段最终提示词），不重复扣费。前端不需要重填任何东西。
+    async continueAll() {
+      if (this.continuing) return
+      this.continuing = true
+      try {
+        const r = await cloneRenderContinue(this.cid, this.rid)
+        uni.redirectTo({
+          url: `/pages/clone/progress?cid=${r.id}&rid=${r.render_id}`,
+        })
+      } catch (e) {
+        uni.showModal({ title: '提交失败', content: e.message, showCancel: false })
+      } finally {
+        this.continuing = false
+      }
     },
   },
 }

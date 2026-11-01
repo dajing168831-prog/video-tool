@@ -219,6 +219,9 @@ function cloneRenderBody(script, opts = {}) {
     allowStretch = false,
     // 语速 -30~30（正数=更快）。null/不传 = 按估算自动定
     speechRate = null,
+    // 🩸 只出前 N 段（预览）：0/不传 = 全部。>0 只跑前 N 段、不拼接成片，
+    //   先看效果；继续出全部时同样的参数再调一次，前 N 段命中缓存不重复扣费。
+    maxSegments = 0,
   } = opts
   return {
     script,
@@ -249,6 +252,8 @@ function cloneRenderBody(script, opts = {}) {
     ...(allowStretch ? { allow_stretch: true } : {}),
     ...(speechRate === null || speechRate === undefined
       ? {} : { speech_rate: speechRate }),
+    // 预览（只出前 N 段）：不传 = 全部，保持老请求体形状不变
+    ...(maxSegments > 0 ? { max_segments: maxSegments } : {}),
   }
 }
 
@@ -503,6 +508,11 @@ export function cloneUploadSubject(id, filePath) {
 /** 出片进度 */
 export function cloneRenderDetail(id, rid) {
   return request(`/api/clone/${id}/render/${rid}`)
+}
+
+/** 把「只出前 N 段」的预览继续出完：同参数重跑全片，已出的段命中缓存不重复扣费 */
+export function cloneRenderContinue(id, rid) {
+  return request(`/api/clone/${id}/render/${rid}/continue`, { method: 'POST' })
 }
 
 /** 复刻历史 */

@@ -556,6 +556,11 @@ def render(
     allow_stretch: bool = False,
     lang: str = "",
     speech_rate: int | None = None,
+    # 🩸 只出前 N 段（2026-11-01 主人：「超过 1 段不能先生成一段满意再继续吗」）。
+    #   0 = 全部（老行为）。>0 时走独立预览分支：不拼接、不配音、不出成片，
+    #   只把已生成的那几段交出来；继续出全部时同参数重跑，前面的段命中缓存
+    #   不重复扣费（缓存键含每段最终提示词，见 `video_edit._gen_spans`）。
+    max_segments: int = 0,
 ) -> dict:
     """拿配方和新文案出片。script 传 None 表示沿用原片文案。
 
@@ -904,6 +909,84 @@ def render(
     else:
         shot_p = edit_spec_mod.shot_prompt(spec, regen_prompt)
         motion_p = None
+
+    # 🩸 只出前 N 段（2026-11-01 主人：「超过 1 段不能先生成一段满意再继续吗」）：
+    #   走**独立分支** —— 不拼接、不配音、不合成。缺段拼出来的片子是残的，
+    #   用户会误以为是成片；这里只把已生成的那几段交出去。
+    #   继续出全部时用同样参数重跑：前 N 段命中缓存不重复扣费（缓存键含每段
+    #   最终提示词），只有没生成过的段真花钱。
+    if max_segments and wants_change:
+        from app.services import video_edit as _ve_prev
+
+        _p(progress, "regen", 50)
+        prev_path = None
+        _ch_used = _md_used = ""
+        _meta: dict = {"partial": True, "done_segments": 0, "total_segments": 0}
+        if mode == "whole":
+            _r = _ve_prev.replace_whole(
+                video, rec, cid=cid, prompt=regen_prompt, spec=spec, refs=refs,
+                subject_image=subject_image, subject_asset=subject_asset,
+                channel=regen_channel, model=regen_model, inventory=inventory,
+                style_video=_style_video_of(cid, spec),
+                workdir=workdir, progress=progress, max_segments=max_segments)
+            prev_path = _r.get("preview") or _r.get("video")
+            _ch_used, _md_used = _r.get("channel", ""), _r.get("model", "")
+            _meta.update({"mode": "whole",
+                          "done_segments": int(_r.get("done_segments") or 0),
+                          "total_segments": int(_r.get("total_segments") or 0),
+                          "label": _r.get("label") or "",
+                          "resolution": _r.get("resolution") or ""})
+        else:
+            _d = _auto_decision(
+                video, rec, spec=spec, regen_prompt=regen_prompt,
+                regen_shots=regen_shots, regen_channel=regen_channel,
+                regen_model=regen_model, subject_image=subject_image,
+                subject_asset=subject_asset, refs=refs, inventory=inventory,
+                audio_mode=audio_mode, speech_spans=speech_spans,
+                style_video=_style_video_of(cid, spec),
+            )
+            _plan, _spans = _d["plan"], _d["spans"]
+            if not _spans:
+                raise ValueError(
+                    "这一单没有要走视频模型的段（全是静帧重绘），"
+                    "「先出一段」用不上 —— 直接出全部就行")
+            _clips = _ve_prev.replace_spans(
+                video, rec, _spans, cid=cid, plan=_plan, inventory=inventory,
+                workdir=workdir / "triage", progress=progress,
+                max_segments=max_segments)
+            prev_path = _clips[0] if _clips else None
+            _ch_used, _md_used = _plan.get("ch", ""), _plan.get("model", "")
+            _meta.update({"mode": "auto",
+                          "done_segments": len(_clips),
+                          "total_segments": len(_spans),
+                          "label": _plan.get("label") or "",
+                          "resolution": _plan.get("resolution") or ""})
+        # 成片下载接口固定读 `workdir/out.mp4`（`api/clone.py` 的
+        # `/render/{rid}/file/out`）。预览片段落到这个名字上，前端不用认识
+        # "预览"这种新路径；继续出全部时再被真正的成片覆盖。
+        if prev_path and Path(prev_path).exists():
+            _out_prev = workdir / "out.mp4"
+            if Path(prev_path) != _out_prev:
+                import shutil as _sh_prev
+
+                _out_prev.parent.mkdir(parents=True, exist_ok=True)
+                _sh_prev.copyfile(prev_path, _out_prev)
+            prev_path = _out_prev
+        _p(progress, "done", 100)
+        return {
+            "video": prev_path, "preview": prev_path, "partial": True,
+            "cover": None, "voice": None,
+            "duration": (scene.probe(prev_path)["duration"]
+                         if prev_path else 0.0),
+            "segments": [],
+            "qc": {"ok": True, "skipped": "只出了前几段，没有成片可质检"},
+            "identity": {"ok": True, "skipped": "预览段不核身份"},
+            "contract": {"ok": True, "verdict": "skipped",
+                         "items": [], "failed": []},
+            "replaced_shots": int(_meta["done_segments"]),
+            "regen_channel": _ch_used, "regen_model": _md_used,
+            "voice_meta": {}, "regen_meta": _meta,
+        }
 
     if wants_change:
         from app.services import assemble, generate, triage, video_edit

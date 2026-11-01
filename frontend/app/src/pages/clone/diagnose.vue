@@ -989,6 +989,13 @@
         <button class="btn-primary" :loading="submitting" :disabled="submitting" @click="render">
           {{ submitting ? '提交中…' : (wantRegen ? '开始出片（含换画面）' : '开始出片') }}
         </button>
+        <!-- 🩸 只出第 1 段（2026-11-01 主人要的）：先看效果再付后面的钱。
+             继续出全部时用同样的参数再点「开始出片」，第 1 段命中缓存不再扣费。 -->
+        <button v-if="wantRegen && canPreviewOne"
+                class="btn-ghost" :loading="submitting"
+                :disabled="submitting" @click="render(1)">
+          先出第 1 段看看（确认后再出全部）
+        </button>
         <view class="recipe-link" @click="exportRecipe">导出配方（镜头表 / 时间轴 / 参数）</view>
       </view>
     </block>
@@ -1274,6 +1281,12 @@ export default {
     // 出片预览里的逐段提示词（后端已经把 "带不带音频" 也算好了）
     peekSegments() {
       return (this.peek && this.peek.segments) || []
+    },
+    // 🩸 只出第 1 段：只有「要换画面」且**不止一段**时才给这个按钮。
+    //   单段的单子本来一次就出完，预览没有意义；段数取的是出片预览里
+    //   真正要送模型的段（`peek.segments`），不是镜头数。
+    canPreviewOne() {
+      return this.wantRegen && this.peekSegments.length > 1
     },
     // 逐句列表只在「当前文案就是这些行拼出来的」时显示。
     // 翻译、恢复历史版本这些操作会把整段文案换掉 —— 那时列表还挂在那儿，
@@ -2820,7 +2833,7 @@ export default {
         }
       }, 6000)
     },
-    async render() {
+    async render(maxSegments = 0) {
       const s = (this.script || '').trim()
       if (!s && this.edit.audio !== 'original') {
         uni.showToast({ title: '请先写新文案', icon: 'none' })
@@ -2944,6 +2957,9 @@ export default {
       }
       if (this.submitting) return
       const opts = this.buildRenderOpts(pickedShots, s)
+      // 🩸 只出前 N 段（预览）：0/不传 = 全部。继续出全部时**不传**，
+      //   后端按同样的参数重跑，前面的段命中缓存不重复扣费。
+      if (maxSegments > 0) opts.maxSegments = maxSegments
       // 付费前先让后端把"这一下要生成多少"算出来（全本地、不花钱）：
       // 会动几段、调几次模型、成片多少帧。算不出来就退回旧的文字确认，不阻塞。
       // 报价按第一版的开头方向算：方向本身就是这次画面改动的来源

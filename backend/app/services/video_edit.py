@@ -1831,10 +1831,17 @@ def _gen_spans(
     label: str = "重制",
     base_pct: int = 52,
     span_pct: int = 20,
+    max_segments: int = 0,
 ) -> list[Path]:
-    """按区间逐段重制，返回与 spans 一一对应的、已规格化到原时长的片段。
+    """按区间逐段重制，返回**实际生成了的**片段（可能比 spans 少）。
 
     缓存键 = 通道 + 提示词哈希 + 区间，同参数重跑不重复扣费。
+
+    🩸 `max_segments`（2026-11-01 主人要求「先生成一段满意再继续」）：
+    只跑前 N 段就停，返回的 list 比 spans 短 —— 调用方据此判定"这是预览，
+    不能拼接成片"。默认 0 = 全跑（老行为）。
+    继续出全部时不用另外记状态：缓存键含每段的最终提示词，前 N 段原样
+    命中缓存、不重复扣费，只有没生成过的段才真花钱。
     """
     from app.services import ark, clone_store as store, edit_spec, minimax
 
@@ -1995,6 +2002,10 @@ def _gen_spans(
     # 回灌原片是同一类病（2026-10-22）。
     prev_generated = False
     for n, (a, b) in enumerate(spans, 1):
+        if max_segments and n > max_segments:
+            log.info("只出前 %d 段（本单共 %d 段）：第 %d 段起本次不生成",
+                     max_segments, len(spans), n)
+            break
         # `need` = 这一段**成片**必须有的长度；`dur` = 实际送进模型的参考段长度。
         # 中间段送长一点（往后借 `_EXTRA` 秒原片），模型少给的那 0.3 秒就吃掉借款；
         # 尾段借不到，按 `need` 送，少给多少最后按实际长度收口。
@@ -2385,8 +2396,9 @@ def replace_spans(
     style_video: Path | None = None,
     workdir: Path,
     progress=None,
+    max_segments: int = 0,
 ) -> list[Path]:
-    """按给定区间重制，返回与 spans 对应的片段（逐镜分诊走这条路）。
+    """按给定区间重制，返回**实际生成了的**片段（`max_segments`>0 时可能比 spans 短）。
 
     和 replace_whole 的区别只有一个：**只送该送的那几段**。
     整片重制把原片整条喂给模型，既贵又改动了本来不该动的地方。
@@ -2410,7 +2422,8 @@ def replace_spans(
                             model=model, inventory=inv2,
                             style_video=style_video)
     return _gen_spans(plan, video, spans, rec=rec, cid=cid, workdir=workdir,
-                      progress=progress, label="重制", base_pct=52, span_pct=18)
+                      progress=progress, label="重制", base_pct=52, span_pct=18,
+                      max_segments=max_segments)
 
 
 def replace_whole(
@@ -2429,8 +2442,13 @@ def replace_whole(
     style_video: Path | None = None,
     workdir: Path,
     progress=None,
+    max_segments: int = 0,
 ) -> dict:
-    """整片重制。返回 {video, channel, chunks, seconds}。
+    """整片重制。返回 {video, channel, chunks, seconds[, partial, preview]}。
+
+    🩸 `max_segments`>0 = 只出前 N 段（主人要的「先出一段看看」）：
+    这时**不拼接成片**（缺段拼出来的片子是残的），返回里带
+    `partial=True` 和 `preview`（第一段的路径），调用方据此走预览分支。
 
     spec  是结构化规格（edit_spec）：换什么 + 保什么，编译成提示词。
     refs  是各槽位的本机参考图 {person|product|scene: Path}；
@@ -2461,9 +2479,26 @@ def replace_whole(
     kept = sum(1 for act, _ in acts.values() if act == "keep")
     work = workdir / "whole"
     pieces = _gen_spans(plan, video, spans, rec=rec, cid=cid, workdir=work,
-                        progress=progress, label="画面重制")
+                        progress=progress, label="画面重制",
+                        max_segments=max_segments)
     if kept:
         _p(progress, f"{kept} 段盘点无目标人物，保留原片未重画", 74)
+    # 🩸 只跑了前几段时**绝不拼接**：缺段拼出来的片子时长和内容都是残的，
+    #   用户会误以为这就是成片。返回 preview 让他先看这一段。
+    if max_segments and len(pieces) < len(spans):
+        _p(progress, f"已出前 {len(pieces)} 段（共 {len(spans)} 段），先看这一段", 75)
+        return {"video": pieces[0] if pieces else None,
+                "preview": pieces[0] if pieces else None,
+                "partial": True,
+                "done_segments": len(pieces), "total_segments": len(spans),
+                "channel": plan["ch"], "model": plan["model"],
+                "label": spec_label(plan["ch"], plan["model"]),
+                "resolution": plan["resolution"],
+                "chunks": len(spans), "seconds": total,
+                "cuts_refined": moved,
+                "boundary": _boundary_used(plan, spans, acts,
+                                           shots=rec.get("shots") or []),
+                "kept": kept}
     out = work / "whole.mp4"
     _concat(pieces, out, work)
     _p(progress, "画面重制完成", 75)
