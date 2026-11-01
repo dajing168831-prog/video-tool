@@ -252,16 +252,15 @@ MODELS = {
     "volc": [
         ("doubao-seedance-2-5-260628", "Seedance 2.5"),
     ],
-    # 🧊 2026-11-01 主人要求冻住 H3、切到 2.5 验证：入口不再提供。
-    #   `SPECS` 里四档（`h3` / `h3-max` / `h3-highspeed` / `h3-lite`）**一字未动** ——
-    #   历史任务带旧型号 ID 进来时照样查得到档位，只是出片接口会按
-    #   `Caps.frozen`（`models/h3.py`）拒绝。
-    #   解冻：把下面四档填回来，并把 `models/h3.py` 的 `frozen` 改回 False。
+    # 🔓 2026-11-01 解冻：复刻重新接上 H3（主人跑完 2.5 对照后要求恢复）。
+    #   四档型号 ID 与 `SPECS["h3-*"]` 的键一一对应（`model_specs.minimax()` 按
+    #   名字里的 `-max` / `-lite` / `-highspeed` 路由，基础档就是 `MiniMax-H3`）。
+    #   标签直接用 SPECS 里的 `label`，前端照原样显示。
     "minimax": [
-        # ("MiniMax-H3", "MiniMax H3"),
-        # ("MiniMax-H3-Max", "MiniMax H3-Max"),
-        # ("MiniMax-H3-Highspeed", "MiniMax H3-Highspeed"),
-        # ("MiniMax-H3-Lite", "MiniMax H3-Lite"),
+        ("MiniMax-H3", "MiniMax H3"),
+        ("MiniMax-H3-Max", "MiniMax H3-Max"),
+        ("MiniMax-H3-Highspeed", "MiniMax H3-Highspeed"),
+        ("MiniMax-H3-Lite", "MiniMax H3-Lite"),
     ],
 }
 
