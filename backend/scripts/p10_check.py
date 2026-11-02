@@ -120,10 +120,6 @@ def phase_a() -> None:
         chk("A8 名单为空 = 老语义（一句话换全体）",
             "服装替换为@图片1中的服装" in old, old[:120])
 
-    st = edit_spec.still_prompt(spec_of(wardrobe=True, wardrobe_ids=["P2"]),
-                                ["wardrobe"], desc_by_id=D)
-    chk("A9 静帧：只换点名的那个人的服装",
-        "把图一里穿蓝衬衫的男生的服装换成图二里的服装" in st, st)
 
 
 # ---------------------------------------------------------------------------
@@ -157,13 +153,6 @@ def phase_b() -> None:
         chk("B5 H3：主体定义/替换句都点名原片里那件",
             "the blue mug in <video 1> is replaced by <subject 1>" in m.lower(), m[:400])
 
-    st = edit_spec.still_prompt(s, ["product"])
-    chk("B6 静帧：图一里的那一件 → 图二",
-        "把图一里的画面里那只蓝色马克杯换成图二里的产品" in st, st)
-
-    sp = edit_spec.shot_prompt(spec_of(product=True, product_desc="白色陶瓷杯",
-                                       product_target="蓝色马克杯"))
-    chk("B7 混剪：同样点名", "把画面里的蓝色马克杯换成白色陶瓷杯" in sp, sp)
 
 
 # ---------------------------------------------------------------------------

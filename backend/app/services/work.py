@@ -494,7 +494,6 @@ def _desired_units(cid: str, work: dict, intent: dict) -> list[dict]:
         if p.exists():
             refs[slot] = p
     src = clone_store.source_path(cid)
-    audio = (spec or {}).get("audio", "tts")
     inv = _load_inventory(cid)
 
     # 风格参考视频（A9）：复用的提示词必须和真跑时逐字一致，差一句就会被判成
@@ -524,28 +523,16 @@ def _desired_units(cid: str, work: dict, intent: dict) -> list[dict]:
                 for i in picks if i in by_i]
 
     # auto：分诊的全部决策都在 _auto_decision 里，preview 和真跑共用同一份
-    speech_spans = [
-        (float(s["start"]), float(s["end"]))
-        for s in (rec.get("speech") or {}).get("segments") or []
-        if (s.get("text") or "").strip()
-    ]
     d = clone_pipeline._auto_decision(
         src, rec, spec=spec, regen_prompt="", regen_shots=intent.get("shots") or None,
         regen_channel=channel, regen_model=model,
         subject_image=subject if subject.exists() else None, subject_asset="",
-        refs=refs, inventory=inv, audio_mode=audio, speech_spans=speech_spans,
+        refs=refs, inventory=inv,
     )
     prompts = _video_prompts(d["plan"], d["spans"], rec.get("shots") or [], rec=rec)
-    units = [{"engine": "video", "span": _span(a, b), "shots": [], "prompt": p,
-              **_resolved(d["plan"])}
-             for (a, b), p in zip(d["spans"], prompts)]
-    by_i = {int(s["i"]): s for s in (rec.get("shots") or [])}
-    for i in d["still"]:
-        if i in by_i:
-            units.append({"engine": "still",
-                          "span": _span(by_i[i]["start"], by_i[i]["end"]),
-                          "shots": [i]})
-    return units
+    return [{"engine": "video", "span": _span(a, b), "shots": [], "prompt": p,
+             **_resolved(d["plan"])}
+            for (a, b), p in zip(d["spans"], prompts)]
 
 
 def _resolved(plan: dict) -> dict:

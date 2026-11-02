@@ -57,16 +57,6 @@ def _subject_gate(spec, channel: str, model: str) -> dict | None:
 
 
 
-def _cache_dir(cid: str, kind: str) -> Path | None:
-    """任务级生成缓存目录。cid 不合法（测试里常见）就退化成不缓存。"""
-    if not cid:
-        return None
-    try:
-        return clone_store.task_dir(cid) / "cache" / kind
-    except Exception:  # noqa: BLE001
-        return None
-
-
 def _inventory_or_none(cid: str) -> dict | None:
     """视觉盘点：看清原片里有几个人、各在第几秒。
 
@@ -457,7 +447,6 @@ def _auto_decision(video: Path, rec: dict, *, spec, regen_prompt: str,
                    regen_shots: list[int] | None, regen_channel: str,
                    regen_model: str, subject_image: Path | None,
                    subject_asset: str, refs: dict | None, inventory: dict | None,
-                   audio_mode: str, speech_spans: list[tuple[float, float]],
                    style_video: Path | None = None):
     """逐镜分诊的全部决策（纯本地：不调模型、不花钱）。
 
@@ -474,20 +463,8 @@ def _auto_decision(video: Path, rec: dict, *, spec, regen_prompt: str,
         channel=regen_channel, model=regen_model, inventory=inventory,
         style_video=style_video,
     )
-    # 老配方没有运动量（分析那一版还没算）→ 现在补算，别一律当成静态
-    for s in shots:
-        if "motion" not in s or s.get("motion") is None:
-            try:
-                s["motion"] = scene.motion(video, float(s["start"]), float(s["end"]))
-            except Exception as e:  # noqa: BLE001
-                log.warning("补算运动量失败 shot=%s: %s", s.get("i"), e)
-                s["motion"] = 0.0
-    disp = triage.decide(shots, regen_shots,
-                         speech_spans=speech_spans, audio_mode=audio_mode,
-                         # 风格参考视频只能走视频重绘（静帧是图生图，读不到视频）
-                         force_video=bool(
-                             ((spec or {}).get("change") or {}).get("style_video")))
-    still = triage.still_shots(disp)
+    # 没勾的镜头保留原片像素，勾了的整段走视频重制（2026-11-02 去掉静帧档）
+    disp = triage.decide(shots, regen_shots)
     video_only = {i for i, m in disp.items() if m == "video"}
     span_min, span_max = video_edit.bounds_for(plan["ch"], plan["model"])
     spans = video_edit.fit_spans(
@@ -514,7 +491,7 @@ def _auto_decision(video: Path, rec: dict, *, spec, regen_prompt: str,
         "resolution": plan["resolution"],
     }
     log.info("逐镜分诊 %s；视频参考 %d 段", triage.summary(disp), len(spans))
-    return {"plan": plan, "shots": shots, "disp": disp, "still": still,
+    return {"plan": plan, "shots": shots, "disp": disp,
             "video_only": video_only, "spans": spans, "hard": hard,
             "regen_meta": regen_meta}
 
@@ -541,7 +518,6 @@ def render(
     mask_bottom: bool = False,
     progress=None,
     regen_prompt: str = "",
-    regen_ratio: float = 0.0,
     regen_shots: list[int] | None = None,
     regen_mode: str = "shots",
     regen_channel: str = "auto",
@@ -864,22 +840,12 @@ def render(
     if spec and (edit_spec_mod.has_change(spec) or spec.get("extra")):
         wants_change = True
     mode = (regen_mode or "auto").strip().lower()
+    # 🩸 2026-11-02：静帧重绘链路整条删除。老客户端传来的 "shots"
+    #   （以及前端的「只换开头」）一律归一到 auto —— 勾了哪几镜就重制哪几镜，
+    #   其余保留原片；走的是视频重制，参考图能发、身份锁得住。
+    if mode == "shots":
+        mode = "auto"
 
-    # 静帧重绘要**真的把参考图发过去**：只发原片帧时，提示词说「换成另一个人」
-    # 模型只能按文字凭空造脸（2026-10-21 实测：12s 那条换成了陌生脸）。
-    # 顺序 = SLOT_ORDER，image 数组里图一是原片帧，图二起是各槽位图。
-    # 🩸 混剪（shots）和智能重制（auto）都是"生图 + 图生视频"，两边共用这一份，
-    #    以前只写进了 auto 分支 —— 混剪换人照样不发人物图。
-    # 🩸 这里是**静帧重绘**：`ref_plan` 不传 `model`，一人一张（用户上传的那张）。
-    # 🩸 2026-10-26 更正：整片重制**也不再按型号分叉** —— 三家官方原文复核后
-    # 都是「一个换的人 = 一张图」（台账 D48；D46 的「2.0 拆两张」已作废）。
-    # 别在这里再写一份派图规则。
-    from app.services import video_edit as _ve
-
-    slot_items = _ve.ref_plan(spec, refs or {}) if spec else []
-    slot_refs: list[Path] = [Path(x) for _, x in slot_items
-                             if not isinstance(x, str)]
-    slot_names: list[str] = [s for s, _ in slot_items]
 
     # 换人物前先看清原片里有谁：一句"替换人物"在多人画面里没有唯一解。
     # 失败就当没有 —— 盘点绝不能把出片搞挂（见 vision_plan 的降级说明）。
@@ -891,28 +857,6 @@ def render(
                                   or chg_now.get("props")):
         inventory = _inventory_or_none(cid)
 
-    if spec and slot_refs:
-        # 静帧重绘的提示词要能点名"原片里哪一位"：多人同框时不点名等于没换
-        ids = list((spec.get("change") or {}).get("person_ids") or [])
-        # 多人换人但盘点没能区分 → 逐人那句会写成两句一样的「图一里的人物」。
-        # 🩸 静帧有自己的一道闸（读 `desc_zh`），**不与视频侧共用**：
-        # 视频侧的 H3 读 `desc_en`、2.5 还要查职责行，尺子维度不同。
-        _ve.require_identifiable_still(inventory, slot_names)
-        people = []
-        if inventory and ids:
-            by = {p.get("id"): p for p in (inventory.get("people") or [])}
-            people = [dict(by[pid], present=True) if pid in by
-                      else {"id": pid, "present": False} for pid in ids]
-        shot_p = edit_spec_mod.still_prompt(
-            spec, slot_names, regen_prompt, people=people,
-            desc_by_id=_ve.desc_by_id(inventory))
-        motion_p = edit_spec_mod.motion_prompt(spec)
-    elif not spec:
-        shot_p = regen_prompt
-        motion_p = None
-    else:
-        shot_p = edit_spec_mod.shot_prompt(spec, regen_prompt)
-        motion_p = None
 
     # 🩸 只出前 N 段（2026-11-01 主人：「超过 1 段不能先生成一段满意再继续吗」）：
     #   走**独立分支** —— 不拼接、不配音、不合成。缺段拼出来的片子是残的，
@@ -947,13 +891,12 @@ def render(
                 regen_shots=regen_shots, regen_channel=regen_channel,
                 regen_model=regen_model, subject_image=subject_image,
                 subject_asset=subject_asset, refs=refs, inventory=inventory,
-                audio_mode=audio_mode, speech_spans=speech_spans,
                 style_video=_style_video_of(cid, spec),
             )
             _plan, _spans = _d["plan"], _d["spans"]
             if not _spans:
                 raise ValueError(
-                    "这一单没有要走视频模型的段（全是静帧重绘），"
+                    "这一单没有勾选任何镜头（全部保留原片像素），"
                     "「先出一段」用不上 —— 直接出全部就行")
             _clips = _ve_prev.replace_spans(
                 video, rec, _spans, cid=cid, plan=_plan, inventory=inventory,
@@ -1003,7 +946,7 @@ def render(
         }
 
     if wants_change:
-        from app.services import assemble, generate, triage, video_edit
+        from app.services import assemble, triage, video_edit
 
         inv_meta = {}
         if inventory:
@@ -1036,47 +979,23 @@ def render(
                           "resolution": r.get("resolution") or "",
                           **inv_meta}
         elif mode == "auto":
-            # 逐镜分诊：能保的原片像素就保，静态镜走静帧重绘，动作镜才喂视频模型
-            src_w2 = int(rec["source"]["width"]) or 1080
-            src_h2 = int(rec["source"]["height"]) or 1920
+            # 逐镜分诊：用户没勾的镜头保留原片像素，勾了的整段喂视频模型重制
             d = _auto_decision(
                 video, rec, spec=spec, regen_prompt=regen_prompt,
                 regen_shots=regen_shots, regen_channel=regen_channel,
                 regen_model=regen_model, subject_image=subject_image,
                 subject_asset=subject_asset, refs=refs, inventory=inventory,
-                audio_mode=audio_mode, speech_spans=speech_spans,
                 style_video=_style_video_of(cid, spec),
             )
             plan = d["plan"]
             shots = d["shots"]
-            still = d["still"]
             video_only = d["video_only"]
             spans = d["spans"]
             regen_meta = {**d["regen_meta"], **inv_meta}
-            if not spans:
-                # 这段没有调视频编辑模型，全是静帧重绘：别在结果页挂着 Seedance 型号
-                regen_meta["label"] = "静帧重绘（生图 + 图生视频）"
-                regen_meta["resolution"] = f"{src_w2}×{src_h2}"
 
             # 时间轴按**区间**拼，不按镜头拼：一镜可能被模型的上限切成好几段，
             # 按镜头收口只能塞下其中一段（见 _span_intervals 的说明）
             intervals: list[tuple[float, float, Path, float]] = []
-            if still:
-                _p(progress, "regen", 50)
-                still_clips = generate.regen_shots(
-                    video, rec, still, prompt=shot_p,
-                    workdir=workdir / "still", progress=progress,
-                    cache_dir=_cache_dir(cid, "still"),
-                    ref_images=slot_refs, video_prompt=motion_p,
-                    lock_tail=bool((spec or {}).get("lock_tail")),
-                )
-                by_i = {int(s["i"]): s for s in shots}
-                for i, p in still_clips.items():
-                    s = by_i.get(int(i))
-                    if s is None:
-                        continue
-                    intervals.append((float(s["start"]), float(s["end"]),
-                                      Path(p), 0.0))
             if spans:
                 clips = video_edit.replace_spans(
                     video, rec, spans, cid=cid, plan=plan, inventory=inventory,
@@ -1095,7 +1014,6 @@ def render(
                         "total": src_total,
                         "shots": len(shots),
                         "video_shots": sorted(video_only),
-                        "still_shots": sorted(still),
                         "spans": [[round(a, 3), round(b, 3)] for a, b in spans],
                         "intervals": [[round(a, 3), round(b, 3), Path(p).name,
                                        round(o, 3)] for a, b, p, o in intervals],
@@ -1123,28 +1041,6 @@ def render(
                 replaced = len(intervals)
                 used_channel = plan["ch"] if spans else "static"
                 used_model = plan["model"] if spans else ""
-        else:
-            from app.core.config import settings
-
-            picks = regen_shots or assemble.pick_shots(
-                rec.get("shots") or [], regen_ratio, settings.clone_max_regen
-            )
-            if picks:
-                _p(progress, "regen", 50)
-                clips = generate.regen_shots(
-                    video, rec, picks, prompt=shot_p,
-                    workdir=workdir, progress=progress,
-                    cache_dir=_cache_dir(cid, "still"),
-                    ref_images=slot_refs, video_prompt=motion_p,
-                    lock_tail=bool((spec or {}).get("lock_tail")),
-                )
-                if clips:
-                    visual_clips = assemble.plan_shots(
-                        video, rec.get("shots") or [], clips,
-                    )
-                    replaced = len(clips)
-                    regen_meta = {"mode": "shots", "segments": len(clips),
-                                  "cuts_refined": 0, "boundary": False}
 
     # 🩸 无缝转场（B7）**不接在出片链路上**（2026-10-25 主人拍板）：
     # 复刻的目标是像原片，而原片的硬切就是原片的剪法 —— 把剪辑点揉成过渡，
@@ -1273,7 +1169,6 @@ def preview_render(
     script: str | None,
     script_lines: list[str] | None = None,
     regen_prompt: str = "",
-    regen_ratio: float = 0.0,
     regen_shots: list[int] | None = None,
     regen_mode: str = "auto",
     regen_channel: str = "auto",
@@ -1443,18 +1338,13 @@ def preview_render(
                 regen_shots=regen_shots, regen_channel=regen_channel,
                 regen_model=regen_model, subject_image=subject_image,
                 subject_asset=subject_asset, refs=refs, inventory=inventory,
-                audio_mode=audio_mode, speech_spans=speech_spans,
                 style_video=_style_video_of(cid, spec),
             )
             plan = d["plan"]
             spans = d["spans"]
-            still = d["still"]
-            by_i = {int(s["i"]): s for s in d["shots"]}
             change = {
                 "mode": "auto",
-                "still_calls": len(still),
-                "still_seconds": round(sum(float(by_i[i]["end"]) - float(by_i[i]["start"])
-                                           for i in still if i in by_i), 3),
+                "still_calls": 0, "still_seconds": 0.0,
                 "video_calls": len(spans),
                 "video_seconds": round(sum(b - a for a, b in spans), 3),
                 "keep_shots": sum(1 for m in d["disp"].values() if m == "keep"),
@@ -1483,18 +1373,6 @@ def preview_render(
                 "resolution": plan["resolution"],
                 "spans": [[round(a, 3), round(b, 3)] for a, b in spans],
                 "inventory_used": bool(inventory),
-            }
-        else:  # shots
-            picks = regen_shots or assemble.pick_shots(
-                rec.get("shots") or [], regen_ratio, settings.clone_max_regen)
-            by_i = {int(s["i"]): s for s in (rec.get("shots") or [])}
-            change = {
-                "mode": "shots", "still_calls": len(picks),
-                "still_seconds": round(sum(float(by_i[i]["end"]) - float(by_i[i]["start"])
-                                           for i in picks if i in by_i), 3),
-                "video_calls": 0, "video_seconds": 0.0,
-                "keep_shots": max(0, len(by_i) - len(picks)),
-                "label": "", "resolution": "", "inventory_used": False,
             }
         if change["video_calls"] or change["still_calls"]:
             warnings.append("预览未做视觉盘点：视频段数按上限报，实际可能更少")

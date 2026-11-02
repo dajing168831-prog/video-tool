@@ -193,9 +193,8 @@ function cloneRenderBody(script, opts = {}) {
   const {
     maskBottom = true,
     regenPrompt = '',
-    regenRatio = 0,
     regenShots = null,
-    regenMode = 'shots',
+    regenMode = 'auto',
     regenChannel = 'auto',
     regenModel = '',
     subjectAsset = '',
@@ -230,8 +229,7 @@ function cloneRenderBody(script, opts = {}) {
     script,
     mask_bottom: maskBottom,
     regen_prompt: regenPrompt,
-    regen_ratio: regenRatio,
-    // shots = 混剪（挑镜头重画）；whole = 整片重制（1:1，动作跟原片走）
+    // auto = 勾了哪几镜就重制哪几镜（其余保原片）；whole = 整片重制
     regen_mode: regenMode,
     regen_channel: regenChannel,
     // 空 = 用该通道的默认型号（老用户不动这一项就不传）

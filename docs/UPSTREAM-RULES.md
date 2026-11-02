@@ -94,7 +94,7 @@ auto（智能重制）和 shots（混剪 / 换开头）都从这里取 —— �
 | **hypit** | 静帧段的权重 / 连续整数帧规则 | 静帧重绘（`generate.regen_shots`）按镜头区间切，不越界 |
 | **hypit** | transformations：换主体要覆盖它的**每种表现形式**；画幅 / 时长是独立变换轴 | `edit_spec._clauses` 每个槽位一句，逐槽位编译 |
 | **hypit** | 画面参考与声音参考是**两类独立素材**，参考视频永远静音 | `ark.edit_body` 的 `reference_video` + 独立 `reference_audio` |
-| **hypit** | 复刻 ≠ 把整条原片当生成输入（`craft/video-direction.md`）：静帧能交代的用静帧，只有"一段时间里发生什么"是重点时才用视频参考 | 逐镜分诊 `triage.py` 的 keep / still / video |
+| **hypit** | 复刻 ≠ 把整条原片当生成输入（`craft/video-direction.md`）：静帧能交代的用静帧，只有"一段时间里发生什么"是重点时才用视频参考 | 逐镜分诊 `triage.py` 的 keep / video。<br>🩸 **2026-11-02 已删 still 档**：hypit 原文只有定性原则、**没有阈值也没有判定算法**，我们自标的 1.2 是自造 → 主人拍板「本来我们就是视频重制的」。`regen_mode="shots"` 也只是历史值，2026-11-02 起在入口归一成 `auto` |
 | **hypit** | 多人物是"一人一图一轨 + 说话人映射"（`seedance-kits/kits/podcast-v1.svs`：`@image1`=Host A、`@image2`=Host B、`@audio1`/`@audio2`、SPEAKER MAP） | ⚠️ 未做：我们现在是单人契约（1 个人物槽 + 定位词），多人换人要按这个桩加槽位 |
 
 **明确不做**（不是漏）：hypit 的在线 Provider 编排、我们不需要的镜头级重排、

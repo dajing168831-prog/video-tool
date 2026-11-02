@@ -54,13 +54,13 @@ DESCS_EN = {
     "无描述(盘点失败)": lambda n: [""] * n,
 }
 
-# 🩸 2026-10-26（D28）：以前一次跑四家（2.0/2.5/H3/静帧），跟「一个一个模型分开执行」
+# 🩸 2026-10-26（D28）：以前一次跑多家（2.0/2.5/H3），跟「一个一个模型分开执行」
 # 冲突，而且 H3 那列的抽取正则没验证过 —— 一跑就是 48 组「抽到 0 句」的红字噪声，
 # 把一整个 2.5 轮次带跑偏。现在**默认只跑火山 2.0**，别家必须 `--model` 点名。
 CHANNELS = [("volc20", "火山2.0", "volc", "doubao-seedance-2-0-260128"),
             ("volc25", "火山2.5", "volc", "doubao-seedance-2-5-260628"),
             ("h3", "H3", "minimax", "MiniMax-H3")]
-ALL_KEYS = [c[0] for c in CHANNELS] + ["still"]
+ALL_KEYS = [c[0] for c in CHANNELS]
 
 
 def _strip_ids(s: str) -> str:
@@ -156,20 +156,12 @@ def _volc_h3_clauses(ch: str, model: str, n: int, ppl: list[dict],
     return [_strip_ids(x) for x in _cl[:n]], None
 
 
-def _still_clauses(n: int, ppl: list[dict]) -> list[str]:
-    rows = {f"person{i + 1}" if i else "person": True for i in range(n)}
-    spec = edit_spec.normalize(rows)
-    text = edit_spec.still_prompt(spec, list(edit_spec.PERSON_SLOTS[:n]), people=ppl)
-    return [_strip_ids(x) for x in
-            re.findall(r"把([^；。]*?)换成图[^里]*里的人", text)]
-
-
 def main() -> int:
     # 🚦 必须点名型号（2026-10-26）：一次只跑一家。
     # 🩸 闸门会把 `--model X` 从 sys.argv 里吃掉（免得下游 argparse 报未知参数），
     # 所以这里用它的返回值当默认值 —— 别指望 args.model 还能读到用户点的那个。
     from _model_gate import sel_or_exit
-    sel = sel_or_exit(extra=("still",))
+    sel = sel_or_exit()
 
     import argparse
 
@@ -186,12 +178,11 @@ def main() -> int:
     print(f"本次只跑：{'、'.join(sorted(want))}（其余需另起一轮点名）")
 
     # 🩸 四道闸各判各的（2026-10-23 拆开）：同一份盘点，四家结论本来就可以不同 ——
-    # 火山 2.0/2.5/静帧读 `desc_zh`，H3 读 `desc_en`；2.5 还多一层职责行。
+    # 火山 2.0/2.5 读 `desc_zh`，H3 读 `desc_en`；2.5 还多一层职责行。
     gates = {
         "火山2.0": video_edit.require_identifiable_volc20,
         "火山2.5": video_edit.require_identifiable_volc25,
         "H3": video_edit.require_identifiable_h3,
-        "静帧": video_edit.require_identifiable_still,
     }
 
     def gate_pass(tag: str, ppl: list[dict], slots: list[str]) -> bool:
@@ -226,10 +217,6 @@ def main() -> int:
                     got, _loc = _volc_h3_clauses(ch, model, n, ppl)
                     rows.append((n, sname, dname, tag, len(got), len(set(got)),
                                  gate_pass(tag, ppl, slots), len(got) == n))
-                if "still" in want:
-                    got = _still_clauses(n, ppl_zh)
-                    rows.append((n, sname, dname, "静帧", len(got), len(set(got)),
-                                 gate_pass("静帧", ppl_zh, slots), len(got) == n))
 
     # 🩸 只换画面里的第 1 个（画面仍有 n 个人）—— 与上面"全员都换"是两个形状：
     # 2.0 的 D27、2.5 的 D28、H3 的 D39 都是这条支路上漏判出来的。
@@ -316,7 +303,7 @@ def main() -> int:
             kind = "闸放行但输出重复（漏放）" if r[6] else "闸拦截但输出互异（误伤）"
             print(f"  · {r[0]}人 {r[1]} {r[2]} {r[3]} → {kind}")
     else:
-        print("\n✅ 四道闸的结论与编译器实际输出全部一致。")
+        print("\n✅ 三道闸的结论与编译器实际输出全部一致。")
 
     return 0 if not (mismatch or extract) else 1
 

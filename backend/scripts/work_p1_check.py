@@ -78,14 +78,14 @@ def main() -> int:
     def boom(*a, **kw):
         raise AssertionError("付费接口被调用了！P1 验收必须零费用")
 
-    paid = (ark.edit_video, minimax.reference_video, generate.regen_shots,
+    paid = (ark.edit_video, minimax.reference_video,
             video_edit.replace_spans)
-    ark.edit_video = minimax.reference_video = generate.regen_shots = boom
+    ark.edit_video = minimax.reference_video = boom
     video_edit.replace_spans = boom
     try:
         return _run(pick(args.timeline), pick(args.plan))
     finally:
-        (ark.edit_video, minimax.reference_video, generate.regen_shots,
+        (ark.edit_video, minimax.reference_video,
          video_edit.replace_spans) = paid
 
 

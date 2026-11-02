@@ -155,98 +155,6 @@ elif SEL == "volc20":
         b20.get("ratio") == "9:16", str(b20.get("ratio")))
 
 # ---------------------------------------------------------------------------
-# S4/S5 生成链：缓存键 + 末帧时刻
-
-REC = {
-    "source": {"width": 1080, "height": 1920},
-    "shots": [{"i": 1, "start": 10.0, "end": 14.0}],
-}
-
-_frames: list[float] = []
-_vids: list[dict] = []
-_keys: list[str] = []
-
-_real_ef = scene.extract_frame
-_real_gi = ark.generate_image
-_real_put = generate._cache_put
-
-
-def _fake_ef(video, t, out, width=None, **kw):
-    _frames.append(round(float(t), 3))
-    o = Path(out)
-    o.parent.mkdir(parents=True, exist_ok=True)
-    o.write_bytes(b"JPG")
-    return o
-
-
-def _fake_gi(prompt, *, out=None, **kw):
-    o = Path(out)
-    o.parent.mkdir(parents=True, exist_ok=True)
-    o.write_bytes(b"JPG")
-    return o
-
-
-def _fake_gv(prompt, *, out=None, first_frame=None, last_frame=None, **kw):
-    _vids.append({"first": Path(first_frame).name if first_frame else "",
-                  "last": Path(last_frame).name if last_frame else ""})
-    o = Path(out)
-    o.parent.mkdir(parents=True, exist_ok=True)
-    o.write_bytes(b"MP4" * 200)
-    return o
-
-
-scene.extract_frame = _fake_ef
-ark.generate_image = _fake_gi
-ark.generate_video = _fake_gv
-generate._cache_put = lambda cache_dir, key, src: _keys.append(key)
-
-
-def run(lock_tail: bool, tag: str) -> str:
-    _frames.clear()
-    _vids.clear()
-    _keys.clear()
-    generate.regen_shots(
-        SRC, REC, [1], prompt="换成同一个人", workdir=TMP / f"w_{tag}",
-        cache_dir=TMP / f"c_{tag}", lock_tail=lock_tail,
-    )
-    return _keys[-1] if _keys else ""
-
-
-key_off = run(False, "off")
-off_frames = list(_frames)
-off_last = _vids[-1]["last"] if _vids else "?"
-
-key_on = run(True, "on")
-on_frames = list(_frames)
-on_last = _vids[-1]["last"] if _vids else "?"
-on_first = _vids[-1]["first"] if _vids else "?"
-
-chk("S4 关着时缓存键与改动前逐字一致（历史缓存仍能命中）",
-    bool(key_off) and "|lt" not in key_off, key_off)
-chk("S4 开着时换键（开了又关不会拿回上一次带尾帧的结果）",
-    bool(key_on) and key_on == key_off + "|lt", f"{key_off} vs {key_on}")
-
-# 关：只抽首帧、不发尾帧
-chk("S5 关着时每镜只抽 1 帧（不多花钱生图）", len(off_frames) == 1, str(off_frames))
-chk("S5 关着时请求里没有尾帧", off_last == "", str(off_last))
-chk("S5 开着时每镜抽 2 帧：中点 + 末帧", on_frames == [12.0, 13.95], str(on_frames))
-chk("S5 末帧时刻 = end-0.05 且仍在本镜区间内（不拿下一镜的画面）",
-    bool(on_frames) and abs(on_frames[-1] - (14.0 - 0.05)) < 1e-6
-    and 10.0 <= on_frames[-1] < 14.0, str(on_frames))
-chk("S5 尾帧经重绘后作为 last_frame 发给模型（不是原片末帧）",
-    on_last == "shot_001_tail.jpg", str(on_last))
-chk("S5 首帧仍是首帧（顺序没被打乱）",
-    on_first == "shot_001.jpg", str(on_first))
-
-# 规格哈希：关着不能进哈希，开着必须进
-h_off = video_edit._spec_for_hash(edit_spec.normalize({}))
-h_on = video_edit._spec_for_hash(edit_spec.normalize({"lock_tail": True}))
-chk("S4 关着时 lock_tail 不进模型分段哈希（历史出片不失配）",
-    "lock_tail" not in h_off, str(list(h_off)))
-chk("S4 开着时进哈希（真改了请求，就必须重画）",
-    h_on.get("lock_tail") is True, str(h_on.get("lock_tail")))
-
-# ---------------------------------------------------------------------------
 # S6 编辑路径：参考视频与首尾帧互斥
 
 eb = ark.edit_body("把第一个人换成@图片1的人", video_url="https://example.com/a.mp4",
@@ -256,40 +164,12 @@ chk("S6 编辑任务（参考视频）里没有任何首帧/尾帧（官方三�
     "first_frame" not in e_roles and "last_frame" not in e_roles, str(e_roles))
 
 # ---------------------------------------------------------------------------
-# S7 接线
-
-from app.api.clone import EditIn  # noqa: E402
-
-md = EditIn(**{"lock_tail": True}).model_dump()
-chk("S7 EditIn 声明了 lock_tail（不声明 = pydantic 静默丢键）",
-    md.get("lock_tail") is True, str(md.get("lock_tail")))
-chk("S7 EditIn 默认关（老客户端不带这个键）",
-    EditIn().model_dump().get("lock_tail") is False, "")
-
-chk("S7 normalize 认 \"true\" 字符串", edit_spec.normalize({"lock_tail": "true"})["lock_tail"] is True, "")
-chk("S7 normalize 默认关", edit_spec.normalize({})["lock_tail"] is False, "")
-
-cp_src = (ROOT / "app" / "services" / "clone_pipeline.py").read_text(
-    encoding="utf-8", errors="ignore")
-n_wire = cp_src.count('lock_tail=bool((spec or {}).get("lock_tail"))')
-chk("S7 两处 regen_shots 都传了 lock_tail（逐镜分诊 + 老镜头档）",
-    n_wire >= 2, f"命中 {n_wire} 处")
-
-diag = (FRONT / "pages" / "clone" / "diagnose.vue").read_text(
-    encoding="utf-8", errors="ignore")
-chk("S7 界面有开关（含费用提示）",
-    "lock_tail" in diag and "onLockTail" in diag and "费用会涨" in diag, "")
-
-# ---------------------------------------------------------------------------
 # 还原桩
 retry.post = _real["post"]           # type: ignore[assignment]
 ark._download_video = _real["dl"]    # type: ignore[assignment]
 ark._load_tid = _real["load"]        # type: ignore[assignment]
 ark._data_uri = _real["uri"]         # type: ignore[assignment]
 ark._save_tid = _real["save"]        # type: ignore[assignment]
-scene.extract_frame = _real_ef       # type: ignore[assignment]
-ark.generate_image = _real_gi        # type: ignore[assignment]
-generate._cache_put = _real_put      # type: ignore[assignment]
 
 bad = [r for r in rows if not r[1]]
 for name, ok, detail in rows:

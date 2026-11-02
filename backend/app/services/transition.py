@@ -115,7 +115,7 @@ def _seam_key(prev: Path, prev_end: float, nxt: Path,
               nxt_start: float, prompt: str, model: str) -> str:
     """接缝缓存键：素材指纹 + 取用位置 + 提示词 + 型号。
 
-    素材用（文件名, 大小, mtime）而不是内容哈希 —— 和 `generate.regen_shots`
+    素材用（文件名, 大小, mtime）而不是内容哈希 —— 和原来的 `generate.regen_shots`（已删）
     的参考图指纹同一口径：同一份素材没被改写就是同一段画面。
     """
     def sig(p: Path) -> str:

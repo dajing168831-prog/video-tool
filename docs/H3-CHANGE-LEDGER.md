@@ -548,3 +548,64 @@ python scripts/check_all.py --model h3 --fast
 | `video_edit._look_ir()` + 两处调用点传 `plan["looks"]` | 传给改写器的是**定妆照自己的描述文件**（`subject_desc.json`），不是我现编的形容词 | 同上 | 同上 | ✅ |
 
 **注意**：指纹变了 → 段缓存键变，下一次出片每段重新生成（扣费）。
+
+---
+
+## 10. 2026-11-02 追加：删掉「静止镜头重绘」这一档（分诊只剩 keep / video）
+
+**触发**：主人「本来我们就是视频重置的啊！我建议删」。起因是双人换人 `902c4d0f`
+最后 1.37 秒（motion=0.28）被判 still、走了另一条链路（生图 + 图生视频），
+8s/9s 服装突变。
+
+| 改动 | 为什么改 | 依据（出处） | 拿什么验过 | 现在死活 |
+|---|---|---|---|---|
+| `triage.decide()` 删掉两条 still 触发：① motion < 1.2 ② 新配音 + 这一镜有台词 | 阈值 1.2 是**自造**的：出处那篇 hypit `craft/video-direction.md` 只有定性原则（"静帧能交代的用静帧，时间里的展开才用视频参考"），**没有任何数值或判定算法**；1.2 是 2026-10-21 拿三组样本拍的。实测真实素材能低到 0.28，与「真实手持素材 7–20」的标定差一个量级 → 1.37 和 0.28 分属两条链路，造型对不上 | 主人 2026-11-02 拍板；`UPSTREAM-RULES.md:119` 准入线：指不到官方/hypit 行号的规则 = 自造，应撤回。hypit 原文 `D:/tmp/hypit-src/skills/hypit/references/playbooks/craft/video-direction.md:14-20` 复核：无阈值、无算法 | `test_triage --model h3` **28/28**（重写：运动量不再影响走法）；`test_separate` **35/35**；`test_whole_wiring` **166/166**；`test_auto_render` **42/45**（3 红为 `test_span_intervals` 既有，与本次无关） | ✅ 已改，**未出片验证** |
+| 删 `MOTION_VIDEO_MIN` / `SPEECH_OVERLAP` / `_speaks` / `still_shots()` / `force_video` / `_auto_decision` 的 `audio_mode`+`speech_spans` 参数 | 都是只为 still 判定存在的死件；留着就是「没有消费者的参数」 | 同上 | 全判据通过 | ✅ |
+| `_auto_decision` 删掉「配方没有 motion 就现场补算」 | 运动量已不参与任何决策，补算纯属白扫一遍帧 | 同上 | `test_auto_render` 相应断言已改成「不调静帧生成器」 | ✅ |
+| `render` / `preview_render` / `work.py` 删掉 still 重绘块与 `still_shots` 计数 | 分支不存在了，留着就是不可达代码 | 同上 | 同上 | ✅ |
+| 前端 `diagnose.vue`：删镜头条上的「动作/静态」标、`motion_min` 依赖；文案改成「没勾的保留原片，勾了的整段重制」 | 后端不再发 `motion_min`，同一套数字不在前端抄第二份 | 同上 | 前端改动，未构建验证 | ✅ |
+| `api/clone.py` 删 `data["motion_min"]` | 没有消费者 | 同上 | 同上 | ✅ |
+
+**没动**：`regen_mode="shots"`（按比例挑镜头、统一走静帧重绘）是**另一条独立入口**，
+`generate.regen_shots` / `edit_spec.still_prompt` / `require_identifiable_still`
+仍为它保留。这次只删了 auto 分诊里的静帧档。
+
+**风险记录**：原来「新配音 + 口播 → still」是为了防「模型照搬原片口型」。删掉后
+口播镜头也走视频重制，这个风险改由 H21 的 `_span_script`（把真实台词和相对秒数
+喂进改写器）承担 —— **两套机制留一套，但这一套还没出片验证过**。
+
+---
+
+## 11. 2026-11-02 追加：整条「静帧重绘」链路删除（含 `regen_mode="shots"`）
+
+**触发**：主人怀疑「静帧重绘 = 先生成静帧再喂视频模型，模型把它当人物参考 → 混乱」，
+要求查清它还有什么用，没用就删。查完：**唯一活着的入口是前端的「只换开头」**，
+而这个功能用「勾开头几镜 + 视频重制」就能做。
+
+**查证的事实**：
+- `generate.regen_shots` 的链路 = 抽原片帧 → `ark.generate_image`（图生图，参考图在这一步发）
+  → `ark.generate_video(first_frame=重绘图)`（**只有这一张图**）。
+- 首帧 / 参考图三家互斥（`volc-create.md:269`）⇒ 第二步**再也带不了人物参考图**，
+  身份只在第一步锁一次。
+- `regen_ratio` 前端恒传 0（界面不提供）；`regen_mode="shots"` 只由「只换开头」触发；
+  `ark.generate_image` 除它之外零消费者。
+
+| 改动 | 为什么改 | 依据（出处） | 拿什么验过 | 现在死活 |
+|---|---|---|---|---|
+| 删 `generate.regen_shots` 整个函数（`generate.py` 只剩 `seek_time`） | 链路本身删了 | 主人 2026-11-02「静帧删了」；功能可用 auto + picks 等价实现 | `test_gen_cache` **8/8**（删掉静帧缓存测试） | ✅ |
+| 删 `edit_spec.still_prompt` / `motion_prompt` / `shot_prompt` / `pic_cn` | 零生产消费者 | 同上 | `test_edit_spec` **274/274**（删 14 条静帧断言） | ✅ |
+| 删 `video_edit.require_identifiable_still` | 同上 | 同上 | `identifiability_check` 三道闸全绿 | ✅ |
+| 删 `clone_pipeline` 的 `shots` 分支（render + preview）与静帧提示词构建块 | 同上 | 同上 | `test_auto_render` 41/44（3 红为 `test_span_intervals` 既有） | ✅ |
+| `regen_mode="shots"` 在入口归一成 `auto`（老客户端兼容） | 老客户端/历史任务仍会传 shots | 同上 | `test_auto_render`「老客户端传 shots：归一化成自动分诊」 | ✅ |
+| `render` / `preview_render` / `clone_jobs` / `RenderIn` 删 `regen_ratio` | 界面恒传 0，没有消费者 | 同上 | 全判据 | ✅ |
+| 删 `lock_tail`（B6 尾帧锁定）：`RenderIn` / `normalize` / 缓存键 / 前端开关 | 它只作用于静帧重绘（每镜多一张尾帧图），链路删了就无处可用 | 同上 | `p14_check` **5/5**（S4/S5/S7 整节删） | ✅ |
+| 前端「只换开头」不再转 `shots`，改为 `auto` + 勾开头几镜 | 走视频重制：参考图能发、身份锁得住、没有两条链路的接缝 | 同上 | `npm run build:h5` 成功 | ✅ |
+
+**保留**：
+- `ark.generate_image`（火山图生图客户端）—— 底层能力，本次没删；目前零业务消费者。
+- `generate.seek_time` —— 镜头检测还在用（`test_shot_detect.py`）。
+
+**判据汇总**：`test_triage` 28/28 · `test_separate` 35/35 · `test_whole_wiring` 166/166 ·
+`test_edit_spec` 274/274 · `test_video_edit_logic` 84/84 · `test_gen_cache` 8/8 ·
+`p10` 35/35 · `p12` 48/48 · `p14` 5/5 · `test_speech_est` 49/49 ·
+`model_separation` 6 绿 · `check_all --fast` **54 通过 / 5 跳过 / 红 1**（p16 既有）。

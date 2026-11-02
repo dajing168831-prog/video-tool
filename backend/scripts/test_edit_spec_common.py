@@ -96,41 +96,6 @@ def run() -> None:
     check("产品拿图1", "产品替换为@图片1" in bp, True)
     check("场景拿图2", "背景替换为@图片2" in bp, True)
 
-    print("== 混剪提示词 ==")
-    shot = edit_spec.shot_prompt(ex)
-    check("混剪不带素材标号", ("@视频1" not in shot and "@图片1" not in shot), True)
-    check("混剪含换主体", "画面主体换成" in shot, True)
-
-    print("== 静帧重绘提示词（图一=原片帧，图二起=素材）==")
-    sp_wd = edit_spec.normalize({"person": True, "wardrobe": True})
-    still = edit_spec.still_prompt(sp_wd, ["person", "wardrobe"])
-    check("人物指图二", "换成图二里的人" in still, True)
-    check("服装指图三", "服装换成图三" in still, True)
-    check("保留构图说明", "保持图一的构图" in still, True)
-    check("没发的槽位不编号（不给 slots 就只有图一）",
-          "图二" in edit_spec.still_prompt(sp_wd, []), False)
-    sp_scene = edit_spec.normalize({"person": True, "scene": True})
-    st_scene = edit_spec.still_prompt(sp_scene, ["person", "scene"])
-    check("换场景时不再要求保持背景", "背景不变" in st_scene, False)
-    check("换场景指图三", "图三里的场景" in st_scene, True)
-
-    mv = edit_spec.motion_prompt(sp_wd)
-    check("第二步只让画面动", "以首帧为准" in mv, True)
-    check("第二步不再要求换人", "换成" in mv, False)
-
-    # 静帧重绘（图一=原片帧）：一人只有一张人物图（2026-10-26，台账 D48）
-    body_still = edit_spec.still_prompt(only_face, ["person"])
-    # 🩸 2026-10-23（D2）：静帧那句「图二是替换后人物的唯一身份来源…」出处同样是
-    # 第三方 ReplicaPilot，Seedream 官方只要求「指明参考对象 + 描述生成画面」
-    # （模型卡 `图二：人物定妆参考图，参考图中的人物形象，保持人物特征不变`）。
-    # 断言从"必须有这句"改成"不许出现 + 必须有官方句式"。
-    check("静帧：不写第三方来源的身份锁句",
-          "唯一身份来源" not in body_still, True)
-    check("静帧：按官方句式指明人物参考图",
-          "图二是人物参考图，参考图中的人物形象，保持人物特征不变" in body_still, True)
-    check("静帧：不再写「妆造参考图为图N」（那张图不存在）",
-          "妆造参考图为图" in body_still, False)
-    check("静帧：只有一张图时不提图三", "图三" in body_still, False)
 
     print("== 分辨率 ==")
     check("指定合法档位就照用", edit_spec.resolution_for("volc", edit_spec.normalize({"resolution": "1080p"}), auto="720p"), "1080p")

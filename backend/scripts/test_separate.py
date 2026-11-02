@@ -220,12 +220,12 @@ def _run(work: Path) -> int:
     check("mix + 无音轨 → 仍保留『人物动作』",
           "人物动作" in edit_spec._keep_sentence("volc", mix), True)
 
-    shots = [{"i": 0, "start": 0, "end": 4, "dur": 4, "motion": 2.4}]
-    spans = [(0.0, 4.0)]
-    check("mix + 说话镜 → still",
-          triage.decide(shots, speech_spans=spans, audio_mode="mix")[0], "still")
-    check("original + 说话镜 → video",
-          triage.decide(shots, speech_spans=spans, audio_mode="original")[0], "video")
+    # 2026-11-02：分诊只剩 keep / video 两档 —— 声音模式不再改变走法。
+    shots = [{"i": 0, "start": 0, "end": 4, "dur": 4, "motion": 2.4},
+             {"i": 1, "start": 4, "end": 8, "dur": 4, "motion": 0.3}]
+    d = triage.decide(shots, [0])
+    check("勾了的镜头一律走 video", d[0], "video")
+    check("没勾的镜头保留原片", d[1], "keep")
 
     print("== 合并底音轨是「还原」不是「再压一遍」==")
     m = tone(work / "music.wav", 2.0, 440)

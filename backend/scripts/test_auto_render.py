@@ -209,21 +209,6 @@ def _run(work: Path) -> int:
 
     seen: dict = {"still": None, "spans": None, "plan_prompt": ""}
 
-    def fake_regen(video_path, recipe, picks, *, prompt, workdir, progress=None,
-                   cache_dir=None, ref_images=None, video_prompt=None,
-                   lock_tail=False):
-        seen["still"] = list(picks)
-        seen["still_prompt"] = prompt
-        seen["still_refs"] = [str(x) for x in (ref_images or [])]
-        seen["still_video_prompt"] = video_prompt or ""
-        workdir.mkdir(parents=True, exist_ok=True)
-        out = {}
-        for i in picks:
-            p = workdir / f"still_{i}.mp4"
-            make_video(p, 2.0)
-            out[i] = p
-        return out
-
     def fake_spans(video_path, recipe, spans, *, cid, plan=None, workdir, progress=None, **_):
         seen["spans"] = list(spans)
         if plan:
@@ -236,10 +221,9 @@ def _run(work: Path) -> int:
             out.append(p)
         return out
 
-    real = (ark.edit_video, minimax.reference_video, generate.regen_shots,
+    real = (ark.edit_video, minimax.reference_video,
             video_edit.replace_spans, video_edit._public_url,
             settings.ark_api_key, settings.minimax_api_key, settings.public_base_url)
-    generate.regen_shots = fake_regen
     video_edit.replace_spans = fake_spans
     video_edit._public_url = lambda seg, cid: "https://example.test/seg.mp4"
     object.__setattr__(settings, "ark_api_key", "k")
@@ -252,60 +236,45 @@ def _run(work: Path) -> int:
     })
 
     try:
-        print("== auto：静态镜走静帧，动作镜走视频参考 ==")
+        print("== auto：勾了的镜头一律走视频参考 ==")
         r = clone_pipeline.render(
             video, rec, script=None, workdir=work / "r1",
             mask_bottom=False, regen_mode="auto", regen_channel="volc",
             edit_spec=spec,
         )
-        check("静帧重绘的镜头", seen["still"], [0, 2, 4])
-        check("视频参考的段数", len(seen["spans"] or []), 3)
-        check("第一段从动作镜起", (seen["spans"] or [(0, 0)])[0][0], 2.0)
-        check("6 镜全部替换（3 静 + 3 动）", r["replaced_shots"], 6)
+        # 🩸 2026-11-02 删掉静帧档：低运动量的镜头也走视频参考
+        check("不调静帧生成器", seen["still"], None)
+        check("6 镜合成 1 段", len(seen["spans"] or []), 1)
+        check("第一段从 0s 起", (seen["spans"] or [(0, 0)])[0][0], 0.0)
+        check("6 镜全部替换", r["replaced_shots"], 6)
         check("分诊后不再报整片重制的通道", r["regen_channel"], "volc")
         # 这条规格只填了人物描述、没给人物图 → 提示词必须走**文字**分支，
         # 不许写出 @图片1（那张图根本没发出去，模型拿不到）
         check("没给图时用文字描述换人", "替换为白衬衫女孩" in seen["plan_prompt"], True)
         check("没给图时不许写 @图片1", "@图片1" in seen["plan_prompt"], False)
-        # 🩸 没给人物图时不能凭空写「图二」：提示词只能指真的发出去的图
-        check("没给图时不发参考图", seen["still_refs"], [])
-        check("没给图时静帧提示词不写图二", "图二" in seen["still_prompt"], False)
         # 🩸 2026-10-23 主人拍板「也不烧字幕」：成片不再产出任何字幕文件
         check("成片不带字幕文件", "ass" in r, False)
         dur = r["duration"]
         check("成片时长没跑偏", abs(dur - 12.0) < 0.8, True)
         check("成片不是空的", Path(r["video"]).stat().st_size > 10_000, True)
 
-        print("== auto：给了人物图，静帧必须把图发出去 ==")
         img = work / "person.jpg"
         subprocess.run(
             [ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-y",
              "-f", "lavfi", "-i", "color=c=red:s=400x600:d=1",
              "-frames:v", "1", str(img)], check=True)
-        seen.update(still=None, spans=None)
-        clone_pipeline.render(
-            video, rec, script=None, workdir=work / "r1b",
-            mask_bottom=False, regen_mode="auto", regen_channel="volc",
-            edit_spec=spec, refs={"person": img},
-        )
-        # 🩸 只发原片帧时，提示词说「换成另一个人」= 模型只能凭空造脸
-        check("静帧收到人物图", seen["still_refs"], [str(img)])
-        check("静帧提示词指图二", "图二" in seen["still_prompt"], True)
-        check("第二步只让画面动", "以首帧为准" in seen["still_video_prompt"], True)
 
-        # 🩸 混剪和智能重制都是"生图 + 图生视频"，参考图逻辑必须同源。
-        # 以前只写进了 auto 分支，混剪换人照样只发原片帧 = 白花钱换出一张陌生脸。
-        print("== 混剪（shots）：换人也要把人物图发出去 ==")
+        # 🩸 2026-11-02：老客户端的 "shots" 已归一到 auto —— 勾了哪几镜就重制哪几镜
+        print("== 老客户端传 shots：归一化成自动分诊 ==")
         seen.update(still=None, spans=None)
         r1c = clone_pipeline.render(
             video, rec, script=None, workdir=work / "r1c",
             mask_bottom=False, regen_mode="shots", regen_shots=[0],
             edit_spec=spec, refs={"person": img},
         )
-        check("混剪收到人物图", seen["still_refs"], [str(img)])
-        check("混剪提示词指图二", "图二" in seen["still_prompt"], True)
-        check("混剪第二步也锁首帧", "以首帧为准" in seen["still_video_prompt"], True)
-        check("混剪只替换选中的镜", r1c["replaced_shots"], 1)
+        check("不调静帧生成器", seen["still"], None)
+        check("只勾 1 镜 → 1 段视频参考", len(seen["spans"] or []), 1)
+        check("只替换选中的镜", r1c["replaced_shots"], 1)
 
         print("== auto：只勾动作镜，其余保原片 ==")
         seen.update(still=None, spans=None)
@@ -314,13 +283,13 @@ def _run(work: Path) -> int:
             mask_bottom=False, regen_mode="auto", regen_channel="volc",
             edit_spec=spec, regen_shots=[1],
         )
-        # 没有静帧镜头时压根不该调静帧生成器（一次调用就是一次计费）
-        check("没勾的镜头不进静帧队列", seen["still"], None)
-        check("只有动作镜进视频参考", len(seen["spans"] or []), 1)
+        # 分诊不再产生静帧：一次调用就是一次计费，压根不该调它
+        check("不调静帧生成器", seen["still"], None)
+        check("只勾 1 镜 → 1 段视频参考", len(seen["spans"] or []), 1)
         check("只替换了 1 镜", r2["replaced_shots"], 1)
         check("其余 5 镜保原片", abs(r2["duration"] - 12.0) < 0.8, True)
 
-        print("== auto：全新配音时，有台词的镜头改走静帧重绘 ==")
+        print("== auto：全新配音不改走法（仍是视频参考），时长闸照旧 ==")
         seen.update(still=None, spans=None)
         # 前 3 镜有台词（0–6s），后 3 镜是 B-roll；6 镜全都动得很厉害
         rec3 = {
@@ -359,9 +328,10 @@ def _run(work: Path) -> int:
         # 3 条台词按 7.5s 摊开：0–2.5 / 2.5–5.0 / 5.0–7.5（秒），
         # 与 2s 一镜求交（重叠过半才算"在说话"）⇒ 前 4 镜在说话，第 5 镜（8–10s）起没人说话。
         # 早先这里是按**原片 ASR**（0–6s）判的，换文案后就整段错位 —— 这就是本轮修的病。
-        check("新配音覆盖到的镜改走静帧", seen["still"], [0, 1, 2, 3])
-        check("后面没人说话的镜仍走视频参考", len(seen["spans"] or []), 1)
-        check("视频参考从 8s 起", (seen["spans"] or [(0, 0)])[0][0], 8.0)
+        # 🩸 2026-11-02：口播镜头不再改走静帧；台词由改写器（`_span_script`）喂进去
+        check("不调静帧生成器", seen["still"], None)
+        check("6 镜合成 1 段视频参考", len(seen["spans"] or []), 1)
+        check("视频参考从 0s 起", (seen["spans"] or [(0, 0)])[0][0], 0.0)
         check("6 镜都替换了", r4["replaced_shots"], 6)
         check("配音侧元数据有语速", r4["voice_meta"]["speech_rate"], -30)
         check("配音侧元数据有 atempo", r4["voice_meta"]["stretch"], 0.8)
@@ -395,29 +365,30 @@ def _run(work: Path) -> int:
         check("换音色在结果里说明原因", bool(r6["voice_meta"]["voice_note"]), True)
         check("语言判定落在结果里", r6["voice_meta"]["lang"], "en")
 
-        print("== auto：配方里没有运动量时现场补算 ==")
+        print("== auto：配方里没有运动量也照常走视频参考 ==")
         seen.update(still=None, spans=None)
         rec2 = {
             "source": dict(rec["source"]),
             "shots": [{"i": i, "start": i * 2.0, "end": (i + 1) * 2.0, "dur": 2.0}
                       for i in range(6)],
         }
+        # 运动量已不参与分诊；保留一行实测只为报告
         m = scene.motion(video, 0.2, 1.8)
-        check("纯色原片的运动量确实很低", m < 1.0, True)
+        print(f"       （纯色原片实测运动量 {m}）")
         r3 = clone_pipeline.render(
             video, rec2, script=None, workdir=work / "r3",
             mask_bottom=False, regen_mode="auto", regen_channel="volc",
             edit_spec=spec,
         )
-        check("补算后 6 镜全判静态", seen["still"], [0, 1, 2, 3, 4, 5])
-        check("没有动作镜就不用视频参考", len(seen["spans"] or []), 0)
-        check("6 镜都走静帧", r3["replaced_shots"], 6)
+        check("不调静帧生成器", seen["still"], None)
+        check("没有运动量也照常出视频参考", len(seen["spans"] or []), 1)
+        check("6 镜都替换", r3["replaced_shots"], 6)
     finally:
-        (ark.edit_video, minimax.reference_video, generate.regen_shots,
-         video_edit.replace_spans, video_edit._public_url) = real[:5]
-        object.__setattr__(settings, "ark_api_key", real[5])
-        object.__setattr__(settings, "minimax_api_key", real[6])
-        object.__setattr__(settings, "public_base_url", real[7])
+        (ark.edit_video, minimax.reference_video,
+         video_edit.replace_spans, video_edit._public_url) = real[:4]
+        object.__setattr__(settings, "ark_api_key", real[4])
+        object.__setattr__(settings, "minimax_api_key", real[5])
+        object.__setattr__(settings, "public_base_url", real[6])
 
     return 0
 

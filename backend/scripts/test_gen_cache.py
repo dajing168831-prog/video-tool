@@ -163,60 +163,11 @@ def test_whole_cache() -> None:
         shutil.rmtree(work, ignore_errors=True)
 
 
-def test_still_cache() -> None:
-    print("== 静帧重绘：同一个提示词连点两次，第二次不该再调图/视频模型 ==")
-    work = Path(tempfile.mkdtemp(dir="D:/tmp", prefix="still_cache_"))
-    calls = {"img": 0, "vid": 0}
-    from app.services import ark
-    real_img, real_vid = ark.generate_image, ark.generate_video
-    try:
-        def fake_img(prompt, *, ref_image=None, out=None, **kw):
-            calls["img"] += 1
-            make_image(Path(out), "green")
-
-        def fake_vid(prompt, *, first_frame=None, out=None, duration=4,
-                     ratio="9:16", resolution="720p", **kw):
-            calls["vid"] += 1
-            make_video(Path(out), float(duration))
-
-        ark.generate_image = fake_img
-        ark.generate_video = fake_vid
-
-        video = make_video(work / "src.mp4", 6.0)
-        rec = {
-            "source": {"duration": 6.0, "width": 360, "height": 640, "fps": 25.0},
-            "shots": [{"i": 0, "start": 0.0, "end": 2.0},
-                      {"i": 1, "start": 2.0, "end": 4.0},
-                      {"i": 2, "start": 4.0, "end": 6.0}],
-        }
-        cache = work / "cache" / "still"
-
-        def run(tag: str, prompt: str):
-            calls["img"] = calls["vid"] = 0
-            out = generate.regen_shots(video, rec, [0, 1], prompt=prompt,
-                                       workdir=work / tag, cache_dir=cache)
-            return out, calls["img"], calls["vid"]
-
-        o1, i1, v1 = run("s1", "换成白色背景")
-        check("第一次两张静帧都生成了", (i1, v1), (2, 2))
-        o2, i2, v2 = run("s2", "换成白色背景")
-        check("第二次不再调图模型", i2, 0)
-        check("第二次不再调视频模型", v2, 0)
-        check("第二次仍拿得到两个片段", sorted(o2), [0, 1])
-        check("第二次的片段文件在", all(Path(p).exists() for p in o2.values()), True)
-        o3, i3, v3 = run("s3", "换成灰色背景")
-        check("换提示词要重新生成", (i3, v3), (2, 2))
-    finally:
-        ark.generate_image, ark.generate_video = real_img, real_vid
-        shutil.rmtree(work, ignore_errors=True)
-
-
 def main() -> int:
     # 🚦 必须点名型号（2026-10-26）：一轮只跑一家
     from _model_gate import sel_or_exit as _sel
     _sel()
     test_whole_cache()
-    test_still_cache()
     print(f"\n{PASS}/{PASS + FAIL} 通过")
     return 1 if FAIL else 0
 

@@ -870,11 +870,6 @@ def _spec_for_hash(spec: dict) -> dict:
     # 一律不进模型分段的哈希：否则「只想删个 BGM」会把整片重画一遍（白花钱）。
     for k in ("bgm", "sfx"):
         out.pop(k, None)
-    # 🩸 lock_tail（B6）反过来：它**确实改变发给模型的请求**（多一张尾帧），
-    # 开了就必须换键、必须重画。但关着 = 老行为，空值一样要 pop ——
-    # 历史出片的规格里根本没这个键，留着 `False` 会让它们全部失配。
-    if not out.get("lock_tail"):
-        out.pop("lock_tail", None)
     return out
 
 
@@ -1246,7 +1241,7 @@ def _picked(inventory: dict | None, slots: list[str],
             person_ids: list[str] | None = None) -> list[dict]:
     """勾选的槽位 → 盘点里对应的人。
 
-    索引尺必须和编译器一致：`_clauses` / `_minimax` / `still_prompt`
+    索引尺必须和编译器一致：`_clauses` / `_minimax`
     都是按 `PERSON_SLOTS` 的下标取 `people[i]`。闸若看全片所有人就会漏判
     —— 全片 5 人各有方位、勾的这 2 位却长得一样时，全量够数照样放行。
     这一刀里没出现的人不写句，也就别进判据。
@@ -1477,25 +1472,6 @@ def require_identifiable_h3(inventory: dict | None, slots: list[str], *,
 
 
 
-
-
-def require_identifiable_still(inventory: dict | None, slots: list[str]) -> None:
-    """静帧重绘 —— 图生图，编译器读 `desc_zh`（`edit_spec.py:1731`）。
-
-    单人豁免自动成立（`n <= 1` 直接返回）：只有一个人时模板走纯指代
-    「图一里的人物」，不需要区分。多人时靠方位 + 外观 —— 官方 Seedream
-    多图示例也是这么定位的（`图一的男生穿着图二的西装`）。
-    """
-    n = _n_person(slots)
-    if n <= 1:
-        return
-    picked = _picked(inventory, slots)
-    if len(picked) >= n and _distinct(picked, "desc_zh"):
-        return
-    raise EditError(
-        "这次要换 2 个人以上，但盘点没能把画面里的人区分开。"
-        "静帧重绘会写成两句一样的「图一里的人物」，模型只能自己分派、换错脸。"
-        "请重新识别一次，或只勾一个人物槽位。")
 
 
 def _span_plan(plan: dict, spans: list[tuple[float, float]]) -> dict:

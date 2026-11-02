@@ -543,11 +543,10 @@
                 >
                   <image v-if="s.url" class="pick-img" :src="s.url" mode="aspectFill" />
                   <view v-else class="pick-img pick-noimg">{{ s.i + 1 }}</view>
-                  <view class="pick-tag" :class="{ act: s.isVideo }">{{ s.isVideo ? '动作' : '静态' }}</view>
                 </view>
               </scroll-view>
               <view class="sec-note">
-                每一镜由系统决定：静态镜只重画一帧，动作镜才把原片交给模型；不勾的镜头直接用原片。
+                没勾的镜头直接保留原片；勾了的镜头把原片整段交给模型重制。
               </view>
             </view>
 
@@ -825,18 +824,6 @@
                 >删除</button>
               </view>
 
-              <!-- 尾帧锁定（B6）：逐镜重绘的镜头，最后那一下也锁回原片那一帧，
-                   接下一镜（多半是原片保留段）时不会跳。代价是每镜多一次图生图。 -->
-              <view class="sub-row">
-                <view class="sub-txt">
-                  <view class="sub-k">锁住重绘镜头的结尾画面</view>
-                  <view class="sub-v">
-                    只对逐镜重绘的镜头生效：每镜多一次图生图，费用会涨。
-                    换了画面才用得上，只换声音不受影响
-                  </view>
-                </view>
-                <switch :checked="edit.lock_tail" color="#ff5a3c" @change="onLockTail" />
-              </view>
 
             </view>
 
@@ -1229,7 +1216,6 @@ export default {
         // 尾帧锁定（B6）：逐镜重绘的镜头把结尾也锁回原片那一帧。
         // 只作用于静帧重绘的生成链（编辑链发参考视频，与首尾帧互斥）。
         // 默认关 = 老行为；开了每镜多一次图生图。
-        lock_tail: false,
         // 🩸 2026-10-23 主人拍板「也不烧字幕」：subtitle 字段删除，成片不带任何字幕
         resolution: 'auto',
         extra: '',
@@ -1444,17 +1430,15 @@ export default {
     modeHint() {
       if (this.openingOn) return '只换开头，后面的原片不动'
       if (!this.wantRegen) return '不勾就不动画面，只换配音'
-      return '能保原片就保；静态镜重绘，动作镜喂原片'
+      return '没勾的镜头保留原片，勾了的整段重制'
       return '只换文案，画面不动'
     },
     // 镜头选择条：带关键帧、自动分诊标注、是否参与
     shotPicker() {
       const shots = this.d.shots || []
-      const min = Number(this.d.motion_min) || 1.2
       return shots.map((s) => ({
         i: s.i,
         url: s.i < 12 ? cloneFileUrl(this.cid, 'kf', `kf_${String(s.i).padStart(3, '0')}.jpg`) : '',
-        isVideo: Number(s.motion || 0) >= min,
         picked: this.excludedShots.indexOf(s.i) < 0,
       }))
     },
@@ -2238,12 +2222,11 @@ export default {
       const wantRegen = this.wantRegen
       return {
         maskBottom: this.maskBottom,
-        regenRatio: 0,
         regenShots: wantRegen ? pickedShots : null,
         // 换开头走的就是混剪那条路（只把开头几镜选出来），后端不用加新分支
-        regenMode: wantRegen
-          ? (this.regenMode === 'opening' ? 'shots' : this.regenMode)
-          : 'auto',
+        // 🩸 2026-11-02 静帧链路已删：换开头也只是「勾了开头几镜」，
+        //    走自动分诊 + 视频重制
+        regenMode: 'auto',
         regenChannel: this.regenChannel,
         regenModel: wantRegen ? this.regenModel : '',
         subjectAsset: wantRegen ? this.subjectAsset.trim() : '',
@@ -2508,11 +2491,6 @@ export default {
     },
     onMaskChange(e) {
       this.maskBottom = e.detail.value
-    },
-    onLockTail(e) {
-      // 尾帧锁定（B6）：只影响逐镜重绘的镜头，且真会改变发给模型的请求
-      // （多一张尾帧）→ 会换缓存键、会重画。默认关。
-      this.edit.lock_tail = !!e.detail.value
     },
     onAudioPick(v) {
       this.edit.audio = v

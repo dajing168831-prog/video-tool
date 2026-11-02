@@ -142,17 +142,6 @@ if SEL == "volc25":
     chk("S3 2.5 没有风格参考时照旧保留「光线和色调」",
         "光线和色调" in P25_PLAIN, P25_PLAIN)
 
-STILL_STYLE = edit_spec.still_prompt(
-    spec_of({"person": True, "style_ref": True}), ["person", "style_ref"],
-    fallback="一个人站在门口")
-STILL_PLAIN = edit_spec.still_prompt(
-    spec_of({"person": True}), ["person"], fallback="一个人站在门口")
-chk("S3 静帧重绘（图生图）也带风格句，图号对得上（图三）",
-    "画面风格参考图三的色调、光影和质感，不采用图三里的主体和构图" in STILL_STYLE,
-    STILL_STYLE)
-chk("S3 静帧有风格参考时开头不说「光线不变」（同一句自相矛盾）",
-    "光线" not in STILL_STYLE and "光线" in STILL_PLAIN, STILL_STYLE)
-
 # ---------------------------------------------------------------------------
 # S4 2.5 编辑目标 + 目标对象数量
 
@@ -226,13 +215,12 @@ SHOTS = [
     {"i": 2, "start": 3.0, "end": 6.0, "dur": 3.0, "motion": 0.02},
     {"i": 3, "start": 6.0, "end": 9.0, "dur": 3.0, "motion": 0.10},
 ]
-base = triage.decide(SHOTS, audio_mode="tts")
-chk("S7 前提：低运动量的镜头本来会走静帧",
-    set(base.values()) == {"still"}, str(base))
-forced = triage.decide(SHOTS, audio_mode="tts", force_video=True)
-chk("S7 风格视频 → 全部走 video（静帧发不出参考视频）",
-    set(forced.values()) == {"video"}, str(forced))
-picked = triage.decide(SHOTS, picks=[1], audio_mode="tts", force_video=True)
+# 🩸 2026-11-02：静帧档删除后，勾了的镜头本来就一律走 video ——
+#   风格参考视频（只有视频模型读得到）不再需要单独的 force_video 开关。
+base = triage.decide(SHOTS)
+chk("S7 低运动量镜头也全部走 video（静帧档已删）",
+    set(base.values()) == {"video"}, str(base))
+picked = triage.decide(SHOTS, picks=[1])
 chk("S7 只勾了第 1 镜：第 1 镜 video，其余 keep（用户的选择优先）",
     picked == {1: "video", 2: "keep", 3: "keep"}, str(picked))
 

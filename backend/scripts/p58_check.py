@@ -125,10 +125,7 @@ def main() -> int:
             regen_channel="minimax", regen_model="MiniMax-H3-Lite",
             subject_image=subject if subject.exists() else None,
             subject_asset=r.get("subject_asset") or "", refs=refs,
-            inventory=_inv, audio_mode="original",
-            speech_spans=[(float(s["start"]), float(s["end"]))
-                          for s in (rec.get("speech") or {}).get("segments") or []
-                          if (s.get("text") or "").strip()],
+            inventory=_inv,
             style_video=P._style_video_of(SRC, spec))
 
     d1 = mkplan()

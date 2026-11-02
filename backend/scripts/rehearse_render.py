@@ -154,25 +154,10 @@ def main() -> int:
 
     orig_clone_dir = settings.clone_dir
     object.__setattr__(settings, "clone_dir", tasks_root)
-    real = (ark.edit_video, minimax.reference_video, generate.regen_shots,
+    real = (ark.edit_video, minimax.reference_video,
             video_edit._public_url, settings.ark_api_key, settings.minimax_api_key)
     seen: dict = {}
     calls: list[dict] = []
-
-    def fake_regen(video_path, recipe, picks, *, prompt, workdir, progress=None,
-                   cache_dir=None, ref_images=None, video_prompt=None,
-                   lock_tail: bool = False):
-        seen.update(still=list(picks), still_prompt=prompt,
-                    still_refs=[Path(x).name for x in (ref_images or [])],
-                    still_video_prompt=video_prompt or "")
-        calls.append(dict(seen))
-        workdir = Path(workdir)
-        workdir.mkdir(parents=True, exist_ok=True)
-        shots = {int(s["i"]): s for s in recipe["shots"]}
-        return {i: cut(video_path, workdir / f"still_{i}.mp4",
-                       float(shots[i]["start"]),
-                       float(shots[i]["end"]) - float(shots[i]["start"]))
-                for i in picks}
 
     # 🩸 不要替换 `video_edit.replace_spans` 本身：分段续接（边界帧、按段换人、
     # 缓存键）全在 `_gen_spans` 里 —— 连它一起换掉，等于把要验的代码也假掉了。
@@ -193,7 +178,6 @@ def main() -> int:
         calls.append(dict(seen))
         return cut(video, out, 0.0, min(float(duration) or 6.0, dur_of(video)))
 
-    generate.regen_shots = fake_regen
     minimax.reference_video = fake_ref_video
     ark.edit_video = fake_edit_video
     video_edit._public_url = lambda seg, cid: "https://example.test/seg.mp4"
@@ -280,25 +264,6 @@ def main() -> int:
             check("成片有内容", Path(r["video"]).stat().st_size > 10_000, True)
             check("成片时长没跑偏", abs(dur_of(r["video"]) - src_total) < 1.0, True)
 
-            print("== 2. 混剪 + 换人 ==")
-            r2 = run("r2", script=None, cid=new_cid, mask_bottom=True, regen_mode="shots",
-                     regen_shots=[0], edit_spec=spec(person=True), refs=refs,
-                     subject_image=refs["person"])
-            check("混剪同样按原图决定张数", seen.get("still_refs") or [], ["subject.jpg"])
-            # 一人一张：就发用户上传的那张原图，不裁头、不派生第二张
-            # （2026-10-22 定：官方实战示例「@图片 1：女主半身照」）。
-            # 🩸 2026-10-23（D2 / 台账 T3）：「唯一身份来源」出处是第三方
-            # ReplicaPilot，Seedream 官方只要求「指明参考对象 + 描述生成画面」。
-            check("提示词按官方句式指明人物参考图",
-                  "图二是人物参考图，参考图中的人物形象，保持人物特征不变"
-                  in (seen.get("still_prompt") or ""), True)
-            check("不写第三方来源的身份锁句",
-                  "唯一身份来源" not in (seen.get("still_prompt") or ""), True)
-            check("不出现第二张的妆造指代",
-                  "妆造参考图为图" in (seen.get("still_prompt") or ""), False)
-            check("第二步以首帧为准", "以首帧为准" in (seen.get("still_video_prompt") or ""), True)
-            check("混剪成片有内容", Path(r2["video"]).stat().st_size > 10_000, True)
-
             print("== 3. 整片重制 + 换人 ==")
             sp = edit_spec.normalize({"person": True, "audio": "tts"})
             r3 = run("r3", script=script, cid=new_cid, mask_bottom=True,
@@ -335,28 +300,11 @@ def main() -> int:
         # 🩸 2026-10-23 主人拍板「也不烧字幕」：不再产出字幕轨
         check("不带字幕轨", bool(r4.get("ass")), False)
 
-        print("== 5. 换服装（没传商品图就自己造一张，保证这段一定跑到）==")
-        wrefs = dict(refs)
-        if "wardrobe" not in wrefs:
-            shirt = task_dir / "ref_wardrobe.jpg"
-            subprocess.run([ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-y",
-                            "-f", "lavfi", "-i", "color=c=beige:s=400x600:d=1",
-                            "-frames:v", "1", str(shirt)], check=True)
-            wrefs["wardrobe"] = shirt
-        # auto 会把这个连续运镜样本整条判 video（见第 1 节），根本不进静帧分支。
-        # 服装图只在静帧重绘里发，所以这里显式指定要换的镜头。
-        r5 = run("r5", script=None, cid=new_cid, mask_bottom=True, regen_mode="shots",
-                 regen_shots=[0],
-                 edit_spec=spec(wardrobe=True, wardrobe_desc="米色风衣"),
-                 refs=wrefs, subject_image=wrefs.get("person"))
-        check("服装图发给了模型", "ref_wardrobe.jpg" in (seen.get("still_refs") or []), True)
-        check("提示词指名服装图", "图二" in (seen.get("still_prompt") or ""), True)
-        check("成片有内容", Path(r5["video"]).stat().st_size > 10_000, True)
     finally:
-        (ark.edit_video, minimax.reference_video, generate.regen_shots,
-         video_edit._public_url) = real[:4]
-        object.__setattr__(settings, "ark_api_key", real[4])
-        object.__setattr__(settings, "minimax_api_key", real[5])
+        (ark.edit_video, minimax.reference_video,
+         video_edit._public_url) = real[:3]
+        object.__setattr__(settings, "ark_api_key", real[3])
+        object.__setattr__(settings, "minimax_api_key", real[4])
         object.__setattr__(settings, "clone_dir", orig_clone_dir)
         shutil.rmtree(root, ignore_errors=True)
 

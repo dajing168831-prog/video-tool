@@ -149,26 +149,8 @@ def main() -> int:
     short = source_speech_spans([(0.0, 3.0)], 12.0)
     check("配音短 → 只有 0–3s 在说话", short, [(0.0, 3.0)])
 
-    print("== 文案一变长，说话镜的判断就跟着变（本次修的那个 bug）==")
-    # 判据直接用分诊自己那把尺子，不另写一份 —— 另写一份就是在测我自己的假设
-    from app.services.triage import SPEECH_OVERLAP
-
-    shot_dicts = [{"i": 0, "start": 0.0, "end": 5.0}, {"i": 1, "start": 5.0, "end": 10.0}]
-
-    def talking(spans):
-        hit = set()
-        for s in shot_dicts:
-            dur = s["end"] - s["start"]
-            for a, b in spans:
-                if min(b, s["end"]) - max(a, s["start"]) >= SPEECH_OVERLAP * dur:
-                    hit.add(s["i"])
-                    break
-        return hit
-
-    orig = [(0.0, 4.0)]                    # 原片 ASR：前 4 秒在说话
-    new = source_speech_spans([(0.0, 9.0)], 10.0)   # 新配音：0–9s 都在说
-    check("原片口径：只有第 1 镜算说话", talking(orig), {0})
-    check("新文案口径：两镜都在说话", talking(new), {0, 1})
+    # 🩸 2026-11-02：分诊删掉 still 档后，「说话镜」不再改变走法，
+    # 这一段断言随之作废；`source_speech_spans` 本身仍被 H3 的 `<d>` 使用。
 
     print(f"\n{PASS}/{PASS + FAIL} 通过")
     return 1 if FAIL else 0

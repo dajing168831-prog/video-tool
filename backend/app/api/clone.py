@@ -133,9 +133,6 @@ class EditIn(BaseModel):
     # 这两项只影响合成阶段的混音，不进提示词、不进模型分段哈希。
     bgm: str = Field("keep", description="keep 保留原片背景音乐 / drop 删掉 / replace 换成上传的音乐")
     sfx: str = Field("keep", description="keep 保留原片音效 / add 再叠加一段上传的音效")
-    # 尾帧锁定（B6）：重绘的镜头把结尾也锁回原片那一帧。同样必须声明（pydantic 丢键）。
-    # 只作用于静帧重绘的生成链 —— 编辑链发参考视频，与首尾帧互斥。
-    lock_tail: bool = Field(False, description="重绘的镜头锁住结尾画面（每镜多一次图生图）")
     # 🩸 无缝转场（B7）**不在出片规格里**：2026-10-25 主人拍板只留在延长链路
     # （`ExtendIn` 有自己的 transition 字段）。复刻要像原片，不该改原片剪辑点。
     # 🩸 2026-10-23 主人拍板「也不烧字幕」：`subtitle` 字段删除，成片不带任何字幕。
@@ -181,12 +178,10 @@ class RenderIn(BaseModel):
     mask_bottom: bool = Field(False, description="是否遮住原片底部硬字幕区域（默认关）")
     # 换画面：给了 regen_prompt 才会重绘镜头
     regen_prompt: str = Field("", description="把画面主体换成什么（原图当参考，构图不变）")
-    regen_ratio: float = Field(0.0, ge=0.0, le=1.0,
-                               description="重绘比例：0 全用原片，1 全重制（界面已不再提供，保留兼容）")
     regen_shots: list[int] | None = Field(None, description="指定要重绘的镜头序号（优先于比例）")
     # 换画面三种模式：
-    #   auto  = 逐镜分诊（默认）：能保的原片像素就保，静态镜走静帧重绘，
-    #           动作/运镜是重点的镜头才把原片片段喂给视频模型
+    #   auto  = 逐镜分诊（默认）：没勾的镜头保留原片像素，勾了的整段喂视频模型重制
+    #           （2026-11-02 主人拍板删掉了「静态镜头走静帧重绘」那一档）
     #   shots = 按比例挑镜头、统一走静帧重绘（老行为的显式版本）
     #   whole = 整条片子交给视频编辑模型（兜底，最贵，改得最狠）
     # 🩸 P5：档位不再是用户的选择。对外只有一个默认 `auto`（每镜由系统定）；
@@ -1188,10 +1183,6 @@ async def clone_detail(cid: str):
     if not task:
         return fail("任务不存在或已过期", biz_code=404)
     data = store.public(task)
-    # 前端要用同一个阈值给镜头打"静态/动作"标，别在前端再抄一份数字
-    from app.services import triage
-
-    data["motion_min"] = triage.MOTION_VIDEO_MIN
     return ok(data)
 
 
@@ -1226,7 +1217,10 @@ def _check_render_in(body: RenderIn) -> tuple[str, int]:
     它接受的参数比 `/plan` 宽，就等于留了一个绕开校验的口子。
     """
     regen_mode = (body.regen_mode or "auto").strip().lower()
-    if regen_mode not in ("shots", "auto", "whole"):
+    # 🩸 2026-11-02 静帧链路已删：老客户端的 "shots" 归一到 auto
+    if regen_mode == "shots":
+        regen_mode = "auto"
+    if regen_mode not in ("auto", "whole"):
         return "未知的换画面模式", 8
     # 型号校验和出片接口同一条口径：填了就必须认得、且和通道同族
     _bad = regen_model_error((body.regen_model or "").strip(), body.regen_channel)
@@ -1255,7 +1249,6 @@ def _preview_call(cid: str, task: dict, body: RenderIn, **extra) -> dict:
         script=(body.script or "").strip() or None,
         script_lines=body.script_lines or None,
         regen_prompt=(body.regen_prompt or "").strip(),
-        regen_ratio=body.regen_ratio,
         regen_shots=body.regen_shots or None,
         regen_mode=(body.regen_mode or "auto").strip().lower(),
         regen_channel=body.regen_channel,
@@ -1471,7 +1464,10 @@ async def clone_render(cid: str, body: RenderIn):
     regen_prompt = (body.regen_prompt or "").strip()
     regen_shots = body.regen_shots or None
     regen_mode = (body.regen_mode or "auto").strip().lower()
-    if regen_mode not in ("shots", "auto", "whole"):
+    # 🩸 2026-11-02 静帧链路已删：老客户端的 "shots" 归一到 auto
+    if regen_mode == "shots":
+        regen_mode = "auto"
+    if regen_mode not in ("auto", "whole"):
         return fail("未知的换画面模式", biz_code=8)
 
     asset = (body.subject_asset or "").strip()
@@ -1514,13 +1510,6 @@ async def clone_render(cid: str, body: RenderIn):
                 video_edit.pick_channel(body.regen_channel, subject_kind=kind)
             except video_edit.EditError as e:
                 return fail(str(e), biz_code=8)
-        else:
-            if not settings.ark_api_key:
-                return fail("换画面服务未配置，请联系管理员", biz_code=8)
-            if not regen_shots and body.regen_ratio <= 0:
-                return fail("请选择要替换多少镜头", biz_code=8)
-            if regen_shots and len(regen_shots) > settings.clone_max_regen:
-                return fail(f"一次最多替换 {settings.clone_max_regen} 个镜头", biz_code=8)
 
     # 声音模式独立于换画面：只换文案也可以叠加原片 BGM
     audio_mode = (spec or {}).get("audio", "tts")
@@ -1556,7 +1545,6 @@ async def clone_render(cid: str, body: RenderIn):
         "error": "",
         "duration": None,
         "regen_prompt": regen_prompt,
-        "regen_ratio": body.regen_ratio,
         "regen_shots": regen_shots or [],
         "regen_mode": regen_mode,
         "regen_channel": body.regen_channel,
@@ -1581,7 +1569,6 @@ async def clone_render(cid: str, body: RenderIn):
     clone_jobs.submit_render(
         cid, rid, script=script, mask_bottom=body.mask_bottom,
         regen_prompt=regen_prompt if wants_regen else "",
-        regen_ratio=body.regen_ratio,
         regen_shots=regen_shots,
         regen_mode=regen_mode,
         regen_channel=body.regen_channel,
@@ -1627,7 +1614,6 @@ async def clone_render_continue(cid: str, rid: str):
         cid, new_rid, script=item.get("script"),
         mask_bottom=bool(item.get("mask_bottom")),
         regen_prompt=item.get("regen_prompt") or "",
-        regen_ratio=float(item.get("regen_ratio") or 0),
         regen_shots=item.get("regen_shots") or None,
         regen_mode=item.get("regen_mode") or "auto",
         regen_channel=item.get("regen_channel") or "auto",

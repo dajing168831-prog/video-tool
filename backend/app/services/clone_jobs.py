@@ -57,7 +57,6 @@ def submit_analyze(cid: str, video: Path, *, url: str = "") -> bool:
 
 def submit_render(cid: str, rid: str, *, script: str | None,
                   mask_bottom: bool = False, regen_prompt: str = "",
-                  regen_ratio: float = 0.0,
                   regen_shots: list[int] | None = None,
                   regen_mode: str = "shots",
                   regen_channel: str = "auto",
@@ -67,7 +66,6 @@ def submit_render(cid: str, rid: str, *, script: str | None,
     if not _claim(cid, rid):
         return False
     _POOL.submit(_render, cid, rid, script, mask_bottom,
-                 regen_prompt, regen_ratio, regen_shots,
                  regen_mode, regen_channel, edit_spec, max_segments, force)
     return True
 
@@ -127,7 +125,6 @@ def _analyze(cid: str, video: Path, url: str) -> None:
 
 
 def _render(cid: str, rid: str, script: str | None, mask_bottom: bool,
-            regen_prompt: str = "", regen_ratio: float = 0.0,
             regen_shots: list[int] | None = None,
             regen_mode: str = "shots", regen_channel: str = "auto",
             edit_spec: dict | None = None, max_segments: int = 0,
@@ -164,7 +161,6 @@ def _render(cid: str, rid: str, script: str | None, mask_bottom: bool,
             # 方言代码（火山 explicit_dialect）；空 = 标准普通话
             tts_dialect=(item.get("tts_dialect") or "").strip(),
             mask_bottom=mask_bottom, progress=progress,
-            regen_prompt=regen_prompt, regen_ratio=regen_ratio,
             regen_shots=regen_shots, regen_mode=regen_mode,
             regen_channel=regen_channel, cid=cid,
             regen_model=(item.get("regen_model") or "").strip(),

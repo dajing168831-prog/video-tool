@@ -356,17 +356,6 @@ def phase_positions(sel: str) -> None:
             "in the upper part" in htb and "in the lower part" in htb, htb[:220])
 
     if sel == "volc20":
-        # 三个人时静帧也不能出现两句一样的话（still_prompt = 火山生图）
-        s3 = edit_spec.normalize({"person": True, "person2": True, "person3": True})
-        st3 = edit_spec.still_prompt(
-            s3, ["person", "person2", "person3"],
-            people=[{"position": "left", "desc_zh": "甲"},
-                    {"position": "center", "desc_zh": "乙"},
-                    {"position": "right", "desc_zh": "丙"}])
-        chk("静帧 3 人各写自己的方位（不再两句「另一位」）",
-            "画面左侧的甲" in st3 and "画面中央的乙" in st3 and "画面右侧的丙" in st3,
-            st3[:200])
-
         # 单人画面写方位 = 把人钉死在某一侧 → 不许写
         one = [{"id": "P1", "present": True, "position": "left",
                 "desc_zh": "穿蓝衣的男人"}]
