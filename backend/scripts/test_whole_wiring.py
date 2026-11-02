@@ -411,6 +411,60 @@ def _run(work: Path) -> int:
                                         "text": "换成了新文案"}])
         check("重配后不拿原片的字级时间套新文案（按时间比例裁）",
               video_edit._span_script(_tts, 0.0, 1.0) == [(0.0, 1.0, "换成了")], True)
+        # 🩸 2026-11-02：外观描述「缺就补算」的兜底**以前是死代码** ——
+        #   `_look_for` 里写了「真出片时补算」，可全工程没有一个调用方传
+        #   `compute=True`（只有注释提到它）。实测 `902c4d0f`：第 2 张定妆照的
+        #   描述是后台线程 15:02:35 才落盘，15:02:2x 构建 plan 时拿到空描述 →
+        #   提示词里那个人只剩一个图号 → SFace 两人 0.336 / 0.178 全没换。
+        #   官方 `h3-manual:248`「如果素材中有非常想要保持的特征，建议明确写出来」。
+        import ast as _ast
+        import inspect as _inspect
+        _bad = []
+        for _fn in (video_edit.replace_spans, video_edit.replace_whole):
+            _tree = _ast.parse(_inspect.getsource(_fn).lstrip())
+            for _node in _ast.walk(_tree):
+                if not isinstance(_node, _ast.Call):
+                    continue
+                _n = _node.func
+                _name = getattr(_n, "id", None) or getattr(_n, "attr", None)
+                if _name not in ("_prepare", "prepare"):
+                    continue
+                _kw = {k.arg: k.value for k in _node.keywords if k.arg}
+                _v = _kw.get("compute_looks")
+                if not (isinstance(_v, _ast.Constant) and _v.value is True):
+                    _bad.append("%s:%d" % (_fn.__name__, _node.lineno))
+        check("真出片两条路都传 compute_looks=True（缺描述当场补算）", _bad, [])
+        check("零费用入口（prepare 公开默认值）仍是不补算",
+              _inspect.signature(video_edit.prepare)
+              .parameters["compute_looks"].default, False)
+        # 上面那条只验「调用点写没写」。这里验**效果**：描述文件不存在时，
+        # `compute=True` 真的会去补算，`compute=False` 真的不调模型（零费用语义）。
+        import hashlib as _hl
+        from unittest import mock as _mock
+        from app.services import clone_store as _cs, vision_plan as _vp
+        _img = Path(__file__).resolve().parents[1] / "data/clone/db253cfc1eb84a109d79636afb5cc956/subject.jpg"
+        if _img.exists():
+            _sha = _hl.sha1(_img.read_bytes()).hexdigest()
+            _hits = []
+
+            def _fake_desc(cid, path, slot):
+                _hits.append(slot)
+                return {"desc_zh": "补算出来的", "desc_en": "computed",
+                        "_v": _vp._DESC_VERSION, "_image_sha1": _sha}
+
+            _missing = Path(__file__).resolve().parents[1] / "data/nonexistent_desc.json"
+            with _mock.patch.object(_cs, "subject_desc_path", return_value=_missing), \
+                    _mock.patch.object(_vp, "describe_person", side_effect=_fake_desc):
+                _r_on = video_edit._look_for(_img, "person2", compute=True)
+                _n_on = len(_hits)
+                _r_off = video_edit._look_for(_img, "person2")
+                _n_off = len(_hits)
+            check("缺描述 + 真出片 → 当场补算并采用",
+                  (_n_on, _r_on.get("zh")), (1, "补算出来的"))
+            check("缺描述 + 预览/复用 → 不调模型、返回空（零费用）",
+                  (_n_off, _r_off), (1, {}))
+        else:
+            check("缺描述补算的效果验证（缺样本图，跳过）", True, True)
         # 🩸 2026-11-02（缺口三）：音频的用途必须写明。官方 `h3-manual:248`
         #   用途词表有「音色参考」「音频复用」「音频部分复用」三档；实测缺口是
         #   音频一直传进去了、`instruction()` 全文却一个字都没提它 —— 用途全凭

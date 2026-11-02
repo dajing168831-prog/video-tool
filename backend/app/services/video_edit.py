@@ -998,6 +998,7 @@ def _prepare(
     model: str = "",
     inventory: dict | None = None,
     style_video: Path | None = None,
+    compute_looks: bool = False,
 ) -> dict:
     """把"要换成什么"整理成一次重制要用的全部上下文。
 
@@ -1121,7 +1122,15 @@ def _prepare(
     #   「古装女性、浅杏色深 V 薄纱长裙、红唇」，模型只会把那个人换错。
     #   现在按槽位各读各的；这个槽位没有描述就**不借别人的**，退回 `<Picture N>`
     #   纯图号写法（`h3_compile._minimax` 里那条 else 分支）。
-    looks = {s: _look_for(refs.get(s), s) for s in slots
+    # 🩸 2026-11-02：**真出片这条路要允许补算**（`compute_looks=True`）。
+    #   `describe_person` 是上传时的**后台线程**算的，换一张新定妆照马上点出片，
+    #   这份文件可能还没落盘 → 该人的外观描述为空 → 改写器只写「图N中的人物」，
+    #   零个五官词 → 那个人换不上（`902c4d0f` 实测：第 1 人有描述、第 2 人没有，
+    #   SFace 0.336 / 0.178 双双没换）。
+    #   官方 `h3-manual:248`：「如果素材中有非常想要保持的特征，**建议明确写出来**，
+    #   这样可以让一致性更好」；`ref-en:314` 的主体定义示例本身就带特征。
+    #   `/plan`、`/reuse-plan` 这些**零费用**语义的入口仍然不传（保持不偷偷调模型）。
+    looks = {s: _look_for(refs.get(s), s, compute=compute_looks) for s in slots
              if s in edit_spec.PERSON_SLOTS and refs.get(s)
              } if spec["change"]["person"] else {}
     # 🩸 2026-10-27：整片重制这条路**一直没把「勾了谁」传给编译器**。
@@ -2511,12 +2520,17 @@ def prepare(rec: dict, *, prompt: str = "", spec: dict | None = None,
             subject_image: Path | None = None, subject_asset: str = "",
             channel: str = "auto", model: str = "",
             inventory: dict | None = None,
-            style_video: Path | None = None) -> dict:
-    """给外部（逐镜分诊）用的公开入口：先算好通道和提示词，再决定切几段。"""
+            style_video: Path | None = None,
+            compute_looks: bool = False) -> dict:
+    """给外部（逐镜分诊）用的公开入口：先算好通道和提示词，再决定切几段。
+
+    `compute_looks=True` 只在**真出片**那条路传：外观描述缺失时当场补算一次
+    （几厘钱），否则该人物在提示词里只剩一个图号、换不上脸。
+    """
     return _prepare(rec=rec, prompt=prompt, spec=spec, refs=refs,
                     subject_image=subject_image, subject_asset=subject_asset,
                     channel=channel, model=model, inventory=inventory,
-                    style_video=style_video)
+                    style_video=style_video, compute_looks=compute_looks)
 
 
 def plan_spans(video: Path, rec: dict,
@@ -2611,7 +2625,9 @@ def replace_spans(
                            subject_image=subject_image,
                            subject_asset=subject_asset, channel=channel,
                            model=model, inventory=inventory,
-                           style_video=style_video)
+                           style_video=style_video,
+                           # 真出片：缺外观描述就当场补算（`/plan` 那条路不传）
+                           compute_looks=True)
     # H3 缺逐镜描述时补一次盘点，并用新盘点把提示词重算一遍 ——
     # 提示词里的每个人的描述和正文的逐镜描述必须出自同一份盘点。
     if _plan_adapter(plan).caps.ensure_shot_source:
@@ -2621,7 +2637,8 @@ def replace_spans(
                             subject_image=subject_image,
                             subject_asset=subject_asset, channel=channel,
                             model=model, inventory=inv2,
-                            style_video=style_video)
+                            style_video=style_video,
+                            compute_looks=True)
     return _gen_spans(plan, video, spans, rec=rec, cid=cid, workdir=workdir,
                       progress=progress, label="重制", base_pct=52, span_pct=18,
                       max_segments=max_segments, force=force)
@@ -2662,7 +2679,9 @@ def replace_whole(
     plan = _prepare(rec=rec, prompt=prompt, spec=spec, refs=refs,
                     subject_image=subject_image, subject_asset=subject_asset,
                     channel=channel, model=model, inventory=inventory,
-                    style_video=style_video)
+                    style_video=style_video,
+                    # 真出片：缺外观描述就当场补算（`/plan` 那条路不传）
+                    compute_looks=True)
     # 同 `replace_spans`：H3 缺逐镜描述就先补盘点，再按新盘点重算提示词
     if _plan_adapter(plan).caps.ensure_shot_source:
         inv2, refilled = _ensure_shot_source(cid, video, inventory, wanted=True)
@@ -2671,7 +2690,8 @@ def replace_whole(
                             subject_image=subject_image,
                             subject_asset=subject_asset, channel=channel,
                             model=model, inventory=inv2,
-                            style_video=style_video)
+                            style_video=style_video,
+                            compute_looks=True)
 
     total = float((rec.get("source") or {}).get("duration") or 0)
     spans, moved = plan_spans(video, rec, plan)
