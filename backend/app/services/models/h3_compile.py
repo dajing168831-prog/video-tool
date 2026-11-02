@@ -806,7 +806,7 @@ def _minimax(spec: dict, c: dict, idx: dict[str, int],
             # 多位候选而且判不出 → 原声交回 `<Audio 1>`，不猜是谁在说
             return "" if reuse_audio else spk_who
         if reuse_audio:
-            # 官方 ref-en 2.5 的句式原样：
+            # H3 官方 `ref-en:118` 的句式原样：
             # `<Audio 2> is the synchronized audio track of <Video 1> and is
             #  reused in the target video.`
             if spk_who:

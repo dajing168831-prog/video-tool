@@ -1,0 +1,183 @@
+{
+  "family": "h3",
+  "display": "MiniMax H3",
+  "model_prefixes": [
+    "MiniMax-H3"
+  ],
+  "one_rule": "一个型号一把尺：本目录以外的官方资料，与本家无关，不得引用。",
+  "aliases_note": "裸 `guide` **不是**任何一家的缩写（两家都叫 guide = 歧义），引用一律写 `sd20-guide:` / `sd25-guide:`。",
+  "files": [
+    {
+      "role": "skill-reference",
+      "role_zh": "官方 skill 的 reference 正文",
+      "path": "ref-en.txt",
+      "abbr": [
+        "ref-en",
+        "h3-ref-en"
+      ],
+      "lines": 341,
+      "sha256": "1e574f356716ad55612247ffb7bbccbcdb484ad96599d63c7dca1af186b1fab7",
+      "origin": "官方 skill `h3-prompt-writing` 的 references/ref-en.txt（Ref2VA 六段式）"
+    },
+    {
+      "role": "skill-reference",
+      "role_zh": "官方 skill 的 reference 正文",
+      "path": "base-en.txt",
+      "abbr": [
+        "base-en",
+        "h3-base-en"
+      ],
+      "lines": 222,
+      "sha256": "2cfebc096a6e08370f288d468d90b60f7f9bcb938f94bf090816e910e48e75fc",
+      "origin": "官方 skill `h3-prompt-writing` 的 references/base-en.txt（Base 模式）"
+    },
+    {
+      "role": "official-site",
+      "role_zh": "官方站原文抓取",
+      "path": "official/11f12610.txt",
+      "abbr": [],
+      "lines": 24,
+      "sha256": "11f126106c4a2b129649b0051456055d4530d67988e6bf4feaf072350db4cb0b",
+      "origin": "官方文档站抓取"
+    },
+    {
+      "role": "official-site",
+      "role_zh": "官方站原文抓取",
+      "path": "official/dfe52602.txt",
+      "abbr": [],
+      "lines": 28,
+      "sha256": "dfe52602b47820e24e889b91981a10118164e27e4d70eb145b53ea0dabb73845",
+      "origin": "官方文档站抓取"
+    },
+    {
+      "role": "official-site",
+      "role_zh": "官方站原文抓取",
+      "path": "official/docs/official_llms-index.txt",
+      "abbr": [],
+      "lines": 173,
+      "sha256": "fa78eb73db3a62a80e5b2ab16f8e0b937fc216b66b61425b801e3b7011ba88f7",
+      "origin": "官方文档站抓取"
+    },
+    {
+      "role": "official-site",
+      "role_zh": "官方站原文抓取",
+      "path": "official/docs/official_manual_h3_full.txt",
+      "abbr": [],
+      "lines": 865,
+      "sha256": "fbd1edafe69fe8a73c8f3fd0f31c2ddbb1aa42194ac6a115d6c091fde6156c1c",
+      "origin": "官方文档站抓取"
+    },
+    {
+      "role": "official-site",
+      "role_zh": "官方站原文抓取",
+      "path": "official/docs/official_manual_h3_p1-ssr.md",
+      "abbr": [],
+      "lines": 270,
+      "sha256": "dc4eb8c185072d16db5cd707695655e470bdbd8b813578d58c1c2f2a81a70f19",
+      "origin": "官方文档站抓取"
+    },
+    {
+      "role": "official-site",
+      "role_zh": "官方站原文抓取",
+      "path": "official/docs/official_video-generation.md",
+      "abbr": [],
+      "lines": 280,
+      "sha256": "94602e998a06129ad2d23ec8d6c5b2fc8a154aec6d8689745c9fd283f6f918ce",
+      "origin": "官方文档站抓取"
+    },
+    {
+      "role": "official-site",
+      "role_zh": "官方站原文抓取",
+      "path": "official/docs/official_video-prompt.md",
+      "abbr": [],
+      "lines": 265,
+      "sha256": "991410753f3a4350a7042816d4ffd7a9fd1769aa1182a5578cdfecd980c1fc54",
+      "origin": "官方文档站抓取"
+    },
+    {
+      "role": "official-site",
+      "role_zh": "官方站原文抓取",
+      "path": "official/docs/README.md",
+      "abbr": [],
+      "lines": 47,
+      "sha256": "051742159f33c2a125450ae7c45ca0261a01db674fe5600fdb7152e988e19d0a",
+      "origin": "官方文档站抓取"
+    },
+    {
+      "role": "official-site",
+      "role_zh": "官方站原文抓取",
+      "path": "official/index.json",
+      "abbr": [],
+      "lines": 21,
+      "sha256": "826b3411f7b878c52a252998483f991b0d213d70fd3296e8a90c7e76a83f82b0",
+      "origin": "官方文档站抓取"
+    },
+    {
+      "role": "platform-docs",
+      "role_zh": "官方资料",
+      "path": "platform-docs.txt",
+      "abbr": [
+        "mm-docs"
+      ],
+      "lines": 15185,
+      "sha256": "bd775fb2792e16b3b3be449e98a581c57b64087e390843efa3fd28c4cbb6cdef",
+      "origin": "MiniMax 文档站抓取合集（649KB，含视频生成 API 页）"
+    },
+    {
+      "role": "skill-body",
+      "role_zh": "官方 skill `h3-prompt-writing` 的 SKILL.md（2026-10-28 上游版本，含新增 Tips）",
+      "path": "h3-prompt-writing-SKILL.md",
+      "abbr": [
+        "h3-skill"
+      ],
+      "lines": 40,
+      "sha256": "a7000443588ca3f145e3b3fd8900f14e0325dc460bd811268fac89a9dc8e56d0",
+      "origin": "https://raw.githubusercontent.com/MiniMax-AI/MiniMax-H3/main/skills/h3-prompt-writing/SKILL.md（2026-10-28 抓取；本地旧副本 2177 字节缺「Tips for Better Results」整节）"
+    },
+    {
+      "role": "api-models",
+      "role_zh": "视频生成 V2 的模型档位表（四个 H3 档：分辨率/时长）",
+      "path": "api-models-2026-10-28.md",
+      "abbr": [
+        "h3-models"
+      ],
+      "lines": 42,
+      "sha256": "b54b2665fff5836e98af71e75a8d2b2e2840d33138f9a63a9d19065c7fc4143c",
+      "origin": "2026-10-28 直连 platform.minimaxi.com/api-reference/video-generation-v2-create 摘录"
+    },
+    {
+      "role": "api-create",
+      "role_zh": "创建视频生成任务 V2 全量参数（resolution/duration/ratio/extra/aigc_watermark 逐字段原文）",
+      "path": "api-create-2026-10-28.md",
+      "abbr": [
+        "h3-create"
+      ],
+      "lines": 581,
+      "sha256": "238be3add02890d1bb561d2ab13aada0d0049ac30020988c88aab70fc4bfd16f",
+      "origin": "2026-10-28 直连 platform.minimaxi.com 的 OpenAPI 页（create 页 md 版）"
+    },
+    {
+      "role": "model-card",
+      "role_zh": "官方模型卡（H3 系统的输入/输出规格表就在这里）",
+      "path": "model-card-2026-10-28.md",
+      "abbr": [
+        "h3-readme",
+        "h3-card"
+      ],
+      "lines": 452,
+      "sha256": "c2110b3754d927b1eaf7cfe7decb522b187a0bc44e659080bc65fc23260bd0c9",
+      "origin": "https://raw.githubusercontent.com/MiniMax-AI/MiniMax-H3/main/README.md（与 README.zh-CN.md 同一张表，中文版第 78 行同句）"
+    },
+    {
+      "role": "manual-cn",
+      "role_zh": "官方中文《使用手册》·**飞书 wiki 版**（写作公式/拆镜建议/6 条踩坑/能力表）；同一份文档官方站版另存 `official/docs/official_manual_h3_full.txt`（865 行，两份已逐条核对一致）",
+      "path": "manual-2026-10-28.md",
+      "abbr": [
+        "h3-manual"
+      ],
+      "lines": 297,
+      "sha256": "4376d172d145237cfba07b707bd4f69d6ece446584c4c7279ca0770678ba6bc0",
+      "origin": "https://vrfi1sk8a0.feishu.cn/wiki/FIWjwgL33ipnkekzk30crmKUnIh（lark-cli docs +fetch --as bot，revision 1327，document_id ZRFZd89oMoGTyrx2JXWcpPq1n7f）→ jarvis/tools/feishu_cli2md.py 渲染"
+    }
+  ]
+}

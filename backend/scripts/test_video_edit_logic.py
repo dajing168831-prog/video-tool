@@ -221,13 +221,16 @@ def main() -> int:
     # （单型号断言已按 D43 搬回各自的型号文件：
     #   H3 → test_edit_spec_h3.py｜2.0 → test_edit_spec_sd20.py｜2.5 → test_edit_spec_sd25.py）
 
-    print("== 边界帧只在「上一段是重画过的」时才带 ==")
-    # 🩸 上一段直接留了原片时，原片在这条缝上本来就是连续的；再拿它的尾帧当
-    # "目标视频第一帧"，等于要求新人物从原片那张脸开始（2026-10-22 同类回灌）。
+    print("== 边界帧整条停用：任何情况下都不带 ==")
+    # 🩸 2026-11-02 主人拍板删除。第 2 段的参考视频就是从原片切出来单独上传的
+    # （`cut_clip`），接缝信息本来就在模型手里；再叠一张"上一段成片的尾帧"，
+    # 是整条链上唯一一个非原片来源的输入。老逻辑改名 `_boundary_used__retired`
+    # 留墓碑，`_boundary_used` 恒 False —— 判的就是**发出去的请求里有没有这张图**，
+    # 照旧算老规则等于报一个没发生的事。
     _plan = {"ch": "minimax", "model": "MiniMax-H3"}
     _spans = [(0.0, 10.0), (10.0, 20.0), (20.0, 30.0)]
-    check("两段都重画 → 带", video_edit._boundary_used(
-        _plan, _spans[:2], {_spans[0]: ("change", [{"id": "P1"}])}), True)
+    check("两段都重画 → 不带", video_edit._boundary_used(
+        _plan, _spans[:2], {_spans[0]: ("change", [{"id": "P1"}])}), False)
     check("上一段留原片 → 不带", video_edit._boundary_used(
         _plan, _spans[:2], {_spans[0]: ("keep", None)}), False)
     check("中间隔开（不紧挨）→ 不带", video_edit._boundary_used(
@@ -237,10 +240,9 @@ def main() -> int:
     #   H3 → test_edit_spec_h3.py｜2.0 → test_edit_spec_sd20.py｜2.5 → test_edit_spec_sd25.py）
     check("只有一段 → 不带", video_edit._boundary_used(
         _plan, _spans[:1], {}), False)
-    # 第 1 段留原片、第 2 段重画 → 第 3 段该带（上一段是重画的）
-    check("中间段重画 → 第 3 段带", video_edit._boundary_used(
+    check("中间段重画 → 第 3 段也不带", video_edit._boundary_used(
         _plan, _spans, {_spans[0]: ("keep", None),
-                        _spans[1]: ("change", [{"id": "P1"}])}), True)
+                        _spans[1]: ("change", [{"id": "P1"}])}), False)
 
     print("== 口型参考音轨：挑哪条 / 截多长 ==")
     import tempfile

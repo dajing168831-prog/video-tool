@@ -86,11 +86,11 @@ SYSTEM = """## 你在做什么
   （`ref-en:218`）。一两句风格/光线/画质的开场白写在 `[Shot 1]` **之前**（`:230`）。
   重要主体第一次清晰出现时，写清它被参考的特征、画面里的位置、当下的动作 ——
   **只写这一镜里实际看得见的东西**（`:246`）。
-- 说话的人：按实际发声顺序发 `(S1)`、`(S2)`，**不开口的人不发号**（`ref-en:127`）；
+- 说话的人：按实际发声顺序发 `(S1)`、`(S2)`，**不开口的人不发号**（`base-en:127`）；
   同一个人全片同一个号，同时说话写 `(S1,S2)`（`:127`）。说话人第一次出现要给出建立
   身份的信息：角色类型、年龄、性别、在不在画内、音高、音色、语速、口音（`:129`）。
-  台词跨切点用 `<scenetrans>`，被片尾截断用 `<cutoff>`（`:142`）。
-- `overall_soundscape` 只管环境声和物理声（`ref-en:154`）；观众才听得见的配乐放
+  台词跨切点用 `<scenetrans>`，被片尾截断用 `<cutoff>`（`ref-en:221`）。
+- `overall_soundscape` 只管环境声和物理声（`ref-en:284`）；观众才听得见的配乐放
   `non_diegetic_music`（`:162`）。
 - 复刻任务的描述长度**跟着原片复杂度走**，不用凑生成任务的 350–500 词（`ref-en:242`）。
 
@@ -122,7 +122,7 @@ identifiable target subject
 `<Subject N>`」。官方给了两种写法，按这一段实际复用了什么自己选：
 
 ```text
-合并（ref-en:55-58）：
+合并（ref-en:54-58）：
 <Subject 1> is the woman whose appearance comes from <Picture 1>
 and whose walking motion comes from <Video 1>.
 
@@ -131,15 +131,53 @@ and whose walking motion comes from <Video 1>.
 and a thin silver necklace.
 ```
 
-**写外观时抄哪些特征**：官方所有示例指认一个人，写的都是**发型 + 服装 + 配饰**：
+**写外观时抄哪些特征**：`ref-en:37` 要求写出 **the main features to follow**
+（这个标签要跟随的主要特征）。参考图是**身份锚点**，官方把它管什么写死成一张清单
+（`music-video-subtitle-generator/SKILL.md:114`）：
 
-- `ref-en:51`：`with long dark hair, a blue cardigan, and a thin silver necklace`
-- `ref-en:314`：`with long blonde hair and a light-pink button-down shirt with rolled-up sleeves`
-- `ref-en:324`：`identity, long hair, and light-pink shirt`
-- `ref-en:330`：`the young woman with long blonde hair and a light-pink button-down shirt`
+> Character reference card: controls character **identity, facial aura, hairstyle,
+> clothing silhouette, proportions, posture, and presence**.
 
-**官方全文没有一处写五官**（脸型、眼睛、眉骨、肤色，一处都没有）。
-五官交给 `<Picture N>` 那张图本身，用文字去写它只会让模型改按文字造脸。
+**这张图只管这六件事**：身份 / 面部气质 / 发型 / 服装轮廓 / 比例 / 姿态与存在感。
+官方换人模板又单独把脸写死一遍（`h3-video-prompt-template.md:20`
+`Lock exact face, hairstyle, glasses if present, facial proportions, body identity`；
+中文版 `:42`「必须保留脸、人脸比例、发型、眼镜（如有）」）。
+
+所以 `<Subject N>` 的定义里**要写脸**：先说外观来自 `<Picture N>`，再写**脸型轮廓 +
+最显著的 1–2 个五官特征**（戴眼镜就写眼镜）**+ 面部气质**，然后发型、服装轮廓、身体比例。
+脸漂了时官方的处方也是这条（`co-op SKILL.md:54`：`explicitly preserve identity
+anchors, hairstyle, and outfit anchors`）。
+
+⚠️ **它不管的事，一个字都不许从图里搬**（`co-op-game-intro-generator/SKILL.md:24`：
+`Do not inherit photographic realism, skin texture, real-world lighting, camera
+quality, or the original image style`）：背景、场景、光线、画风、画质、写实度 ——
+那些全部来自 `<Video 1>`。官方还要求每张图只有一个窄任务（`music-video:111`
+`Assign each reference image one narrow job`），这张图的窄任务就是角色。
+
+🩸 **光心里知道没用，必须写出来 —— 而且必须一字不改地写成这句**（换图号，别改词），
+放在每一段 `<Subject N>` 定义的**末尾**：
+
+```text
+The scene, background, lighting, and image style must not be inherited from <Picture N>; they come from <Video 1>.
+```
+
+为什么非写不可（2026-11-01 实测）：不写这句的那一版，脸是换对了，**整个场景也被搬到
+参考图那间古风庭院**，原片的明亮客厅直接没了 —— 用户当场指出「背景也跟过去了」。
+官方把"参考卡不许互相串味"列成验收项（`music-video:191`
+`Are character / scene / typography cards isolated without cross-contamination?`），
+`co-op:24` 也把 `real-world lighting … the original image style` 明列成不许继承的东西。
+**这是硬闸**：没这句的提示词会被判红退回重写。
+
+⚠️ **姿态不从图里取**：复刻的定义是动作、站位、手势都跟原片走
+（`ref-en:54-58` 的 `whose … motion comes from <Video 1>`），图只提供静态身份。
+
+⚠️ 但**别把五官写成一长串形容词**。官方要的是「锁定」（`Lock exact face /
+facial proportions`），不是替你设计一张脸 —— 写满眉眼鼻嘴的形状、肤色、年龄，
+模型会照文字造脸，就不再照图。
+
+`ref-en:51 / :314` 那两句只列发型和服装，是因为那些例子都是 `fully_preserved`
+（同一个人原样留在画面里，脸本来就对）。**换人（`attribute_transfer`）不一样**：
+要转移的正是这张脸上的身份特征。
 
 **别写画面里没有的东西**：`ref-en:246` 要求只写 "within what is actually visible in
 the shot"。所以不要写「原片那套黑发、开衫、牛仔裤不再出现」这种否定句 ——
@@ -198,6 +236,14 @@ _ANGLE = re.compile(r"<[^<>\n]{1,40}>")
 _VISUAL_MARKS = ("fully_preserved", "partially_preserved",
                  "attribute_transfer", "weak_reference")
 _AUDIO_MARKS = ("fully_copy", "partially_copy", "reference", "weak_reference")
+
+#: 参考图**只管角色、不许把场景带过去**的那句必须原样出现（2026-11-01 实测漏了它
+#: 就整间古风庭院被搬进成片）。出处：`music-video:191` 参考卡验收项
+#: 「cards isolated without cross-contamination」+ `:111` 每张图一个窄任务 +
+#: `co-op:24` `Do not inherit … real-world lighting … the original image style`。
+_ISO = re.compile(
+    r"The scene, background, lighting, and image style must not be inherited "
+    r"from <Picture (\d+)>; they come from <Video 1>\.", re.I)
 
 
 def check(brief: dict, segments: list[dict]) -> list[str]:
@@ -274,6 +320,25 @@ def check(brief: dict, segments: list[dict]) -> list[str]:
         if bad_pic:
             red.append(f"第 {i} 段引用了不存在的图号：<Picture {'>、<Picture '.join(bad_pic)}>"
                        f"（这次最多 <Picture {n_pic}>）")
+
+        # --- 参考图只管角色，场景/背景/光线/画风不许跟过去（2026-11-01 实测）---
+        # 🩸 这条以前只写在 SYSTEM 里当提醒，输出里从没出现过 —— 结果脸换对了，
+        #   整间古风庭院被一起搬进成片，原片的客厅没了。提醒没进产物 = 等于没有。
+        #   现在要求这句**原样**出现在 subject_definitions（图号要对得上）。
+        _pics_in_defs = {n for k, n in _LABEL.findall(defs) if k == "Picture"}
+        if _pics_in_defs and "<Video 1>" in p:
+            m_iso = _ISO.search(p)
+            if not m_iso:
+                red.append(
+                    f"第 {i} 段没写「参考图只管角色」那句 —— 必须原样写进 "
+                    "subject_definitions：`The scene, background, lighting, and image "
+                    "style must not be inherited from <Picture N>; they come from "
+                    "<Video 1>.`（`music-video:191` 参考卡不许互相串味；"
+                    "不写这版实测把参考图的场景整间搬进了成片）")
+            elif m_iso.group(1) not in _pics_in_defs:
+                red.append(f"第 {i} 段那句里的图号 <Picture {m_iso.group(1)}> "
+                           f"不是这一版定义过的图（定义过的是 "
+                           f"{'、'.join('<Picture ' + x + '>' for x in sorted(_pics_in_defs))}）")
 
         # --- retention 每个标号一行、标记合法（ref-en:157 / :190-197）---
         ret = _section(p, "retention_analysis")
@@ -419,14 +484,22 @@ def brief_text(brief: dict) -> str:
                                pic="<Picture {n}>", audio="<Audio 1>")
     tl = brief.get("target_looks") or []
     if tl:
-        lines = ["", "## 换人参考图里那个人（看图记下来的，**只用来判断性别和大致类别**）",
-                 "（🩸 **不要把五官/脸型写进 `subject_definitions`。** H3 官方"
-                 "全文没有一处描述人的五官 —— 官方示例指认一个人只用**发型 + 服装"
-                 "+ 配饰**（`ref-en:47`：`with long dark hair, a blue cardigan, "
-                 "and a thin silver necklace`），外观本身一律用 "
-                 "`whose appearance comes from <Picture N>` 交给图片（`ref-en:57`）；"
-                 "retention 里也只写 `identity`（`ref-en:324`）。"
-                 "下面这些词是用来看图判断性别/类别的，**不是**抄进提示词用的。"
+        lines = ["", "## 换人参考图里那个人（看图记下来的主要特征，**写 `<Subject N>` 要用**）",
+                 "（🩸 **这张图管六件事，只这六件**（`music-video-subtitle-generator/SKILL.md:114` "
+                 "的 character reference card）：身份 / 面部气质 / 发型 / "
+                 "服装轮廓 / 比例 / 姿态。`ref-en:37` 要的 the main features to follow "
+                 "就是这六项；官方模板又把脸单独写死一遍：`Lock exact face, hairstyle, "
+                 "glasses if present, facial proportions, body identity`"
+                 "（`h3-video-prompt-template.md:20`；中文版 `:42`「必须保留脸、人脸比例」）。"
+                 "写法：先说外观来自 `<Picture N>`，再写**脸型轮廓 + 最显著的 1–2 个五官"
+                 "特征（戴眼镜就写眼镜）+ 面部气质**，然后发型、服装轮廓、身体比例。"
+                 "**姿态不从图里取** —— 复刻的动作、站位、手势一律按 `<Video 1>` 写。"
+                 "**它不管的事一个字都不许从图里搬**（`co-op-game-intro-generator/"
+                 "SKILL.md:24`：`Do not inherit photographic realism, skin texture, "
+                 "real-world lighting, camera quality, or the original image style`）："
+                 "背景、场景、光线、画风、画质、写实度都是原片的事（`music-video:111` "
+                 "「Assign each reference image one narrow job」）。"
+                 "别写成一长串形容词 —— 官方要的是「锁定」，不是替你设计一张脸。"
                  "括号里是**这个人的性别**：写了男性/女性就按它写主语；写「看不出」"
                  "就用中性说法（the person / they），**不要**沿用原片那个人物的性别）"]
         for r in tl:
@@ -442,15 +515,17 @@ def brief_text(brief: dict) -> str:
         # 🩸 2026-11-01 主人：「上传了定妆图和没定妆图肯定有区别的，绝对不能混一起。」
         #   有图时上面那段明说了"外观交给 <Picture N>"；**没图时原来整段不存在**
         #   —— agent 没有任何一句关于"人怎么写"的指令，只能自己猜。
-        #   这里把没图那条路也写死：外观来自原片本身（`ref-en:47` 的写法）。
+        #   这里把没图那条路也写死：外观来自原片本身（`ref-en:314` 的写法）。
         #   只在**画面里确实有人**时才说 —— 纯场景/纯产品单里，人根本不出场，
         #   多这段是噪音，还会把 agent 的注意力拽到不存在的角色上。
         text = text + "\n" + "\n".join([
             "", "## 本单**没有**定妆参考图",
-            "（这一段画面里出现的所有人，外观全部来自原片本身。按 `ref-en:47` 的写法"
-            "只写**发型 + 服装 + 配饰**（`with long dark hair, a blue cardigan, "
-            "and a thin silver necklace`），**不描述五官/脸型**；"
-            "外观用 `the woman in <Video 1>` 这种方式交给原片，靠文字锁不住脸）",
+            "（这一段画面里出现的所有人，外观全部来自原片本身 —— 脸是原片给的那张，"
+            "模型看得见。所以文字只负责**指认**是画面里哪个人，按 `ref-en:314` 的示例"
+            "写**发型 + 服装 + 配饰**：`the young woman in <Video 1>, with long dark "
+            "hair, a blue cardigan, and a thin silver necklace`。"
+            "**不要用文字去描述五官**：这张脸本来就该跟原片一模一样，"
+            "写成文字反而给了模型一把能覆盖原片的尺子）",
         ])
     return text
 

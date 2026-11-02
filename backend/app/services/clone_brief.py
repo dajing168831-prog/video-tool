@@ -93,11 +93,23 @@ def _refs_of(plan: dict) -> list[dict]:
     #   我们自己合成的；模型只有拿到 @音频1 才会按它对齐口型时点
     #   （官方 `sd25-pe:623`「负责…口型时点…」）。漏掉这条 = 口型对不上。
     if plan.get("audio_ref"):
-        out.append({
-            "pic": 0, "slot": "audio",
-            "role": "原片这一段的人声，提示词里写 @音频1："
-                    "替换后的人物按这条音频的音色与台词说话，口型时点对齐它",
-        })
+        # 🩸 2026-11-01：两种声音模式**不能写成同一句**。
+        #   · `original` = 保留原声：喂进去的就是原片那条音轨，成片要**复用**它
+        #     （H3 官方 `ref-en:118` 原句「<Audio 2> is the synchronized audio
+        #     track of <Video 1> and is reused in the target video.」）。写成
+        #     「按音色与台词说话」，模型会自己重说一遍 —— 声音不是原声，节奏也
+        #     和原片不一致，口型跟着飘（2026-11-01 实测：agent 把它写成
+        #     `voice-timbre reference`，retention 又写 `partially_copy`，
+        #     定义和标记自相矛盾，违反 `ref-en:35`）。
+        #   · `tts`/`mix` = 我们自己合成的配音：那时才是"按音色与台词说话"。
+        _amode = str((plan.get("spec") or {}).get("audio") or "tts").strip().lower()
+        if _amode == "original":
+            _role = ("原片这一段的**同步音轨**，提示词里写 @音频1："
+                     "成片**复用这条原声**（不是照着它重说一遍），口型跟着它走")
+        else:
+            _role = ("我们合成的配音，提示词里写 @音频1："
+                     "替换后的人物按这条音频的音色与台词说话，口型时点对齐它")
+        out.append({"pic": 0, "slot": "audio", "role": _role})
     for i, slot in enumerate(slots):
         if i >= len(ordered):
             break

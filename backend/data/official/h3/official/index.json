@@ -1,0 +1,21 @@
+[
+  {
+    "sha8": "11f12610",
+    "task_types": "video editing + audio reference + audio reuse",
+    "sources": [
+      "README.md",
+      "README.zh-CN.md",
+      "README.ja.md",
+      "README.ko.md"
+    ],
+    "chars": 3554
+  },
+  {
+    "sha8": "dfe52602",
+    "task_types": "reference generation + audio reference",
+    "sources": [
+      "skills__h3-prompt-writing__references__ref-en.txt"
+    ],
+    "chars": 3831
+  }
+]

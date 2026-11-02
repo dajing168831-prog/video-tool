@@ -9,9 +9,13 @@
 """
 from __future__ import annotations
 
+import logging
+
 from app.services import model_specs
 from app.services.models import register
 from app.services.models.base import Caps, ModelAdapter, NoDialect
+
+log = logging.getLogger(__name__)
 
 PREFIXES = ("minimax",)
 DEFAULT_ID = "MiniMax-H3"
@@ -90,9 +94,14 @@ def _pre_compile(spec: dict, **kw) -> None:
     """
     # 🩸 2026-10-28：翻译簇已从共用层 `video_edit` 搬进 H3 自己的编译器。
     from app.services.models import h3_compile
-    h3_compile.h3_english_spec(spec)
-    # 翻不了（接口挂 / 译文还是中文）→ 拦住，绝不把中文发出去
-    h3_compile.require_english_extra(spec)
+    # 🩸 2026-11-02 撤拦路：正式出片的词由官方改写器产出（**中文进、六段英文出**），
+    #   翻译只是给旧六段式编译器/展示用的。翻不出来（接口挂、译文仍带中文）
+    #   不该把出片拦住 —— 改写器本来就认识中文。原来的 `raise` 已去掉。
+    try:
+        h3_compile.h3_english_spec(spec)
+        h3_compile.require_english_extra(spec)
+    except Exception as e:  # noqa: BLE001
+        log.warning("H3 自由文本自动翻译未完成（不改写器路径，不拦出片）：%s", e)
 
 
 # ---------------------------------------------------------------------------
@@ -193,10 +202,29 @@ def _agent_module():
     """本家「逐段指令」agent：H3 的英文六段式（`h3_agent`），**不是** 2.5 那套。
 
     🩸 两套模板不通用（中文五段标记 vs 英文六段式），所以各挂各的。
+    🩸 2026-11-02：出片时**不再走它** —— 逐段提示词改由官方改写器产出
+      （`_prompt_for`）。这个模块只留给预览/对照用。
     """
     from app.services import h3_agent
 
     return h3_agent
+
+
+def _prompt_for(cid: str, n: int, **kw) -> str:
+    """逐段提示词：官方改写器 H3-Context-IR（见 `h3_ir` 文件头）。
+
+    挂在适配器上而不是让共用层 import —— 共用层只认 `Caps.prompt_for` 有没有。
+    """
+    from app.services import h3_ir
+
+    return h3_ir.prompt_for(cid, n, **kw)
+
+
+def _prompt_sig(**kw) -> str:
+    """同一套输入的指纹（不调接口）。共用层拿它进段缓存键。"""
+    from app.services import h3_ir
+
+    return h3_ir.prompt_sig(**kw)
 
 adapter = register(ModelAdapter(
     # H3 走六段式，不经过 `edit_spec._clauses` —— 占位即可（真被调到就报错）。
@@ -235,6 +263,12 @@ adapter = register(ModelAdapter(
               # 参考视频 ≤3 段、**单段 [2,15]s、总时长 ≤15s**、单文件 ≤50MB。
               extend_ref_mode="clip",
               extend_ref_max_sec=15.0, extend_ref_max_mb=50.0,
+              # 🩸 2026-11-02：逐段提示词改由**官方改写器**产出（H3-Context-IR）。
+              #   官方「全能参考生成」的示例提示词就是一句自然语言，结构化由
+              #   `POST /v2/h3_context_ir` 生成；我们自己用 DeepSeek 现写六段式，
+              #   等于绕过了官方那一步 —— 同一素材四次跑出三份没换上的词。
+              prompt_for=_prompt_for,
+              prompt_sig=_prompt_sig,
               raw=_raw),
     specs_for=lambda m: model_specs.minimax(m or DEFAULT_ID),
     pic=lambda n: f"<Picture {n}>",

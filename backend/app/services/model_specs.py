@@ -98,7 +98,9 @@ SPECS = {
         "fps": 24,
         # 官方：H3-Max 480P / 768P，**不支持 2K**
         "resolutions": ("480P", "768P"),
-        # 官方：不传时默认 768P（不是 480P）
+        # 10-28 快照写「不传时默认 768P」；**11-02 版把这句删了**（只删了说明，
+        # 没说默认改了 —— 见 docs/H3-OFFICIAL-MAP.md §14 第 4 条）。
+        # 我们每条请求都显式带 `resolution`（`minimax.py:262`），这只是兜底值。
         "default_resolution": "768P",
         "max_ref_images": 9,
         "max_ref_videos": 3,
@@ -168,7 +170,8 @@ SPECS = {
         "fps": 24,
         # 官方：「480P / 768P，不支持 2K」
         "resolutions": ("480P", "768P"),
-        # 官方：「默认 768P」
+        # 10-28 快照写「默认 768P」；11-02 版这句已删除（只删说明，未说默认改变，
+        # 见 docs/H3-OFFICIAL-MAP.md §14 第 4 条）。请求总是显式带 resolution。
         "default_resolution": "768P",
         "max_ref_images": 9,
         "max_ref_videos": 3,

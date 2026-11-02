@@ -940,7 +940,9 @@
               <text>段要重新生成</text>
             </view>
             <view class="reuse-why" v-for="r in reuse.requests.slice(0, 4)" :key="r.unit">
-              <text class="reuse-shot">{{ r.label || ('第 ' + (r.unit + 1) + ' 段') }}</text>
+              <!-- 🩸 后端给的是秒数（`0.0–14.2s`），只显示秒数看不出"这是第几段"。
+                   段号 + 秒数一起给，别让人以为没有分段。 -->
+              <text class="reuse-shot">第 {{ r.unit + 1 }} 段 · {{ r.label }}</text>
               <text>{{ r.why }}</text>
             </view>
             <view class="reuse-why" v-if="reuse.requests.length > 4">
@@ -969,13 +971,24 @@
               <view class="peek-tag">
                 第 {{ i + 1 }} 段 · {{ seg.start }}–{{ seg.end }} 秒（{{ seg.duration }} 秒）·
                 {{ seg.audio ? '带音频' : '不带音频' }} ·
-                {{ seg.prompt_source === 'agent' ? '官方 skill 现写' : '机器按规则拼' }}
+                {{ seg.prompt_source === 'agent' ? '官方 skill 现写'
+                   : (seg.prompt_source === 'ir' ? '出片时由官方改写器生成（下面这版只是参考，不会发出）'
+                      : '机器按规则拼') }}
               </view>
-              <text class="peek-text">{{ seg.prompt }}</text>
+              <!-- 🩸 uni-app H5 全局 `html,body{user-select:none}` ⇒ 提示词默认选不中、
+                   复制不了。这是要看的东西，不是装饰：`selectable` 让它能被划选，
+                   旁边再给一键复制（手机上划选长文本很难用）。 -->
+              <text class="peek-text" selectable>{{ seg.prompt }}</text>
+              <view class="peek-copy" v-if="seg.prompt_source !== 'ir'"
+                    @click="copyPrompt(seg.prompt)">复制这段提示词</view>
+            </view>
+            <view class="peek-tip" v-if="peekAllIr">
+              这一家的提示词由官方改写器在出片时按「这一段真正的原片 + 在场的参考图 + 配音切片 + 边界帧」重写；
+              出片后在渲染目录的 request_00N.json 里能看到真正发出去的那一份。
             </view>
             <!-- 机器拼的版本每段句式一样，换人时容易"两张脸不一样、动作也对不上"。
                  点这里让 agent 读官方 skill 逐段现写，写完整份落盘，出片直接用这一版。 -->
-            <view class="peek-ai" v-if="peekSegments.length">
+            <view class="peek-ai" v-if="peekSegments.length && !peekAllIr">
               <button class="peek-ai-btn" :loading="peekAiLoading"
                       :disabled="peekAiLoading" @click="genPeekPrompts(false)">
                 {{ peekAiLoading ? '官方 skill 正在写…' : '用官方 skill 逐段重写（会调一次模型）' }}
@@ -986,6 +999,18 @@
           </view>
         </view>
 
+        <!-- 🩸 强制重跑（2026-11-02）：同样的输入本来**永远命中段缓存**，
+             模型一次都不调 —— 省钱，但也意味着效果不满意时再点一次没用
+             （实测三次渲染拿回同一个 476,680 字节的旧片）。
+             默认关；打开后逐段缓存失效、重新调模型，**会再扣一次费**。 -->
+        <view class="force-row" v-if="wantRegen">
+          <label class="force-lab" @click="forceRerun = !forceRerun">
+            <checkbox :checked="forceRerun" style="transform:scale(0.7)" />
+            <text class="force-text">
+              强制重跑（不复用已生成的段，会重新扣费）
+            </text>
+          </label>
+        </view>
         <button class="btn-primary" :loading="submitting" :disabled="submitting" @click="render">
           {{ submitting ? '提交中…' : (wantRegen ? '开始出片（含换画面）' : '开始出片') }}
         </button>
@@ -1095,6 +1120,9 @@ export default {
       estTimer: null,
       // 配音和画面差太多时是否允许强行对齐
       allowStretch: false,
+      // 🩸 强制重跑：跳过逐段产物缓存、重新调模型（会再扣费）。
+      //   默认关 —— 同样输入永远命中缓存；效果不满意要再抽一次才打开。
+      forceRerun: false,
       // 配音音色：列表来自后端（火山官方 2.0 音色表），按语言过滤
       voices: [],
       voiceId: '',
@@ -1282,11 +1310,24 @@ export default {
     peekSegments() {
       return (this.peek && this.peek.segments) || []
     },
-    // 🩸 只出第 1 段：只有「要换画面」且**不止一段**时才给这个按钮。
-    //   单段的单子本来一次就出完，预览没有意义；段数取的是出片预览里
-    //   真正要送模型的段（`peek.segments`），不是镜头数。
+    // 这一家的提示词由官方改写器在出片时生成：界面不能把"参考版"当成要发的东西，
+    // 「用官方 skill 逐段重写」这个按钮对它们也没有意义（点了花钱、词还不会被用）。
+    peekAllIr() {
+      return this.peekSegments.length > 0 &&
+        this.peekSegments.every((s) => s.prompt_source === 'ir')
+    },
+    // 🩸 只出第 1 段：只有「要换画面」且**不止一段视频**时才给这个按钮。
+    //   单段的单子本来一次就出完，预览没有意义。
+    //   🩸 2026-11-02 主人截图问「之前那个分段的按键哪里去了」：以前段数取的是
+    //   `peek.segments` —— 那是点开「查看每段要发给模型的提示词」才算出来的，
+    //   没点开 ⇒ `peek` 是 null ⇒ 这个按钮永远不渲染（代码有、界面上没有）。
+    //   改用页面上**已经算好**的复用清单：`reuse.requests` 和真跑共用同一份
+    //   `_desired_units`（backend/app/services/work.py:627），只数 `engine: "video"`
+    //   —— 静帧重绘不吃 `max_segments`（clone_pipeline.py:1502 截的是视频 `spans`）。
     canPreviewOne() {
-      return this.wantRegen && this.peekSegments.length > 1
+      if (!this.wantRegen) return false
+      const reqs = (this.reuse && this.reuse.requests) || []
+      return reqs.filter((r) => r.engine === 'video').length > 1
     },
     // 逐句列表只在「当前文案就是这些行拼出来的」时显示。
     // 翻译、恢复历史版本这些操作会把整段文案换掉 —— 那时列表还挂在那儿，
@@ -1899,6 +1940,16 @@ export default {
         this.peekAiLoading = false
       }
     },
+    // 提示词是给人核对用的：选中难（H5 有全局 user-select:none），这里给一键复制
+    copyPrompt(text) {
+      const data = String(text || '')
+      if (!data) return
+      uni.setClipboardData({
+        data,
+        success: () => uni.showToast({ title: '提示词已复制', icon: 'none' }),
+        fail: () => uni.showToast({ title: '复制失败', icon: 'none' }),
+      })
+    },
     async loadReuse() {
       if (!this.wantRegen) {
         this.reuse = null
@@ -2215,6 +2266,9 @@ export default {
         ttsDialect: this.edit.audio === 'original' ? '' : this.dialect,
         // 试听里手动调好的语速：必须带到出片，否则前台调了半天出片又变回自动
         speechRate: this.edit.audio === 'original' ? null : this.speechRate,
+        // 🩸 强制重跑：默认不传（老请求体形状不变）。同样输入本来会命中
+        //   逐段缓存、模型一次不调；效果不满意要再抽一次才需要它。
+        force: this.forceRerun === true,
       }
     },
     confirmScope(pickedShots, plan) {
@@ -2241,17 +2295,27 @@ export default {
       if (plan) {
         const c = plan.change || {}
         const a = plan.audio || {}
+        // 🩸 只出前 N 段：后端按**前 N 段**报数（`change.partial`），弹窗必须照它写。
+        //   以前点了「先出第 1 段」还显示「2 段 / 共 18.067 秒」—— 说的不是这一下要干的事。
+        if (c.partial) {
+          lines.push(`只出前 ${c.video_calls} 段（整片共 ${c.total_video_calls} 段 / ${c.total_video_seconds} 秒），其余这次不生成`)
+        }
         if (c.video_calls) lines.push(`视频模型：${c.video_calls} 段 / 共 ${c.video_seconds} 秒`)
         if (c.still_calls) lines.push(`静帧重绘：${c.still_calls} 镜 / 共 ${c.still_seconds} 秒`)
         if (c.mode === 'none') lines.push('画面：全部保留原片')
-        if (a.mode === 'original') {
+        if (c.partial) {
+          // 只出前 N 段时 `render` 在生成完那几段就返回了：不配音、不合成。
+          // 这时候还写「配音约 18 秒」是在报一件不会发生的事。
+          lines.push('声音：这次不配音、不合成，先看画面片段')
+        } else if (a.mode === 'original') {
           lines.push('声音：保留原声')
         } else {
           lines.push(`配音：约 ${a.voice_seconds} 秒（语速 ${a.speech_rate > 0 ? '+' : ''}${a.speech_rate}%）`)
         }
         const k = plan.contract || {}
         if (k.duration) {
-          lines.push(`成片：约 ${k.duration} 秒 · ${k.frames} 帧 · ${k.audio_sample_rate}Hz`)
+          // 只出前 N 段时交付的是片段、不是成片（后端也不拼接），别写成"成片"
+          lines.push(`${c.partial ? '这一段' : '成片'}：约 ${k.duration} 秒 · ${k.frames} 帧 · ${k.audio_sample_rate}Hz`)
         }
         // 报价按请求分组报，未知的那组继续显示 —— 不能拿已知几组的和冒充总价
         const p = plan.price || {}
@@ -3415,6 +3479,18 @@ export default {
   color: #111827;
   word-break: break-all;
   white-space: pre-wrap;
+  /* 全局 `html,body{user-select:none}` 会让提示词划不中（uni-app H5 默认） */
+  -webkit-user-select: text;
+  user-select: text;
+}
+.peek-copy {
+  display: inline-block;
+  margin-top: 8rpx;
+  padding: 4rpx 14rpx;
+  font-size: 21rpx;
+  color: #4b5563;
+  border: 1rpx solid #d1d5db;
+  border-radius: 8rpx;
 }
 /* 官方 skill 逐段重写（会调一次模型，所以按钮上把花费写出来） */
 .peek-ai {
@@ -3687,6 +3763,22 @@ export default {
   font-size: 20rpx;
   color: #6b7a88;
 }
+/* 强制重跑：默认关，打开才会跳过逐段缓存（会重新扣费） */
+.force-row {
+  display: flex;
+  justify-content: center;
+  margin: 20rpx 0 4rpx;
+}
+.force-lab {
+  display: flex;
+  align-items: center;
+}
+.force-text {
+  font-size: 24rpx;
+  color: #8a8fa3;
+  margin-left: 8rpx;
+}
+
 .btn-primary {
   width: 100%;
   height: 92rpx;

@@ -63,6 +63,14 @@ CASES: list[tuple[str, dict, dict]] = [
     ("换人", {"change": {"person": True, "person_ids": ["P1"]}},
      {"slots": ["person"], "looks": {"person": {"en": "jet-black bun, apricot dress",
                                                 "gender": "female"}}}),
+    # 🩸 2026-11-01：`original`（保留原声）和 `tts`（我们合成配音）喂给模型的
+    #   音频角色**必须说得不一样** —— 前者是「复用这条原声」，后者才是「按音色
+    #   重说」。以前两种写成同一句，H3 的 agent 就照着写成 `voice-timbre
+    #   reference`，模型于是自己重说一遍：声音不是原声、节奏也和原片对不上。
+    #   没有这条用例时，「原声」分支在金标准里**一条都没覆盖**（空集恒真）。
+    ("换人·原声", {"change": {"person": True, "person_ids": ["P1"]},
+                "audio": "original"},
+     {"slots": ["person"], "looks": {"person": {"en": "jet-black bun"}}}),
     ("换人+换装", {"change": {"person": True, "person_ids": ["P1"],
                              "wardrobe": True, "wardrobe_ids": ["P1"],
                              "wardrobe_desc_by_id": {"P1": "红色风衣"}}},

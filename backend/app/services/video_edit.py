@@ -674,7 +674,8 @@ def _audio_track(spec: dict, video: Path, workdir: Path) -> Path | None:
 
 
 def _seg_key(ch: str, phash: str, a: float, b: float, *, bf_mark: str = "",
-             au_mark: str = "", audio_sig: str = "", who: str = "") -> str:
+             au_mark: str = "", audio_sig: str = "", who: str = "",
+             ir_mark: str = "") -> str:
     """一段产物的输入指纹（缓存的唯一判据）。
 
     形状：`<通道>:<提示词哈希>:<起-止>[`:bf`][`:na`][`:<配音哈希>`][`:<换谁>`]`
@@ -686,7 +687,7 @@ def _seg_key(ch: str, phash: str, a: float, b: float, *, bf_mark: str = "",
     🩸 时间段固定在**第 3 段**：`work._parse_manifest_key` 靠形状找它，
     尾部这些可选标记随便加减都不影响解析。以前按"倒数第二段"取，一带标记就丢段。
     """
-    return f"{ch}:{phash}:{a:.2f}-{b:.2f}{bf_mark}{au_mark}{audio_sig}{who}"
+    return f"{ch}:{phash}:{a:.2f}-{b:.2f}{bf_mark}{au_mark}{audio_sig}{who}{ir_mark}"
 
 
 def _seg_audio(track: Path | None, a: float, b: float, dest: Path) -> Path | None:
@@ -907,7 +908,8 @@ def _person_ids_in_slots(spec: dict, slots: list[str]) -> list[str]:
             and edit_spec.PERSON_SLOTS[i] in slots]
 
 
-def _look_for(image: Path | None, slot: str = "person") -> dict:
+def _look_for(image: Path | None, slot: str = "person", *,
+              compute: bool = False) -> dict:
     """读参考图的外观描述（上传时由 `vision_plan.describe_person` 生成）。
 
     🩸 官方两家都要求主体定义写**具体特征**，只给图号不够：
@@ -929,9 +931,39 @@ def _look_for(image: Path | None, slot: str = "person") -> dict:
         from app.services import clone_store
 
         p = clone_store.subject_desc_path(Path(image).parent.name, slot)
-        if not p.exists():
+        data = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+        # 预览/计划这条路是「零费用」语义（`clone_pipeline` 的 `/plan`）：
+        # 缺描述就在这里停手，**不许**偷偷调视觉模型。补算只在真出片时做
+        # （调用方传 `compute=True`）。
+        if not data and not compute:
             return {}
-        data = json.loads(p.read_text(encoding="utf-8"))
+        # 🩸 2026-11-01 端到端漏洞（主人：「你重出的意义在哪里？我前端你没有做好
+        #   端到端吗」）：`describe_person` 只在**上传那一刻**跑，老任务永远停在
+        #   旧版本描述上 —— 前端点多少次「重新生成提示词」都拿不到新描述
+        #   （实测：v2 描述里一个五官都没有，agent 只能写空话，还自己编了一句
+        #   `calm, poised facial aura`）。在远端手动重算只是一次性掩盖。
+        #   这里按版本号补算：只有过期才真花一次视觉调用（几厘），算完写回
+        #   同一份缓存，之后一直命中。失败就按旧描述继续，不许挡住出片。
+        try:
+            from app.services import vision_plan
+
+            # 🩸 2026-11-02：**没有描述**和"描述过期"是同一件事，一起补算。
+            #   上传时的描述是**后台线程**算的（`api/clone.py`）：换一张新定妆照
+            #   马上点出片，这份文件可能还没落盘 → 描述为空 → 改写器只能写
+            #   `a refined face`，成片留下原片那张脸（v5 实测 p90 -0.013）。
+            #   只有缺/过期才真花一次视觉调用（几厘），算完写回同一份缓存。
+            stale = (not data) or (
+                str(data.get("_v") or "") != str(vision_plan._DESC_VERSION))
+            if stale:
+                fresh = vision_plan.describe_person(Path(image).parent.name,
+                                                    Path(image), slot)
+                if (fresh or {}).get("desc_en") and fresh.get("_v"):
+                    log.info("外观描述 %s → v%s 已补算（%s）",
+                             data.get("_v") or "缺", fresh.get("_v"),
+                             Path(image).parent.name[:12])
+                    data = fresh
+        except Exception as e:  # noqa: BLE001
+            log.warning("外观描述补算失败，按无描述继续：%s", e)
         zh = str(data.get("desc_zh") or "").strip()
         en = str(data.get("desc_en") or "").strip()
         if not (zh or en):
@@ -1550,10 +1582,17 @@ def _boundary_used(plan: dict, spans: list[tuple[float, float]],
                    acts: dict, shots=None) -> bool:
     """真的有没有哪一段带了边界帧（结果页/对账照着它说话）。
 
-    和 `_gen_spans` 里的判定必须同构：**上一段是重画过的**、时间上紧挨着、
-    **切点不在原片镜头切换上**、而且这个型号允许带。只数"分了几段"会骗用户
-    （2026-10-22 已栽过一次）。
+    🩸 2026-11-02：**边界帧已整条停用**（见 `_gen_spans` 顶部那条），所以恒为
+       `False`。函数名和签名留着，只为不动调用方。
+      别把下面那套老判定复活 —— 它算的是"如果按老规则会不会带"，而发出去的
+      请求里已经没有这张图了，照旧算就是**报一个没发生的事**。
     """
+    return False
+
+
+def _boundary_used__retired(plan: dict, spans: list[tuple[float, float]],
+                            acts: dict, shots=None) -> bool:
+    """（墓碑，保留原文备查，勿调用）"""
     if len(spans) < 2 or not boundary_allowed(plan["ch"], plan["model"]):
         return False
     rec = {"shots": list(shots or [])}
@@ -1819,6 +1858,57 @@ def _span_lines(rec: dict, a: float, b: float,
     return buckets if any(buckets) else None
 
 
+def _span_script(rec: dict, a: float, b: float) -> list[tuple[float, float, str]]:
+    """这一段**真实说过**的台词，秒数换成「相对本段起点」。喂给 H3 改写器用。
+
+    🩸 2026-11-02（H21）：官方 `h3-manual:248`「在音频复刻/部分复刻中，如果对于
+      人声对白内容…的保持有较高的要求，**强烈建议补充具体歌词文本内容**」；
+      `h3-manual:251`「**注意台词的长短尽量和镜头长短对齐（这个得强调下，很多
+      口型问题会来自于这个）**」。我们走的就是原声复用，却一直只给音频不给字。
+    🩸 实测翻车（`db253cfc`）：第 2 段从半句中间（4.133s）切起，改写器靠听音频
+      把上一句「然后我就这一个样品」补全后当成第 2 段第一句，模型照着又念了一遍
+      —— 这段音频里那句只剩尾巴 → 第 2 段嘴型全程错位。
+    · 归属按**字的中点**：跨界那个字归真正念它的那一段，不两段都算
+      （按「起点落在段内」会把跨界的字白送上一段，第 2 段开头又冒一个残字）。
+    · 没有字级时间（老任务 / 没识别出字）就按整句时间**按比例**裁 —— 与
+      `_span_lines` 同一套算法，不另立标准。
+    · 全部来自原片 ASR，**一个字不编**。
+    """
+    out: list[tuple[float, float, str]] = []
+    # 🩸 台词以 `voice_lines` 为准：原声模式下它就是 ASR 结果；**重新配音（tts/mix）
+    #   模式下 `speech` 仍是原片 ASR，而画面要念的是新文案** —— 拿 `speech` 会喂错词。
+    #   字级时间只有 ASR 那份有，所以按「文字完全一致」才借用，避免串到原片台词上。
+    segs = (rec.get("speech") or {}).get("segments") or []
+    chars_of = {str(s.get("text") or "").strip(): (s.get("chars") or [])
+                for s in segs}
+    lines = (rec.get("voice_lines") or []) or segs
+    for s in lines:
+        chars = s.get("chars") or chars_of.get(str(s.get("text") or "").strip()) or []
+        if chars:
+            keep = [c for c in chars
+                    if a <= (float(c.get("s") or 0.0) + float(c.get("e") or 0.0)) / 2 < b]
+            if not keep:
+                continue
+            txt = "".join(str(c.get("c") or "") for c in keep).strip()
+            s0 = max(float(a), float(keep[0].get("s") or a))
+            e0 = min(float(b), float(keep[-1].get("e") or b))
+        else:
+            s0 = float(s.get("start") or 0.0)
+            e0 = float(s.get("end") or 0.0)
+            txt = str(s.get("text") or "").strip()
+            if not txt or e0 <= a or s0 >= b:
+                continue
+            lo = (a - s0) / max(1e-6, e0 - s0) if s0 < a else 0.0
+            hi = (b - s0) / max(1e-6, e0 - s0) if e0 > b else 1.0
+            i0 = max(0, min(len(txt) - 1, int(round(len(txt) * lo))))
+            i1 = max(i0 + 1, min(len(txt), int(round(len(txt) * hi))))
+            txt = txt[i0:i1].strip()
+            s0, e0 = max(s0, float(a)), min(e0, float(b))
+        if txt:
+            out.append((round(s0 - a, 2), round(e0 - a, 2), txt))
+    return out
+
+
 def _gen_spans(
     plan: dict,
     video: Path,
@@ -1832,6 +1922,7 @@ def _gen_spans(
     base_pct: int = 52,
     span_pct: int = 20,
     max_segments: int = 0,
+    force: bool = False,
 ) -> list[Path]:
     """按区间逐段重制，返回**实际生成了的**片段（可能比 spans 少）。
 
@@ -1946,9 +2037,21 @@ def _gen_spans(
     #   只对 2.0 生效：2.5 的音频口径是「参考音频承载台词/音色」（`sd25-pe`），
     #   两代官方文档不同，不许互相搬。
     _amode = str((plan.get("spec") or {}).get("audio") or "tts").strip().lower()
+    # 🩸 2026-11-01 根因：这里原来是 `not edit_task_param`，注释写「只对 2.0 生效」。
+    #   2.0 下架后 2.5 被 `edit_task_param=True` 挡掉，**只剩 H3 走进来** ——
+    #   而 H3 正是官方明说「参考视频里有声音 ≠ 有音频参考」的那家
+    #   （`ref-en:112`：An ordinary reference video does not create `<Audio N>`
+    #   merely because the file contains sound.）。H3 走母版 ⇒ `seg_audio=None`
+    #   ⇒ 请求里一条音频都没有，提示词却写着 `<Audio 1>` 是口型参考
+    #   ⇒ 模型没有可跟的东西，嘴型必错（真实快照 `audio=false` 实锤）。
+    #   改成显式能力声明：没有模型声明 `audio_from_master` 就一律单独送音频。
+    #: 🩸 2026-11-02 台账审计：这个开关原来读的是**参数表字典**
+    #: （`_spec_for(...).get("audio_from_master")`），可 `model_specs` 里根本没人
+    #: 声明过这个键 —— 而能力声明实际写在 `Caps` 上（`models/base.py`）。
+    #: 声明一处、读另一处 = 永远 False，等于没接线。现在统一读 `ad.caps`。
     _master_audio = bool(
         _amode == "original" and audio_track is not None
-        and not _spec_for(ch, plan["model"]).get("edit_task_param"))
+        and getattr(ad.caps, "audio_from_master", False))
     # 🩸 配音（tts/mix）改一句词，画面里的口型就变了；可区间、提示词、型号、参考图
     # 全都没变 —— 键不带**音频内容**就会命中上一次的段，观众看到"新台词配旧口型"。
     # 这正是 P1 写下的边界：露脸说话 = 改词必须重新表演。
@@ -2050,47 +2153,50 @@ def _gen_spans(
                 refs_list = [refs_list[i] for i in keep_i]
                 log.info("第 %d 段：摘掉这一段没出现的人的参考图（%s）", n,
                          "、".join(sorted(drop)))
+        # 🩸 2026-11-02（H19）：原片里人比图多时（3 人只勾 2 位），必须写清
+        #   **哪张图替换哪一位**，否则改写器只认图1、或换到没勾的那个人身上。
+        #   方位来自盘点（`inventory.people[].position`），不是现编的。
+        #   顺序与人物槽位一致 ⇒ 与 `instruction()` 里的 `person_pics` 一一对应。
+        ir_ppl: list[dict] = []
+        ir_frame_n = 0
+        if plan.get("inventory"):
+            _all = _span_people(plan, target)
+            _idx = {s: i for i, s in enumerate(edit_spec.PERSON_SLOTS)}
+            ir_ppl = [_all[_idx[s]] for s in span_slots
+                      if s in _idx and _idx[s] < len(_all)]
+            # 🩸 这一段**画面里一共有几个人**（不是勾了几个）：决定要不要写
+            #   「替换左边那位」。原片本来就一个人时写方位 = 给一个不存在的区分。
+            try:
+                from app.services import vision_plan as _vp
+                ir_frame_n = len(_vp.people_in(plan["inventory"], a, cut_b))
+            except Exception:  # noqa: BLE001
+                ir_frame_n = 0
+        # 🩸 2026-11-02（H21）：这一段真实说过的台词（相对秒数）也要给改写器。
+        #   不给就只能靠它听音频 —— 从半句中间切起时它会把上一句补全写进来，
+        #   模型照着又念一遍（`db253cfc` 第 2 段实测）。文字来自原片 ASR。
+        #   ⚠️ 用 `b` 不用 `cut_b`：`cut_b` 是参考片多切的 0.5 秒尾巴，成片和
+        #   音频都只到 `b`；按 `cut_b` 算会把下一段开头的话算进来。
+        ir_lines = _span_script(rec, a, b)
         bf_mark = ""
         # 🩸 `:mau` = 母版自带原声（A-4 那条修法）。必须进缓存键：提示词/区间/参考图
         #   都没变的情况下，母版从"无声"变成"带音轨"是一次真实输入变化，不换键就会
         #   命中上一次的旧段 —— 改动等于没做。
         au_mark = (":mau" if _master_audio else
                    "" if not plan.get("audio_ref") or audio_track else ":na")
-        # 只有**上一段紧挨着这一段**才带边界帧。逐镜分诊的段之间可能隔着静帧重绘的镜，
-        # 那时上一段的尾帧是十几秒前的画面 —— 拿它当"连续"的锚反而会把画面往回拽
-        # 🩸 切点正好落在原片的镜头切换上时**不带边界帧**：上一段尾帧是上一个
-        # 场景的画面，拿它当"目标视频第一帧"会把旧场景钉进新镜头
-        # （2026-10-22 a47631b0：11.7s 是原片硬切，横跨切点的请求让模型把
-        #  <Subject 1> 塞进了新场景的空楼梯）。
-        adjacent = (n >= 2 and prev_generated
-                    and abs(float(spans[n - 2][1]) - float(a)) < 1e-3
-                    and not _at_shot_cut(rec, float(a)))
+        # 🩸 2026-11-02 主人拍板：**边界帧整条停用，任何一段都不再带**。
+        #   理由（主人原话，代码事实也对得上）：
+        #   · 第 2 段的参考视频就是从原片 [a, cut_b] 切出来单独上传的
+        #     （见上面 `scene.cut_clip` + `h3._submit`），它的第一帧天然就是
+        #     切点那一帧的原片画面 —— 接缝的信息本来就在参考视频里；
+        #   · 中间段还会往后多借 `_EXTRA = 0.5` 秒，接缝那半秒**两次生成都看过原片**。
+        #   ⇒ 再叠一张"上一段成片的尾帧"，是整条链上**唯一一个非原片来源的输入**：
+        #     它把上一次生成产生的偏差当成下一次的现实。
+        #   ⚠️ 它本来也没有官方出处：火山官方只要求「延长时承接**原视频**尾帧」
+        #     （`sd25-pe:649/695`），H3 只在 `ref-en:65` 规定"一张图当首帧时怎么写"。
+        #     我们这套来自第三方 hypit（原句 2026-10-23 已删，机制一直留到现在）。
+        #   `_last_frame` / `boundary_allowed` 已无调用点（墓碑留着，别复活）。
         bf = None
-        if adjacent and pieces:
-            try:
-                bf = _last_frame(pieces[-1], work / f"boundary_{n:03d}.jpg")
-            except Exception as e:  # noqa: BLE001
-                # 取不到尾帧就别把整条任务搞挂：退化成不带边界帧的分段
-                log.warning("第 %d 段取边界帧失败，按普通分段继续：%s", n, e)
-        # 🔻 2.0 系列这一段只带换人图，不带边界帧。
-        # 理由只有一条：`文字 + 1 条参考视频 + 1 张参考图` 是目前**唯一实测跑通过**
-        # 的形状（2026-10-21 11:07，任务 chunk_001 成功）；多一张少一张都没验过。
-        # ⚠️ 别再往这里写"官方只收一张"——官方 2.0 参考图是 0–9 张，那是之前
-        # 误判（当时 5.5s 段失败的真因是切点带了负 PTS 前置包，不是图片数量，
-        # 见 scene.cut_clip）。边界帧本来也和参考视频首帧重合，先不带。
-        if bf is not None and not boundary_allowed(ch, plan["model"]):
-            log.info("第 %d 段：按已验证的最小形状发（1 张换人图），本段不带边界帧", n)
-            bf = None
-        # 边界帧在提示词里的 <Picture N> 号 = 参考图张数 + 1。
-        # 🩸 MiniMax 走**提示词内定义**（官方 ref-en.txt:62 的"第一帧"写法）：
-        # 接口侧 first_frame 与 reference_video 互斥，只能按 reference_image 发；
-        # 但如果只在句尾加一句"保持一致"，模型根本不认（2026-10-22 实测第 2 段
-        # 开头 3 秒原片回灌）—— 标号必须进 subject_definitions，让它成为硬锚。
-        # 🩸 D7（2026-10-23）：2.5 **也**要走模板内定义（【时间线继承】），
-        # 不再用模板外追加的中文句（那句出处是 hypit 第三方，
-        # 违反 `sd25-pe:71`「模板优先」）。
-        bf_pic = (len(refs_list) + 1) if (
-            bf is not None and ad.caps.boundary_pic) else 0
+        bf_pic = 0
         # 盘点到了这一段要换的人 → 把"那个人"写进这一段的提示词；
         # 目标不在但有别的改动 → 只摘掉换人项，其余照做
         # 音轨没拿到 → 这一段按"没有 <Audio 1>"重编译（否则提示词指着一个没传的素材）
@@ -2134,21 +2240,10 @@ def _gen_spans(
         # 缓存键用的是**编译后的提示词**，所以换成 agent 版后旧缓存自然失效。
         if _agent_segs.get(n):
             seg_prompt = _agent_segs[n]
-        if bf is not None:
-            refs_list.append(bf)
-            # 🩸 E6（2026-10-23）：原来这里给 2.0 追加一句「与@图片N（上一段成片的
-            # 最后一帧）…保持一致」。查证结果：**这句永远发不出去** ——
-            #   · 2.0 在 `boundary_allowed()` 就把 bf 置 None（只带换人图的既定形状）；
-            #   · 2.5 走 `_volc_25` 的官方模板句（`sd25-pe:654`）；
-            #   · H3 走 `ref-en:62` 的 first-frame 写法。
-            # 而它本身的出处是 hypit（第三方），2.0 官方对段间衔接给的是
-            # 「以转场切镜的时刻结尾」（`seedance-20-guide.md:375`）。
-            # ⇒ 死代码 + 无出处，已删；判据 `D:/tmp/h3run3/probe_e6.py` Y5 守门。
-            # 🩸 键从 `:bf` 改成 `:bf2`：边界帧的写法整段换了（旧版只加一句中文，
-            # 新版写进 subject_definitions），不换键会命中旧缓存里的坏段。
-            # 🩸 D7（2026-10-23）再升到 `:bf3`：**2.5** 也从"模板外追加"改成
-            # 「写进【时间线继承】」，沿用 :bf2 会拿回旧写法的段。
-            bf_mark = ":bf3"
+        # 🩸 2026-11-02：边界帧停用后，这里不再往参考图里追加任何东西。
+        #   缓存键里的 `:bf3` 标记也随之消失 —— 旧段带边界帧、新段不带，
+        #   是两种真实不同的输入，不能共用缓存。
+        bf_mark = ""
 
         # 参考图先按该通道的官方硬门槛收口（边长/体积），再发。
         # 6000px 的原图直接发会在上传后被拒；重编码是本机 CPU，不花钱。
@@ -2163,16 +2258,73 @@ def _gen_spans(
             who = ":" + hashlib.sha1(
                 "|".join(f"{t.get('id')}|{t.get('desc_zh')}|{t.get('desc_en')}"
                          for t in target).encode("utf-8")).hexdigest()[:6]
+        # 口型参考切片要在**算缓存键之前**拿到：改写器的指令里有一句
+        # 「音频1是视频1的同步音轨…」，有没有这条音频决定指令内容，也决定指纹。
+        # 以前这段在"缓存没命中"分支里才算，指纹根本拿不到。
+        seg_audio = (None if _master_audio else
+                     _seg_audio(audio_track, a, b,
+                                work / "audio" / f"seg_{n:03d}.wav"))
+        # 🩸 2026-11-02：**改写器的输入指纹必须进段缓存键**。
+        #   以前键里只有代码编译版提示词（下一行的 `seg_prompt`），改写器产出的
+        #   那份词是在缓存判定**之后**才生成的 —— 它变了，键却不变。
+        #   全靠人工标记 `:irN` 兜着；我漏升一次，07:05 预调的新词出片时
+        #   一次都没被用上，三次渲染拿回同一个 476,680 字节的旧片。
+        #   现在：指令/素材/区间/时长任何一项变了，指纹就变 → 必然重新生成。
+        # 🩸 2026-11-02：**想保持的特征要写进改写器的输入**（官方 `h3-manual:248`
+        #   「如果素材中有非常想要保持的特征，建议明确写出来」）。以前这里不传，
+        #   改写器产出的 `<Subject 1>` 只有发簪和衣服、零个五官词 → 成片保住原片
+        #   那张脸（SFace 0.09）。文本来自定妆照自己的描述文件，不是现编的。
+        ir_looks = {s: _look_ir((plan.get("looks") or {}).get(s))
+                    for s in span_slots}
+        ir_sig = ""
+        if ad.caps.prompt_sig is not None:
+            ir_sig = ad.caps.prompt_sig(
+                slots=span_slots,
+                dur=_gen_duration(dur, plan.get("model") or ""),
+                images=refs_list, boundary_pic=bf_pic,
+                extra=str((plan.get("spec") or {}).get("extra") or ""),
+                looks=ir_looks,
+                # 🩸 2026-11-02（缺口二）：段内切点进改写器输入，也进指纹 ——
+                #   改写器不知道有几刀就按一镜到底写（原片 5 镜 → 产出只有
+                #   `[Shot 1]`）。切点是相对段起点的秒数，与切片同一条时间轴。
+                cuts=cuts,
+                # 🩸 2026-11-02（缺口三）：音频用途也要进改写器输入、也进指纹。
+                #   没有音轨可传时给空串 —— 提示词里就不该出现「音频1」。
+                # ⚠️ 默认值必须是 `tts`，与 `_audio_track()` 的
+                #   `spec.get("audio") or "tts"` 一致 —— 否则 spec 不写 audio
+                #   时音轨照样传了，提示词却一个字不提。
+                audio_mode=((plan.get("spec") or {}).get("audio") or "tts")
+                if audio_track else "",
+                # 🩸 2026-11-02（H19）：方位要进指纹 —— 换了勾选的人，
+                #   词就变，缓存键必须跟着变，否则拿回上一次的旧词。
+                ppl=ir_ppl, frame_n=ir_frame_n,
+                # 🩸 2026-11-02（H21）：台词也进指纹 —— 改了文案/切点导致台词
+                #   分布变了，就必须换键，否则拿回上一版的旧词。
+                lines=ir_lines,
+                video_src=str(video), video_span=(a, cut_b),
+                audio_src=(str(audio_track) if audio_track else ""),
+                audio_span=(a, b))
         # 🩸 键必须带**这一段最终发出去的提示词**。只带 plan 级 phash 时，改了提示词
         # 编译逻辑（例如这次加的镜头结构句）键不变 → 命中旧缓存 → 改动等于没做。
         seg_hash = hashlib.sha1(
             f"{plan['phash']}|{seg_prompt}".encode("utf-8")).hexdigest()[:12]
+        # 改写器的指纹进键（见上面 `ir_sig`）。没有 `prompt_sig` 的机器
+        # 退回人工版本标记 `:ir8` —— 那是老机制，只给还没接指纹的模型留着。
+        # 历史：`:ir2`–`:ir8` 是 2026-11-02 逐轮人工升的版本号；每次改指令都要
+        # 记得升，漏一次就命中旧段（实测三次渲染拿回同一段）。现在由 `ir_sig`
+        # 自动覆盖，**别再手升版本号**。
+        ir_mark = (f":ir:{ir_sig}" if ir_sig
+                   else ":ir8" if ad.caps.prompt_for is not None else "")
         key = _seg_key(ch, seg_hash, a, b, bf_mark=bf_mark,
-                       au_mark=au_mark, audio_sig=audio_sig, who=who)
+                       au_mark=au_mark, audio_sig=audio_sig, who=who,
+                       ir_mark=ir_mark)
 
-        if manifest.get(seg.name) == key and gen.exists():
+        # 🩸 2026-11-02「强制重跑」（`force`）：同一个键默认永远命中缓存 ——
+        #   这既能省钱，也意味着**失败了就再也抽不到第二次**（模型本来就不确定）。
+        #   用户明确点了"强制重跑"才跳过两级缓存，重新调模型（会再扣一次费）。
+        if not force and manifest.get(seg.name) == key and gen.exists():
             log.info("第 %d 段命中本目录缓存，不重复生成", n)
-        elif _cache_get(cid, key, gen):
+        elif not force and _cache_get(cid, key, gen):
             # 🩸 缓存键里**有这一段最终发出去的提示词**（见上面 seg_hash）。
             # 提示词一改，键就变 → 必然重新生成；键没变，说明这次要的就是
             # 一模一样的那段，复用是省钱而不是挡路。
@@ -2205,9 +2357,57 @@ def _gen_spans(
             # （audio_track 在 original 模式下就是 None），拿到 2 秒以内或截失败也不喂。
             # 🩸 原声模式的 2.0 不再单独送 `audio_url`：同一条音轨已经挂在母版上了，
             #   再送一份等于又回到 A-4 说的"当音色样本"那条路（见 `_master_audio`）。
-            seg_audio = (None if _master_audio else
-                         _seg_audio(audio_track, a, b,
-                                    work / "audio" / f"seg_{n:03d}.wav"))
+            # 口型切片已在算缓存键之前取好（见上面 `seg_audio`）；这里不再重切。
+            # 🩸 2026-11-02：H3 的逐段提示词改由**官方改写器**产出
+            #   （一句自然语言 + 这一段真正的素材 → `POST /v2/h3_context_ir`）。
+            #   放在这里而不是 `/prompts`：改写器看的必须是**这次真正要发的东西**
+            #   —— 切片后的原片段、按段摘过缺席者的参考图、这一段的配音切片。
+            #   结果按输入指纹落盘，同一素材重跑拿回同一份词（不抽卡）。
+            if ad.caps.prompt_for is not None:
+                seg_prompt = ad.caps.prompt_for(
+                    cid, n, video=seg, images=refs_list, slots=span_slots,
+                    audio=seg_audio,
+                    dur=_gen_duration(dur, plan.get("model") or ""),
+                    extra=str((plan.get("spec") or {}).get("extra") or ""),
+                    # 边界帧在 refs_list 里的号：改写器得知道那张图是"第一帧"，
+                    # 否则会当成又一张人物图来定义（`ref-en:62` 的写法）
+                    boundary_pic=bf_pic,
+                    # 🩸 2026-11-02：五官**不是**我编的句子，是定妆照自己的描述
+                    #   文件（`subject_desc.json`），官方 `h3-manual:248` 明写
+                    #   「想保持的特征建议明确写出来」。撤掉它那次实测 SFace 0.09。
+                    looks=ir_looks,
+                    # 🩸 2026-11-02（缺口二）：段内切点必须进改写器的输入。
+                    #   官方 `base-en:86` 要求每个 `[Shot N]` 以严格递增的切点
+                    #   时间开头；不告诉它有几刀，它就按一镜到底写（原片 5 镜
+                    #   → 产出只有 `[Shot 1]`）。切点是相对段起点的秒数。
+                    cuts=cuts,
+                    # 🩸 2026-11-02（缺口三）：音频用途必须写进改写器的输入
+                    #   （`h3-manual:248` 的「音频复用」「音色参考」两档）。
+                    #   没有音轨可传 → 空串，提示词里不提音频。
+                    # ⚠️ 默认 `tts`，与 `_audio_track()` 的
+                    #   `spec.get("audio") or "tts"` 对齐。
+                    audio_mode=((plan.get("spec") or {}).get("audio") or "tts")
+                    if seg_audio is not None else "",
+                    # 🩸 2026-11-02（H19）：多人换人时写明「哪张图替换哪一位」，
+                    #   方位来自盘点，与人物槽位同序。
+                    ppl=ir_ppl, frame_n=ir_frame_n,
+                    # 🩸 2026-11-02（H21）：这一段真实说过的台词（相对秒数）。
+                    #   不给就只能靠改写器听音频，从半句中间切起时它会把上一句
+                    #   补全当成这一段的第一句（`db253cfc` 第 2 段实测翻车）。
+                    lines=ir_lines,
+                    # 🩸 缓存键要「原片 + 区间」，不是切片文件字节：同一段每次
+                    #   重切都会生成新文件，字节差一点指纹就变，预调好、审过的
+                    #   那份出片时永远命不中（改写器于是重抽一次）。这里只把
+                    #   原始路径和区间交出去，怎么算指纹是适配器自己的事。
+                    video_src=str(video), video_span=(a, cut_b),
+                    audio_src=(str(audio_track) if audio_track else ""),
+                    audio_span=(a, b))
+                # 🩸 2026-11-02 **退回过度干预**：这里原来还传了两样东西 ——
+                #   `looks=_span_looks(...)`（把参考图长相算成英文塞进句子）和
+                #   `audio_mode`（按原声/配音换不同措辞）。加上"直接修改/不重新生成"
+                #   "成片里只有图1的人"，一共 4 条规则，等于用中文预写六段式。
+                #   现在全撤：只告诉改写器"每份素材管什么"，其余让它自己组织。
+                #   顺带省掉 `_span_looks` 里那次花钱的 `describe_person` 调用。
             # 🩸 2026-10-31 第 1 步：一段 2.0 请求**发之前**先过形状闸。
             #   一条复刻里每一次生成请求的形状只有一种（1 张人物图 + 1 段原片
             #   + 1 条音频 + 1 句提示词 + 整数时长）。偏离的形状一次都没被验证过，
@@ -2397,6 +2597,7 @@ def replace_spans(
     workdir: Path,
     progress=None,
     max_segments: int = 0,
+    force: bool = False,
 ) -> list[Path]:
     """按给定区间重制，返回**实际生成了的**片段（`max_segments`>0 时可能比 spans 短）。
 
@@ -2423,7 +2624,7 @@ def replace_spans(
                             style_video=style_video)
     return _gen_spans(plan, video, spans, rec=rec, cid=cid, workdir=workdir,
                       progress=progress, label="重制", base_pct=52, span_pct=18,
-                      max_segments=max_segments)
+                      max_segments=max_segments, force=force)
 
 
 def replace_whole(
@@ -2443,6 +2644,7 @@ def replace_whole(
     workdir: Path,
     progress=None,
     max_segments: int = 0,
+    force: bool = False,
 ) -> dict:
     """整片重制。返回 {video, channel, chunks, seconds[, partial, preview]}。
 
@@ -2480,7 +2682,7 @@ def replace_whole(
     work = workdir / "whole"
     pieces = _gen_spans(plan, video, spans, rec=rec, cid=cid, workdir=work,
                         progress=progress, label="画面重制",
-                        max_segments=max_segments)
+                        max_segments=max_segments, force=force)
     if kept:
         _p(progress, f"{kept} 段盘点无目标人物，保留原片未重画", 74)
     # 🩸 只跑了前几段时**绝不拼接**：缺段拼出来的片子时长和内容都是残的，
@@ -2841,6 +3043,18 @@ def _write_request(work: Path, n: int, *, ch: str, plan: dict, dur: float,
             }, ensure_ascii=False, indent=1), encoding="utf-8")
     except Exception as e:  # noqa: BLE001
         log.warning("请求快照写入失败：%s", e)
+
+
+def _look_ir(look) -> str:
+    """交给官方改写器的外观描述：**优先中文**（改写器的输入是中文），没有退回英文。
+
+    🩸 2026-11-02：官方 `h3-manual:248`「如果素材中有非常想要保持的特征，建议
+    明确写出来」。这份文本是定妆照自己的描述文件里存的，不是在这里现编的；
+    不传它，改写器产出的 `<Subject 1>` 只有发型和衣服、零个五官词，成片不换脸。
+    """
+    if not isinstance(look, dict):
+        return str(look or "").strip()
+    return str(look.get("zh") or look.get("en") or "").strip()
 
 
 def _look_text(look: dict, prompt: str) -> str:

@@ -217,13 +217,239 @@ def _run(work: Path) -> int:
                         wd_first["prompt"]) is not None, True)
 
         print("== MiniMax 通道 ==")
-        # 🩸 2026-10-26：H3 六段正文必须是英文（`ref-en:5`）—— 「补充说明」是用户
-        # 自由文本、原样拼进正文。主人拍板后改成**自动翻成英文**（花方舟 lite 的钱），
-        # 所以这里把翻译打桩（不联网不花钱），验的是"翻完真的进了提示词、且没有中文"。
-        from app.services import translate as _tr
-        _real_chat = _tr._chat
-        _tr._chat = lambda lines, target, **_kw: (["make the frame brighter"], {})
-        _tr.translate_text_cache_clear()
+        # 🩸 2026-11-02：H3 的逐段提示词改由**官方改写器**产出（`h3_ir` →
+        #   `POST /v2/h3_context_ir`）。这里是跨通道**接线**测试，不许打外网，
+        #   所以把改写器打桩：验的是
+        #     ① 共用层把这一段的素材 + 用户的补充说明**交到了改写器手上**；
+        #     ② 改写器返回的那一份**原样**就是这一段发出去的提示词。
+        #   至于"改写器写成什么样"，归 `p46_check`（六段式尺子）和真机验收，不归这里。
+        from app.services import h3_ir as _ir
+        _real_pf = _ir.prompt_for
+        # 出片时会给"缺描述"的参考图补算长相（`_span_looks` → `describe_person`）。
+        # 这是**联网的花钱调用**，接线测试一律打桩：这里只验"描述被交到了改写器手上"。
+        from app.services import vision_plan as _vp
+
+        _real_dp = _vp.describe_person
+        _ir_calls = []
+
+        def _fake_pf(cid, n, **kw):
+            _ir_calls.append(dict(kw, n=n))
+            return ("subject_definitions:\n<Subject 1> is the person in "
+                    "<Picture 1>.\n\nsummary:\n[video editing] The target video is "
+                    "an edited version of <Video 1>.\n\nretention_analysis:\n"
+                    "<Subject 1>: fully_preserved - ok\n")
+
+        _ir.prompt_for = _fake_pf
+        # 改写器只吃我们的**一句自然语言**，这句只交代「每份素材是什么」。
+        # 🩸 2026-11-02 主人拍板：「一比一配」—— 素材之外一个字都不许加。
+        _ins = _ir.instruction(["person"], boundary_pic=2)
+        check("指令点名了人物图", "人物参考图1" in _ins, True)
+        check("指令说清边界帧是第一帧",
+              "图2" in _ins and "第一帧" in _ins, True)
+        check("指令不带平台的 @ 写法", "@" not in _ins, True)
+        # 这条门盯的是「有没有又把我自己的规则加回去」：
+        # 五官描述 / 说话人 / 风格 —— 全是我加的，不是官方要求。
+        # 🩸 2026-11-02：`场景、背景` 从禁令里**移出**（不是放宽，是有出处了）——
+        #   官方换人范例 `h3-manual:192` 原句「确保水豚的毛发质感和光影与环境
+        #   融合」，环境/光影本来就要求保留。且实测只写「动作、镜头、口型」
+        #   那版场景被定妆照整段带走（同素材对照，只差这一句）。
+        _ban = ["严格保持", "不重新生成", "唯一出镜", "出镜的人物只有",
+                "视频1里画面中的人物", "同步音轨", "直接复用",
+                "说话的人是", "画面风格是"]
+        check("指令里没有我们自己加的规则句",
+              [w for w in _ban if w in _ins], [])
+        # 🩸 2026-11-02：`h3-manual:244` 那条
+        #   「完整提示词 = 参考素材说明 + 核心创意 + 画面过程说明」
+        #   说的是**改写器的输出**，不是它的输入 —— 官方调 H3-Context-IR 时
+        #   `text` 只有一句话（`scripts/readme/full-2k-ref2va-h3-context-ir.sh`）。
+        #   输入里出现成品骨架的小标题，等于把写好的提示词交给改写器复述。
+        _ins_def = _ir.instruction(["person"])
+        check("指令是自然语言，不带成品骨架的三个小标题",
+              [s for s in ("参考素材说明：", "核心创意：", "画面过程说明：")
+               if s in _ins_def], [])
+        check("指令是一段话，不分成多段", "\n" not in _ins_def, True)
+        # 🩸 2026-11-02（缺口一）：换人不再按「视频编辑」写。官方换人范例
+        #   `h3-manual:192` 用的是「动作模仿 + 替换为」；用途词表里对应的是
+        #   「动作参考（锁定动作）」「运镜参考（锁定运镜）」（`h3-manual:248`）。
+        #   实测：写「视频编辑」的 8 份产出，改写器一律标 `partially_preserved`
+        #   （= 改，`ref-en:166`）；写「动作/镜头」的 4 份标 `attribute_transfer`
+        #   （= 特征转移给另一个主体，`ref-en:167`），唯一换脸成功的那次在后一组。
+        # 🩸 2026-11-02（H20）：换人那句**照 `h3-manual:192` 的原句结构**写，五段齐全：
+        #   ①动作模仿 ②X替换为Y ③Y必须严格遵循原视频的运动轨迹 ④保持原有固定机位 ⑤光影与环境融合。
+        #   H16 压成「锁定动作和运镜」那次，产出把 `<Video 1>` 标成 `fully_preserved`
+        #   （`ref-en:167` 要的换人定性是 `attribute_transfer`），成片只换衣服不换脸。
+        _OFFICIAL = ["参考视频1进行动作模仿", "替换为", "必须严格遵循原视频的运动轨迹",
+                     "保持原有的机位和分镜不变", "光影与环境与原片融合"]
+        check("换人句含官方范例的五个要点",
+              [s for s in _OFFICIAL if s not in _ins_def], [])
+        # ⚠️ **不禁止任何官方词表里的词**：「锁定动作」「运镜参考」「视频编辑」都在
+        #   `h3-manual:248` 的用途词表上，是官方词，禁它们是我们自造规则（2026-11-02
+        #   主人当场撤回）。这里只验"该有的五个要点在不在"，不设黑名单。
+        check("换人写成「替换为」，不写成「换成」",
+              "替换为" in _ins_def and "换成" not in _ins_def, True)
+        # 场景/背景仍须点名来自视频1（`h3-manual:192` 的「光影与环境融合」）
+        check("场景、背景、光线点名来自视频1", "场景、背景、光线" in _ins_def, True)
+        # 🩸 2026-11-02（H19）：双人换人不能只点名图1。
+        #   实测 `1b3df54b` 11:48：指令只写「替换为图1中的人物」，改写器就只
+        #   定义 `<Subject 1>`，`<Picture 2>` 发出去了却全文零引用；同素材
+        #   08:51 那版定义了 3 个 Subject。官方 `ref-en:37` 要求每个单独跟踪的
+        #   素材有自己的定义行；官方换人范例 `h3-manual:192` 本身就是复数对应
+        #   （「三个穿西装的男人替换为三只高度写实的水豚」）。
+        _ins_two = _ir.instruction(["person", "person2"])
+        check("双人时两张人物图都点名",
+              ("图1、图2" in _ins_two) and ("替换为图1中的人物" not in _ins_two),
+              True)
+        check("双人时核心创意也提到两个人",
+              "主体是图1、图2中的人物" in _ins_two, True)
+        _ins_mix = _ir.instruction(["person", "scene", "person2"])
+        check("人物图编号按实际素材位次算（中间插场景图不串号）",
+              "图1、图3" in _ins_mix and "图1、图2" not in _ins_mix, True)
+        check("单人时行为不变（仍是「替换为图1中的人物」）",
+              "视频1中的人物替换为图1中的人物" in _ins_def, True)
+        # 🩸 2026-11-02（H19 第二步）：要不要写方位，看**画面里有几个人**，
+        #   不看上传了几张图。主人点的三种情形：
+        #     原片本来就一个人 → 不写方位（没有"哪一位"可分）；
+        #     原片多人只换一位   → 必须写方位，否则会换到没勾的人身上；
+        #     原片多人全部换     → 逐张指派，且不能说"其余保持原样"（没有其余）。
+        _pos2 = [{"position": "left"}, {"position": "right"}]
+        _ins_pos = _ir.instruction(["person", "person2"], ppl=_pos2, frame_n=3)
+        check("原片多人·换两人：写清哪张图换哪一位",
+              ("图1中的人物替换左边那位" in _ins_pos
+               and "图2中的人物替换右边那位" in _ins_pos), True)
+        check("原片多人·没全换：写明其余保持原样",
+              "其余出镜人物保持原样" in _ins_pos, True)
+        _ins_one = _ir.instruction(["person"], ppl=[{"position": "left"}],
+                                   frame_n=3)
+        check("原片多人·只换一位：也要写方位",
+              ("图1中的人物替换左边那位" in _ins_one
+               and "其余出镜人物保持原样" in _ins_one), True)
+        _ins_all = _ir.instruction(["person", "person2"], ppl=_pos2, frame_n=2)
+        check("原片两人全换：不写「其余保持原样」（没有其余）",
+              "其余出镜人物保持原样" not in _ins_all, True)
+        _ins_solo = _ir.instruction(["person"], ppl=[{"position": "center"}],
+                                    frame_n=1)
+        check("原片本来就一个人：不写方位、也不提「其余保持原样」",
+              ("视频1中的人物替换为图1中的人物" in _ins_solo
+               and "左边那位" not in _ins_solo
+               and "中间那位" not in _ins_solo
+               and "其余出镜人物保持原样" not in _ins_solo), True)
+        # 🩸 2026-11-02（主人点破）：`frame_n == 0` 和 `frame_n == 1` 是两件事。
+        #   K = 这一段画面里有几个人（盘点事实）；M = 这次换几个人（图张数）。
+        #   K==1 = 确认只有一个人 → 没有"哪一位"可分，写方位是凭空造区分，不写；
+        #   K==0 = **盘点没给人数**（缺数据），不等于只有一个人 → 方位有就写，
+        #          写了不会错（方位本来就来自盘点），没方位才退回泛称。
+        _ins_unk = _ir.instruction(["person"], ppl=[{"position": "left"}],
+                                   frame_n=0)
+        check("人数未知但方位有：照样写方位（缺数据≠单人）",
+              "图1中的人物替换左边那位" in _ins_unk, True)
+        check("人数未知就不知道有没有「其余」，不许写「其余保持原样」",
+              "其余出镜人物保持原样" not in _ins_unk, True)
+        check("人数未知且没方位：退回泛称，不硬编方位",
+              "替换为图1中的人物"
+              in _ir.instruction(["person"], frame_n=0), True)
+        check("方位缺一个就整句退回泛称，不写半截",
+              "各替换一位" in _ir.instruction(
+                  ["person", "person2"], ppl=[{"position": "left"}, {}],
+                  frame_n=3), True)
+        check("只换一位且没方位时说「替换其中一位」，不说「各替换一位」",
+              "替换其中一位" in _ir.instruction(["person"], frame_n=3), True)
+        check("方位也进改写器指纹（换勾选的人必换键）",
+              _ir.prompt_sig(dur=10, images=[], slots=["person", "person2"],
+                             ppl=_pos2, frame_n=3)
+              != _ir.prompt_sig(dur=10, images=[], slots=["person", "person2"],
+                                ppl=[{"position": "left"}, {"position": "center"}],
+                                frame_n=3), True)
+        check("画面人数也进指纹",
+              _ir.prompt_sig(dur=10, images=[], slots=["person"], frame_n=1)
+              != _ir.prompt_sig(dur=10, images=[], slots=["person"], frame_n=3),
+              True)
+        # 🩸 2026-11-02（缺口二）：段内切点必须进改写器的输入。官方
+        #   `base-en:86` 要求每个 `[Shot N]` 以严格递增切点时间开头；
+        #   实测原片 5 镜（06386173）产出只有 `[Shot 1]`，因为切点从没进过 text。
+        check("单镜头时不提切点（行为与改前一致）",
+              "个镜头" in _ins_def, False)
+        _ins_cut = _ir.instruction(["person"], cuts=[1.5, 3.0])
+        check("有切点时写明镜头数和秒数",
+              ("这一段原片有 3 个镜头" in _ins_cut
+               and "1.50、3.00 秒" in _ins_cut), True)
+        check("切点也进改写器指纹（否则改切点命不中新键）",
+              _ir.prompt_sig(dur=15, images=[], slots=["person"], cuts=[])
+              != _ir.prompt_sig(dur=15, images=[], slots=["person"],
+                                cuts=[1.5, 3.0]), True)
+        # 🩸 2026-11-02（H21）：这一段**真实说过的台词 + 相对秒数**必须给改写器。
+        #   官方 `h3-manual:248`「音频复刻…强烈建议补充具体歌词文本内容」；
+        #   `h3-manual:251`「台词的长短尽量和镜头长短对齐…很多口型问题会来自于这个」。
+        #   实测翻车：第 2 段从半句中间切起，改写器靠听音频把上一句补全当成第一句，
+        #   模型照着又念一遍 → 第 2 段嘴型全程错位。
+        check("没有台词时不提台词（行为与改前一致）",
+              "这一段原片里说了这些台词" in _ins_def, False)
+        _ins_ln = _ir.instruction(
+            ["person"], lines=[(0.0, 1.11, "我词穷了已经"),
+                               (1.67, 5.63, "呃总而言之就是")])
+        check("有台词时写明每句的起止秒数",
+              "0.00–1.11 我词穷了已经" in _ins_ln
+              and "1.67–5.63 呃总而言之就是" in _ins_ln, True)
+        check("台词秒数是「相对本段起点」（不写原片绝对时间）",
+              "秒数相对本段起点" in _ins_ln, True)
+        check("台词也进改写器指纹（台词分布变了必换键）",
+              _ir.prompt_sig(dur=10, images=[], slots=["person"], lines=[])
+              != _ir.prompt_sig(dur=10, images=[], slots=["person"],
+                                lines=[(0.0, 1.11, "我词穷了已经")]), True)
+        # 跨界那个字归谁：按**字的中点**，不按起点 —— 否则上一段的尾巴会把
+        # 下一段的第一个字也写进去，下一段开头再冒一个残字。
+        _rec = {"speech": {"segments": [
+            {"start": 0.0, "end": 2.0, "text": "甲乙丙丁", "chars": [
+                {"c": "甲", "s": 0.0, "e": 0.2}, {"c": "乙", "s": 0.3, "e": 0.5},
+                {"c": "丙", "s": 1.9, "e": 2.1}, {"c": "丁", "s": 2.2, "e": 2.4}]}]}}
+        check("跨段的字按字中点归属，上一段不带走下一段的字",
+              video_edit._span_script(_rec, 0.0, 2.0) == [(0.0, 0.5, "甲乙")], True)
+        check("跨段的字按字中点归属，下一段不重复上一段的尾巴",
+              video_edit._span_script(_rec, 2.0, 3.0) == [(0.0, 0.4, "丙丁")], True)
+        # 🩸 重新配音（tts/mix）时 `speech` 还是**原片** ASR，画面要念的是新文案。
+        #   字级时间只能按「文字完全一致」借，否则会把原片的字级时间套到新词上。
+        _tts = dict(_rec, voice_lines=[{"start": 0.0, "end": 2.0,
+                                        "text": "换成了新文案"}])
+        check("重配后不拿原片的字级时间套新文案（按时间比例裁）",
+              video_edit._span_script(_tts, 0.0, 1.0) == [(0.0, 1.0, "换成了")], True)
+        # 🩸 2026-11-02（缺口三）：音频的用途必须写明。官方 `h3-manual:248`
+        #   用途词表有「音色参考」「音频复用」「音频部分复用」三档；实测缺口是
+        #   音频一直传进去了、`instruction()` 全文却一个字都没提它 —— 用途全凭
+        #   改写器猜（它猜 `fully_copy` 那次，`non_diegetic_music` 直接写成 N/A）。
+        check("没有音轨时不提音频（提示词里不能指着一个没传的素材）",
+              "音频1" in _ins_def, False)
+        _ins_wav = _ir.instruction(["person"], audio_mode="original")
+        check("原声模式写明「复用原声」",
+              "音频1是视频1的原声轨" in _ins_wav and "复用" in _ins_wav, True)
+        check("配音模式写明配音轨（不是拿它当原声）",
+              "音频1是成片的配音轨"
+              in _ir.instruction(["person"], audio_mode="mix"), True)
+        check("不写回那两句被撤过的自造措辞",
+              [w for w in ("同步音轨", "直接复用") if w in _ins_wav], [])
+        check("人物用途按官方建议写明要锁的特征（`h3-manual:248`）",
+              "锁定脸和长相" in _ins_def, True)
+        # 🩸 2026-11-02：定妆照自己的描述（五官）必须真的进改写器的输入。
+        #   实测不传它：改写器产出的 `<Subject 1>` 只有发簪和衣服、零个五官词，
+        #   成片保住原片那张脸（SFace 0.09）。
+        check("人物特征（定妆照描述）真的写进了指令",
+              "Oval smooth facial contour" in _ir.instruction(
+                  ["person"], looks={"person": "Oval smooth facial contour"}), True)
+        # 🩸 2026-11-02 段缓存键必须带**改写器的输入指纹**（改写器产出的词
+        #   在缓存判定之后才生成，以前它变不变都不影响键，全靠人工升 `:irN`）。
+        from app.services import models as _models
+
+        _ad_h3 = _models.adapter_for(model="MiniMax-H3-Lite", channel="minimax")
+        check("H3 适配器挂了 prompt_sig（键里才有改写器指纹）",
+              callable(_ad_h3.caps.prompt_sig), True)
+        _sig_kw = dict(slots=["person"], dur=5, images=[person],
+                       video_src=str(video), video_span=(0.0, 4.0))
+        _sig_a = _ir.prompt_sig(**_sig_kw)
+        _sig_b = _ir.prompt_sig(**_sig_kw)
+        _sig_c = _ir.prompt_sig(**{**_sig_kw, "extra": "画面更亮"})
+        _sig_look = _ir.prompt_sig(**{**_sig_kw, "looks": {"person": "oval face"}})
+        check("特征变了 → 指纹也变（旧段不会被复用）", _sig_a != _sig_look, True)
+        check("改写器指纹同输入稳定（重跑拿回同一份词）", _sig_a == _sig_b, True)
+        check("补充说明变一个字 → 指纹就变（段缓存必然失效）",
+              _sig_a != _sig_c, True)
         spec_zh = dict(spec)
         spec_zh["extra"] = "画面更亮"
         seen.clear()
@@ -236,21 +462,55 @@ def _run(work: Path) -> int:
             zh_ok_h3 = True
         except Exception:
             zh_ok_h3 = False
-        finally:
-            _tr._chat = _real_chat
-            _tr.translate_text_cache_clear()
+        # 打桩**保留到 MiniMax 段结束**（本函数末尾恢复）：下面几条 MiniMax
+        # 断言走的是同一条路，恢复早了就会去打真接口。
         check("H3 收中文补充说明（不报错）", zh_ok_h3, True)
-        check("译文真的进了提示词", "make the frame brighter" in seen["prompt"], True)
-        check("提示词里已经没有中文补充说明",
-              "画面更亮" in seen["prompt"], False)
-        # 更严的：`<d>`（台词，官方允许保留原语言）之外一个字中文都不许有
-        import re as _re
-        _body = _re.sub(r"<d>.*?</d>", "", seen["prompt"], flags=_re.S)
-        _hit = _re.findall(r"[^.;\n]{0,40}[一-鿿]+[^.;\n]{0,40}", _body)
-        if _hit:
-            for _h in _hit[:6]:
-                print("      [中文片段]", _h)
-        check("H3 正文里 <d> 之外零中文", bool(_hit), False)
+        check("改写器被叫到了（每段一次）", len(_ir_calls) >= 1, True)
+        check("改写器拿到了这一段的原片",
+              bool(_ir_calls and str(_ir_calls[0].get("video") or "")), True)
+        check("改写器拿到了这一段的人物图",
+              bool(_ir_calls and list(_ir_calls[0].get("images") or [])), True)
+        # 🩸 2026-11-02：**外观描述要交**，依据是官方 `h3-manual:248`
+        #   「如果素材中有非常想要保持的特征，建议明确写出来」。
+        #   早先按「素材之外一个字都不加」撤掉过一次，实测成片保住原片那张脸
+        #   （SFace 0.09）；唯一换成功那次正文里有整段五官。
+        #   这里交的是**定妆照自己的描述文件**，不是临时编的形容词。
+        check("外观描述（定妆照描述）真的交给了改写器",
+              bool(_ir_calls and (_ir_calls[0].get("looks") or {})), True)
+        # 🩸 交过去的是**英文**：H3 的 `pre_compile` 先把中文补充说明翻成英文
+        #   （六段正文必须英文，`ref-en:5`），所以这里判"非空且是那句译文"，
+        #   不判原文。
+        check("用户的补充说明交给了改写器（已按 H3 规矩翻成英文）",
+              "brighter" in str((_ir_calls or [{}])[0].get("extra") or "").lower(), True)
+        check("改写器的产出原样进了请求",
+              seen["prompt"].startswith("subject_definitions:"), True)
+        # 🩸 2026-11-02（缺口二）：段内切点要真的从出片链路交到改写器手上。
+        #   这里原片是 4 镜 × 10s，第 1 段 [0,15.5] 里有 1 刀，落在 10.0s。
+        # 上面那份素材是 4 镜 × 10s，切段正好落在镜头边界上 → 段内没有切点。
+        # 要验「值真的传下去」得造一个切点错开的素材（6s 一格，末镜截到片尾）。
+        _rec_cuts = {"source": rec["source"],
+                     "shots": [{"i": i, "start": i * 6.0,
+                                "end": min((i + 1) * 6.0, 40.0),
+                                "dur": min((i + 1) * 6.0, 40.0) - i * 6.0}
+                               for i in range(7)]}
+        seen.clear()
+        calls.clear()
+        _n_cut = len(_ir_calls)
+        video_edit.replace_whole(
+            video, _rec_cuts, cid="c" * 32, spec=spec, refs={"person": person},
+            channel="minimax", workdir=work / "r_cuts",
+        )
+        _got_cuts = [c.get("cuts") for c in _ir_calls[_n_cut:] if c.get("cuts")]
+        check("出片链路把段内切点交给了改写器（相对段起点、严格递增）",
+              bool(_got_cuts) and all(
+                  list(x) == sorted(x) and all(v > 0 for v in x)
+                  for x in _got_cuts), True)
+        # 🩸 缺口三：音频模式要真的从出片链路交到改写器手上。这份测试素材是
+        #   lavfi 生成的无声音轨 → `seg_audio is None` → 必须传空串（提示词里
+        #   不能出现「音频1」，否则指着一个没传的素材）。有音轨时传 spec 的
+        #   `audio` 值，这一支由上面 instruction 层的三条断言覆盖。
+        check("没有音轨时链路传空串（提示词不提音频）",
+              [c.get("audio_mode") for c in _ir_calls[_n_cut:]][:1], [""])
         try:
             video_edit.replace_whole(
                 video, rec, cid="a" * 32, spec=spec_zh, refs={"person": person},
@@ -263,6 +523,7 @@ def _run(work: Path) -> int:
 
         seen.clear()
         calls.clear()
+        _nb = len(_ir_calls)
         r2 = video_edit.replace_whole(
             video, rec, cid="a" * 32, spec=spec,
             refs={"person": person, "product": product},
@@ -271,15 +532,16 @@ def _run(work: Path) -> int:
         check("通道", r2["channel"], "minimax")
         check("40s 按 15s 上限切成 4 段", r2["chunks"], 4)
         check("第 1 段参考图 2 张", len(calls[0]["refs"]), 2)
-        # 官方 h3-prompt-writing：Ref2VA 六段式，标号 <Picture N>/<Video N>，不带 @
-        check("标号用 <Picture 1>", "<Picture 1>" in seen["prompt"], True)
-        check("六段式进了请求", "retention_analysis:" in seen["prompt"], True)
-        check("不用火山的 @ 前缀", "@" not in seen["prompt"], True)
+        # 🩸 2026-11-02：`<Picture N>`/六段式/`@` 这些是**改写器的产出**，
+        #   我们这边只剩"每段把这一段的素材交过去"。判提示词长什么样归
+        #   `p46_check` 和真机验收，不归这条接线测试（拿桩的判断词充数 = 假绿）。
+        check("改写器每段问一次（4 段 = 4 次）", len(_ir_calls) - _nb, 4)
         # 这 4 段的切点全在原片镜头边界上（10/20/30s）→ 一律不带边界帧
         check("MiniMax 切在镜头边界上 → 第 2 段只有 2 张",
               len(calls[1]["refs"]), 2)
-        check("MiniMax 也不写首帧句",
-              "is the first frame of the target video" in calls[1]["prompt"], False)
+        check("镜头边界切开 → 不告诉改写器有边界帧",
+              [int(c.get("boundary_pic") or 0) for c in _ir_calls[_nb:]],
+              [0, 0, 0, 0])
         check("MiniMax 报告如实说没带", r2["boundary"], False)
 
         print("== MiniMax 边界帧：只在镜头中段被切开时才带 ==")
@@ -291,24 +553,28 @@ def _run(work: Path) -> int:
                     "shots": [{"i": 0, "start": 0.0, "end": 40.0, "dur": 40.0}]}
         seen.clear()
         calls.clear()
+        _nb2 = len(_ir_calls)
         r2b = video_edit.replace_whole(
             video, rec_long, cid="a" * 32, spec=spec,
             refs={"person": person, "product": product},
             channel="minimax", workdir=work / "r2long",
         )
         check("一镜到底 40s 切 3 段", r2b["chunks"], 3)
-        check("中段切开的第 2 段带边界帧", len(calls[1]["refs"]), 3)
-        check("MiniMax 边界帧定义成目标视频第一帧",
-              "<Picture 3> is the first frame of the target video" in calls[1]["prompt"], True)
-        check("MiniMax 任务类型带 keyframe completion",
-              "[video editing + keyframe completion]" in calls[1]["prompt"], True)
-        check("边界句不再挂在配乐段后面",
-              "（上一段成片的最后一帧）" not in calls[1]["prompt"], True)
-        check("MiniMax 报告说带了", r2b["boundary"], True)
+        # 🩸 2026-11-02 边界帧整条停用（主人拍板）：第 2 段只带换人图。
+        #   接缝信息在参考视频里 —— 那一段就是从原片 [a, b] 切出来单独上传的。
+        check("中段切开的第 2 段不带边界帧", len(calls[1]["refs"]), 2)
+        _c2 = [c for c in _ir_calls[_nb2:] if c.get("n") == 2]
+        check("交给改写器的边界帧号恒为 0",
+              [int(c.get("boundary_pic") or 0) for c in _c2], [0])
+        check("给改写器的素材里没有尾帧那张图",
+              bool(_c2 and len(_c2[0].get("images") or []) == 2), True)
+        check("MiniMax 报告说没带边界帧", r2b["boundary"], False)
         # 官方「输出规格」：MiniMax-H3 = 768P / 2K。用户要 1080p → 按档位映射到 2K
         check("H3 收 2K", seen["resolution"], "2K")
         # 这一步的 workdir 里**没有** voice.wav → 不许在提示词里写 <Audio 1>
-        check("没有配音轨就不写 <Audio 1>", "<Audio 1>" in seen["prompt"], False)
+        _b_calls = _ir_calls[_nb2:]
+        check("没有配音轨就不告诉改写器有音频",
+              [c.get("audio") is None for c in _b_calls], [True] * len(_b_calls))
         check("没有配音轨就不喂音频", seen["audio"], "")
 
         print("== 口型参考音频：有配音轨才喂 ==")
@@ -321,6 +587,7 @@ def _run(work: Path) -> int:
                         "-ac", "1", str(mm_wd / "voice.wav")], check=True)
         seen.clear()
         calls.clear()
+        _na = len(_ir_calls)
         video_edit.replace_whole(
             video, rec, cid="a" * 32, spec=spec, refs={"person": person},
             channel="minimax", workdir=mm_wd,
@@ -328,14 +595,12 @@ def _run(work: Path) -> int:
         check("音频真的传下去了", bool(seen["audio"]), True)
         check("音频是这一段的 wav 切片",
               seen["audio"].endswith(".wav") and "seg_" in seen["audio"], True)
-        check("提示词出现 <Audio 1>", "<Audio 1>" in seen["prompt"], True)
-        check("口型要求写进 retention", "<Audio 1>: reference" in seen["prompt"], True)
-        # 🩸 官方任务类型是枚举（`h3_ref-en.txt:139` 起）：video editing /
-        # reference generation / audio reuse / audio reference / keyframe completion。
-        # `lip-sync to audio reference` 是自造词，不在枚举里 —— 代码 2026-10-23
-        # 已改成 `audio reference`，判据没跟上（漂移的是判据）。
-        check("任务类型前缀对", "[video editing + audio reference]" in seen["prompt"],
-              True)
+        # `<Audio 1>` 和任务类型 `[video editing + audio reference]` 是**改写器的
+        # 产出**；我们这边的责任是"把这一段真正的配音切片交过去"。
+        _a_calls = _ir_calls[_na:]
+        check("每段都把配音切片交给了改写器",
+              [bool(c.get("audio")) and str(c.get("audio")).endswith(".wav")
+               for c in _a_calls], [True] * len(_a_calls))
         # mix 模式：说话的是新配音，音轨取自 voice.wav（原片本身没有音轨，
         # 真去截原片会失败 —— 能截出 10s 就等于证明了来源）
         from app.services import scene as _scene
@@ -395,7 +660,8 @@ def _run(work: Path) -> int:
             refs={"person": person, "product": product},
             channel="volc", workdir=work / "r8",
         )
-        check("两段相接 → 第 2 段带边界帧", len(calls[1]["refs"]), 3)
+        # 🩸 2026-11-02 边界帧整条停用：相接也不再额外带尾帧。
+        check("两段相接 → 第 2 段也不带边界帧", len(calls[1]["refs"]), 2)
 
         print("== 双人：这一段没出现的人，H3 不带他的图 ==")
         # 🩸 H3 官方 ref-en.txt:35 要求「每一张参考图都要在 subject_definitions
@@ -421,6 +687,7 @@ def _run(work: Path) -> int:
         refs_two = {"person": person, "person2": person2}
         seen.clear()
         calls.clear()
+        _n2 = len(_ir_calls)
         video_edit.replace_whole(
             video, rec, cid="d" * 32, spec=spec_two, refs=refs_two,
             channel="minimax", inventory=inv2, workdir=work / "r_two",
@@ -428,23 +695,24 @@ def _run(work: Path) -> int:
         check("H3 第 1 段两个人各一张", len(calls[0]["refs"]), 2)
         # 切点在镜头边界（10s）→ 不带边界帧，第 2 段只剩在场的那一个人
         check("H3 第 2 段只发在场的人", len(calls[1]["refs"]), 1)
-        check("H3 第 2 段不写缺席者的换人句",
-              "the man in a hat" in calls[1]["prompt"], False)
-        check("H3 第 2 段仍然定义在场的人",
-              "<Subject 1> is the person in <Picture 1>" in calls[1]["prompt"], True)
-        # 成对：切点落在镜头中段时才带边界帧；摘掉 P2 的图后，
-        # 边界帧号必须从 3 重算成 2（不然提示词指着一张没发的图）
+        _p2 = [c for c in _ir_calls[_n2:] if c.get("n") == 2]
+        check("缺席者的图也没交给改写器（只有 1 张）",
+              [len(c.get("images") or []) for c in _p2], [1])
+        # 🩸 2026-11-02 边界帧整条停用：切点落在镜头中段也不再补尾帧，
+        #   第 2 段就是「在场的那一个人」一张图，改写器拿到的边界帧号恒为 0。
         seen.clear()
         calls.clear()
+        _n3 = len(_ir_calls)
         video_edit.replace_whole(
             video, rec_long, cid="d" * 32, spec=spec_two, refs=refs_two,
             channel="minimax", inventory=inv2, workdir=work / "r_two_long",
         )
-        check("H3 中段切开时边界帧照带（在场的 1 张 + 尾帧）",
-              len(calls[1]["refs"]), 2)
-        check("H3 摘图后边界帧号跟着重算",
-              "<Picture 2> is the first frame of the target video" in calls[1]["prompt"],
-              True)
+        check("H3 中段切开也不带边界帧（只有在场的 1 张）",
+              len(calls[1]["refs"]), 1)
+        _p3 = [c for c in _ir_calls[_n3:] if c.get("n") == 2]
+        check("边界帧号恒为 0（不谈尾帧）",
+              [(len(c.get("images") or []), int(c.get("boundary_pic") or 0))
+               for c in _p3], [(1, 0)])
         # 火山保持已验证的「图号稳定」写法：图照发，只是不写那一句
         seen.clear()
         calls.clear()
@@ -516,7 +784,9 @@ def _run(work: Path) -> int:
         )
         check("2.5 切在镜头边界 → 不带边界帧", len(calls[-1]["refs"]), 1)
         check("2.5 也不写边界句", "上一段成片的最后一帧" in calls[-1]["prompt"], False)
-        # 成对：同样 2.5，切点落在镜头中段时必须带（能力本身没丢）
+        # 🩸 2026-11-02 边界帧整条停用（两个通道一起）：2.5 中段切开也不补尾帧。
+        #   火山的「固定首帧」写法（`sd25-pe:703` 的 `@图片N作为首帧。`）只在
+        #   真的递了这张图时才写；现在不递，提示词里就不该出现这句。
         seen.clear()
         calls.clear()
         video_edit.replace_whole(
@@ -524,11 +794,8 @@ def _run(work: Path) -> int:
             video, rec_long, cid="9" * 32, spec=spec, refs={"person": person},
             channel="volc", model="doubao-seedance-2-5-260628", workdir=work / "r5c",
         )
-        check("2.5 镜头中段切开 → 第 2 段带边界帧", len(calls[1]["refs"]), 2)
-        # 🩸 判据跟官方模板走（`sd25-pe:703`）：固定首帧必须**单独写一句**
-        # `@图片N作为首帧。`，不得弱化成「仅作为首帧参考」。以前判的是
-        # 自造的「上一段成片的最后一帧」，代码改用官方句式后这条就一直红。
-        check("2.5 边界帧按官方句式点名", "作为首帧。" in calls[1]["prompt"], True)
+        check("2.5 镜头中段切开 → 第 2 段也不带边界帧", len(calls[1]["refs"]), 1)
+        check("2.5 也不写首帧句", "作为首帧。" in calls[1]["prompt"], False)
 
         seen.clear()
         video_edit.replace_whole(
@@ -689,6 +956,31 @@ def _run(work: Path) -> int:
     check("诊断页开关默认关（前端点进去就是关的）",
           "maskBottom: false" in _src, True)
 
+    # ── 强制重跑（2026-11-02）────────────────────────────────────
+    # 同样的输入本来**永远命中段缓存**，模型一次都不调 —— 省钱，但效果不满意
+    # 时再点一次没用（实测三次渲染拿回同一个 476,680 字节的旧片）。
+    # 默认必须是关的（不传 force = 老行为），四层都得能透传。
+    print("\n强制重跑")
+    check("API 默认不强制重跑",
+          _clone_api.RenderIn.model_fields["force"].default, False)
+    check("任务层默认不强制",
+          inspect.signature(_cj.submit_render)
+          .parameters["force"].default, False)
+    check("出片函数默认不强制",
+          inspect.signature(_cp.render).parameters["force"].default, False)
+    _reqjs = Path(__file__).resolve().parents[2] / "frontend/app/src/api/request.js"
+    _rjs = _reqjs.read_text(encoding="utf-8") if _reqjs.exists() else ""
+    check("前端只在打开时才发 force（老请求体形状不变）",
+          "force ? { force: true }" in _rjs, True)
+    check("诊断页有开关且默认关、打开才传",
+          "forceRerun: false" in _src
+          and "force: this.forceRerun === true" in _src, True)
+    _ve_src = (Path(__file__).resolve().parents[1]
+               / "app/services/video_edit.py").read_text(encoding="utf-8")
+    check("_gen_spans 的 force 真的跳过两级缓存",
+          "not force and manifest.get(seg.name) == key" in _ve_src
+          and "not force and _cache_get(cid, key, gen)" in _ve_src, True)
+
     # ── 开放平台前后端一致 ────────────────────────────────────────
     # `config.js` 自己写着「两边漏改一边就会出现『显示但解析报暂不支持』」，
     # 但以前没人机械验过。判据是**两份名单逐项相等**，不是"某边含 twitter"。
@@ -750,6 +1042,8 @@ def _run(work: Path) -> int:
         _yp.dump_json = _real_dump
         object.__setattr__(settings, "proxy", _real_proxy)
 
+    _ir.prompt_for = _real_pf      # 恢复真改写器（见 MiniMax 段）
+    _vp.describe_person = _real_dp  # 恢复真视觉描述
     print(f"\n{PASS}/{PASS + FAIL} 通过")
     return 1 if FAIL else 0
 

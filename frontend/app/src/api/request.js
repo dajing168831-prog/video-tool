@@ -222,6 +222,9 @@ function cloneRenderBody(script, opts = {}) {
     // 🩸 只出前 N 段（预览）：0/不传 = 全部。>0 只跑前 N 段、不拼接成片，
     //   先看效果；继续出全部时同样的参数再调一次，前 N 段命中缓存不重复扣费。
     maxSegments = 0,
+    // 🩸 强制重跑：跳过逐段产物缓存，重新调模型（会再扣一次费）。
+    //   默认 False —— 同样输入永远命中缓存；失败想再抽一次必须显式打开。
+    force = false,
   } = opts
   return {
     script,
@@ -254,6 +257,8 @@ function cloneRenderBody(script, opts = {}) {
       ? {} : { speech_rate: speechRate }),
     // 预览（只出前 N 段）：不传 = 全部，保持老请求体形状不变
     ...(maxSegments > 0 ? { max_segments: maxSegments } : {}),
+    // 强制重跑：只在显式打开时传，保持老请求体形状不变
+    ...(force ? { force: true } : {}),
   }
 }
 

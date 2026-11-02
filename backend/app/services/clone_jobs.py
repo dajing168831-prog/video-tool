@@ -62,12 +62,13 @@ def submit_render(cid: str, rid: str, *, script: str | None,
                   regen_mode: str = "shots",
                   regen_channel: str = "auto",
                   edit_spec: dict | None = None,
-                  max_segments: int = 0) -> bool:
+                  max_segments: int = 0,
+                  force: bool = False) -> bool:
     if not _claim(cid, rid):
         return False
     _POOL.submit(_render, cid, rid, script, mask_bottom,
                  regen_prompt, regen_ratio, regen_shots,
-                 regen_mode, regen_channel, edit_spec, max_segments)
+                 regen_mode, regen_channel, edit_spec, max_segments, force)
     return True
 
 
@@ -129,7 +130,8 @@ def _render(cid: str, rid: str, script: str | None, mask_bottom: bool,
             regen_prompt: str = "", regen_ratio: float = 0.0,
             regen_shots: list[int] | None = None,
             regen_mode: str = "shots", regen_channel: str = "auto",
-            edit_spec: dict | None = None, max_segments: int = 0) -> None:
+            edit_spec: dict | None = None, max_segments: int = 0,
+            force: bool = False) -> None:
     t0 = time.time()
     task = store.load(cid)
     if not task or not task.get("recipe"):
@@ -176,6 +178,7 @@ def _render(cid: str, rid: str, script: str | None, mask_bottom: bool,
             lang=(item.get("lang") or "").strip(),
             speech_rate=item.get("speech_rate"),
             max_segments=int(max_segments or 0),
+            force=bool(force),
         )
         item["state"] = "done"
         item["pct"] = 100

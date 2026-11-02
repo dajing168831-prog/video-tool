@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>MiniMax H3 官方资料 · 思维导图（2026-11-02）</title>
+<style>
+  :root{
+    --bg:#0f1216; --panel:#151a21; --line:#2a323d; --fg:#e6edf3; --dim:#8b98a5;
+    --ok:#3fb950; --warn:#d29922; --bad:#f85149; --todo:#58a6ff; --accent:#7c3aed;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  header{padding:18px 26px;border-bottom:1px solid var(--line);background:var(--panel);
+         position:sticky;top:0;z-index:9}
+  h1{margin:0;font-size:18px;letter-spacing:.5px}
+  .sub{color:var(--dim);font-size:12.5px;margin-top:6px}
+  .legend{margin-top:10px;display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--dim)}
+  .legend b{font-weight:600}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
+  .toolbar{position:fixed;right:22px;bottom:22px;display:flex;gap:8px;z-index:9}
+  .toolbar button{background:var(--panel);color:var(--fg);border:1px solid var(--line);
+                  border-radius:8px;padding:8px 12px;cursor:pointer;font-size:12.5px}
+  .toolbar button:hover{border-color:var(--accent)}
+  main{padding:26px 26px 90px;overflow-x:auto}
+
+  ul.tree,ul.tree ul{list-style:none;margin:0;padding-left:26px}
+  ul.tree ul{position:relative}
+  ul.tree ul::before{content:"";position:absolute;left:9px;top:0;bottom:14px;
+                     border-left:1px solid var(--line)}
+  ul.tree li{position:relative;padding:3px 0 3px 14px;white-space:nowrap}
+  ul.tree ul > li::before{content:"";position:absolute;left:-17px;top:16px;
+                          width:17px;border-top:1px solid var(--line)}
+  .node{display:inline-flex;align-items:center;gap:8px;padding:4px 10px;
+        border:1px solid var(--line);border-radius:8px;background:var(--panel);cursor:pointer}
+  .node:hover{border-color:var(--accent)}
+  .node.lv0{font-size:16px;font-weight:700;padding:8px 16px;border-color:var(--accent);
+            background:linear-gradient(180deg,#1b1430,#151a21)}
+  .node.lv1{font-weight:600}
+  .toggle{color:var(--dim);font-size:11px;width:12px;text-align:center}
+  .meta{color:var(--dim);font-size:12px;margin-left:2px;white-space:normal}
+  .tag{font-size:11px;padding:1px 6px;border-radius:10px;border:1px solid var(--line);color:var(--dim)}
+  li.collapsed > ul{display:none}
+  .st-ok{color:var(--ok)} .st-warn{color:var(--warn)} .st-bad{color:var(--bad)} .st-todo{color:var(--todo)}
+  .hl{background:var(--accent);border-radius:3px}
+  .note{color:var(--dim);font-size:12.5px;padding:2px 0 2px 14px;white-space:normal}
+  footer{color:var(--dim);font-size:12px;padding:0 26px 40px}
+  kbd{background:#222a34;border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:11px}
+</style>
+</head>
+<body>
+<header>
+  <h1>MiniMax H3 官方资料 · 思维导图</h1>
+  <div class="sub">2026-11-02 全源核验 · 结论：<b>没有任何一份官方资料比本工程手里的更新</b>；HuggingFace 的 Prompting Guidance 已拿到，= 我们已有的 ref-en / base-en（逐字节相同）</div>
+  <div class="legend">
+    <span><i class="dot" style="background:var(--ok)"></i><b>最新 / 已核对一致</b></span>
+    <span><i class="dot" style="background:var(--warn)"></i><b>旧版 / 官方自相矛盾</b></span>
+    <span><i class="dot" style="background:var(--bad)"></i><b>官方不存在</b></span>
+    <span><i class="dot" style="background:var(--todo)"></i><b>未跑 / 待验证</b></span>
+  </div>
+</header>
+
+<main>
+<ul class="tree" id="tree">
+  <li>
+    <div class="node lv0" data-k="root">MiniMax H3 官方资料</div>
+    <ul>
+      <!-- ① 文档站 -->
+      <li>
+        <div class="node lv1 st-ok" data-k="站">① 官方文档站 <span class="meta">platform.minimaxi.com / .io</span></div>
+        <ul>
+          <li><div class="node">指南</div>
+            <ul>
+              <li><div class="node">guides/video-generation.md <span class="meta">生成方式 · 输入条件 · 三件套入口</span></div></li>
+              <li><div class="node">guides/video-prompt.md <span class="meta">三大能力亮点示例</span></div></li>
+              <li><div class="node">guides/local-deploy-h3.md <span class="meta">ComfyUI / SGLang 自托管</span></div></li>
+            </ul>
+          </li>
+          <li><div class="node">API（v2 视频生成）</div>
+            <ul>
+              <li><div class="node" style="border-color:var(--accent)">★ video-generation-v2-h3-context-ir <span class="meta">提示词改写器 · 只出词不出片</span></div></li>
+              <li><div class="node">video-generation-v2-create <span class="meta">model / content / resolution / duration / ratio / extra</span></div></li>
+              <li><div class="node">video-generation-v2-query / list / delete</div></li>
+              <li><div class="node">video-generation-v2-regeneration <span class="meta">768P → 2K</span></div></li>
+              <li><div class="node">errorcode.md <span class="meta">错误码总表</span></div></li>
+            </ul>
+          </li>
+          <li><div class="node">OpenAPI <span class="meta">v2-video-generation.json（机器可读 schema）</span></div></li>
+          <li><div class="node st-warn">版本与销售</div>
+            <ul>
+              <li><div class="node">release-notes/models.md <span class="meta">H3 = 2026-07-31；Lite/Highspeed/Max 无记录</span></div></li>
+              <li><div class="node st-warn">release-notes/apis.md <span class="meta">最新停在 2025-10-28，完全没提 H3</span></div></li>
+              <li><div class="node st-warn">faq/models.md <span class="meta">只有 H3 / H3-Max，且说 Max「仅文生/图生」← 与 create 页冲突</span></div></li>
+              <li><div class="node">pricing/overview.md <span class="meta">四档齐全 · Lite 480P ¥0.16/秒</span></div></li>
+            </ul>
+          </li>
+          <li><div class="node">llms.txt <span class="meta">全站文档索引</span></div></li>
+        </ul>
+      </li>
+
+      <!-- ② GitHub -->
+      <li>
+        <div class="node lv1 st-ok" data-k="GitHub">② GitHub MiniMax-AI/MiniMax-H3 <span class="meta">最新提交 2026-10-28</span></div>
+        <ul>
+          <li><div class="node">README.md <span class="meta">模型卡：三件套 / 输入规格 / Full 2K Workflow</span></div></li>
+          <li><div class="node">skills/</div>
+            <ul>
+              <li><div class="node" style="border-color:var(--accent)">★ h3-prompt-writing</div>
+                <ul>
+                  <li><div class="node st-ok">SKILL.md <span class="meta">40 行 · 含 Tips（= 我们这份，sha a7000443…）</span></div></li>
+                  <li><div class="node">references/base-en.txt <span class="meta">T2VA / I2VA / FL2VA / L2VA</span></div></li>
+                  <li><div class="node">references/ref-en.txt <span class="meta">Ref2VA 六段式</span></div></li>
+                </ul>
+              </li>
+              <li><div class="node st-warn">8 个体裁 skill <span class="meta">3d-animation / brand-promo / co-op-game / handdrawn-live / minimalist-product-ad / music-video-subtitle / paper-collage / papercraft-stop-motion —— 是体裁工作流，不许套到换人/复刻</span></div></li>
+              <li><div class="node">skills-lock.json</div></li>
+            </ul>
+          </li>
+          <li><div class="node st-warn">.claude/skills · .agents/skills <span class="meta">旧副本（35 行，缺 Tips，sha a48f9db1…）</span></div></li>
+          <li><div class="node">scripts/readme/ <span class="meta">官方「怎么调」的可执行答案</span></div>
+            <ul>
+              <li><div class="node">full-2k-ref2va-h3-context-ir.sh <span class="meta">IR 请求：输入就是一句话</span></div></li>
+              <li><div class="node">full-2k-ref2va-h3-base.sh <span class="meta">IR 的词 → 本地 H3-Base 出片</span></div></li>
+              <li><div class="node">full-2k-ref2va-h3-regenerate-2k.sh</div></li>
+              <li><div class="node">reproducible-768p-ref2va-request.sh <span class="meta">带六段词原文的完整请求</span></div></li>
+            </ul>
+          </li>
+        </ul>
+      </li>
+
+      <!-- ③ HuggingFace -->
+      <li>
+        <div class="node lv1 st-ok" data-k="HF">③ HuggingFace MiniMaxAI/MiniMax-H3 <span class="meta">lastModified 2026-08-13（旧于 GitHub）</span></div>
+        <ul>
+          <li><div class="node st-ok">docs/VIDEO_PROMPT_WRITING_GUIDE_ref_en.md <span class="meta">= 本地 ref-en.txt，逐字节相同</span></div></li>
+          <li><div class="node st-ok">docs/VIDEO_PROMPT_WRITING_GUIDE_base_en.md <span class="meta">= 本地 base-en.txt，逐字节相同</span></div></li>
+          <li><div class="node">README.md <span class="meta">比 GitHub 版旧</span></div></li>
+          <li><div class="node">docs/QA-about-License.md <span class="meta">许可证问答，与提示词无关</span></div></li>
+          <li><div class="node">权重（FL2VA / Ref2VA / H3-Base）</div></li>
+        </ul>
+      </li>
+
+      <!-- ④ 飞书手册 -->
+      <li>
+        <div class="node lv1" data-k="飞书">④ 飞书官方《H3 模型 - 使用手册》 <span class="meta">rev 1328（我们是 1327）</span></div>
+        <ul>
+          <li><div class="node st-ok">公式：参考素材说明 + 核心创意 + 画面过程说明</div></li>
+          <li><div class="node">素材用途表 <span class="meta">含「视频编辑（对视频某个内容进行增删改）」·「想保持的特征明确写出来」</span></div></li>
+          <li><div class="node">三类模式写法 / 镜头怎么拆 / 6 条踩坑</div></li>
+          <li><div class="node st-ok">1327 → 1328 差异：只有排版，无规则增删</div></li>
+        </ul>
+      </li>
+
+      <!-- ⑤ 博客 -->
+      <li>
+        <div class="node lv1" data-k="博客">⑤ 官方博客 <span class="meta">2026-07-31 发布会</span></div>
+        <ul>
+          <li><div class="node">招牌示例：「参考视频1的希区柯克镜头运动，让图2中的人物唱歌，歌声参考音频3」<span class="meta">—— 短句，不是六段式</span></div></li>
+          <li><div class="node">「由自然语言表述参考和编辑关系……语言是泛化的桥梁」</div></li>
+        </ul>
+      </li>
+
+      <!-- 核验结论 -->
+      <li>
+        <div class="node lv1" data-k="核验">⑥ 今天的核验结论</div>
+        <ul>
+          <li><div class="node st-ok">平台文档 create / openapi <span class="meta">sha256 与 11-02 快照相同</span></div></li>
+          <li><div class="node st-ok">skill 三份副本 <span class="meta">只有 skills/ 那份是最新，我们用的就是它</span></div></li>
+          <li><div class="node st-ok">HF 两份指南 <span class="meta">与本机同哈希 —— 「还有一份更详细的 Prompting Guidance」不成立</span></div></li>
+          <li><div class="node st-warn">官方三处自相矛盾 <span class="meta">Max 参考生 / Lite 在不在售 / Max 的 extra</span></div></li>
+          <li><div class="node st-bad">Lite / Highspeed 专属说明 <span class="meta">官方不存在（无发布日志、无 FAQ 条目、无 skill）</span></div></li>
+          <li><div class="node st-todo">H3-Base 768P 全套 <span class="meta">未跑，要花钱</span></div></li>
+        </ul>
+      </li>
+    </ul>
+  </li>
+</ul>
+
+<div class="note">判读规则：以 <b>create API 页 + OpenAPI JSON</b> 为准；FAQ / 发布日志是人工页，明显滞后。</div>
+</main>
+
+<div class="toolbar">
+  <button id="expand">全部展开</button>
+  <button id="collapse">收起到二级</button>
+  <button id="print">打印 / 存 PDF</button>
+</div>
+
+<footer>
+  核验通道：平台文档 <kbd>&lt;url&gt;.md</kbd> · GitHub <kbd>raw.githubusercontent.com</kbd> · HuggingFace <kbd>hf-mirror.com</kbd> · 飞书 <kbd>lark-cli docs +fetch --as bot</kbd><br>
+  配套文字版：<kbd>docs/H3-SOURCES-MINDMAP.md</kbd> · 规则索引：<kbd>docs/H3-OFFICIAL-MAP.md</kbd> · 改动台账：<kbd>docs/H3-CHANGE-LEDGER.md</kbd>
+</footer>
+
+<script>
+(function(){
+  var tree = document.getElementById('tree');
+  // 每个有子列表的节点：点一下折叠/展开
+  tree.querySelectorAll('li > .node').forEach(function(n){
+    var li = n.parentElement;
+    var sub = li.querySelector(':scope > ul');
+    if(!sub) return;
+    var t = document.createElement('span');
+    t.className = 'toggle';
+    t.textContent = '▾';
+    n.insertBefore(t, n.firstChild);
+    n.addEventListener('click', function(e){
+      e.stopPropagation();
+      li.classList.toggle('collapsed');
+      t.textContent = li.classList.contains('collapsed') ? '▸' : '▾';
+    });
+  });
+  function setAll(collapseDepth){
+    tree.querySelectorAll('li').forEach(function(li){
+      var depth = 0, p = li;
+      while((p = p.parentElement) && p !== tree) if(p.tagName === 'LI') depth++;
+      var sub = li.querySelector(':scope > ul');
+      if(!sub) return;
+      var hide = collapseDepth !== null && depth >= collapseDepth;
+      li.classList.toggle('collapsed', hide);
+      var t = li.querySelector(':scope > .node > .toggle');
+      if(t) t.textContent = hide ? '▸' : '▾';
+    });
+  }
+  document.getElementById('expand').onclick = function(){ setAll(null); };
+  document.getElementById('collapse').onclick = function(){ setAll(1); };
+  document.getElementById('print').onclick = function(){ setAll(null); window.print(); };
+  setAll(null);
+})();
+</script>
+</body>
+</html>

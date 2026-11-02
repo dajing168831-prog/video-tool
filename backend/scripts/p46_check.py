@@ -104,7 +104,7 @@ SPANS = [(0.0, 10.0), (10.0, 20.0)]
 #: 不是自己编的格式。六段齐全、标号全定义、关系标记用官方固定值。
 GOOD = """subject_definitions:
 <Video 1> is the source video being edited: it provides the original shot structure, camera movement, on-screen action, cuts and timing.
-<Subject 1> is the man in <Picture 1>, with short black hair and a dark jacket.
+<Subject 1> is the man in <Picture 1>, with short black hair and a dark jacket. The scene, background, lighting, and image style must not be inherited from <Picture 1>; they come from <Video 1>.
 <Subject 2> is the man in the center of <Video 1>, and is replaced by <Subject 1>.
 <Audio 1> is the synchronized audio track of <Video 1> and is reused in the target video.
 
@@ -186,15 +186,41 @@ def main() -> int:
     check("老描述没有性别字段 → 也不编一个", "（男性）" in A.brief_text(b6), False)
 
     # 🩸 2026-11-01 主人：「上传了定妆图和没定妆图肯定有区别的，绝对不能混一起。」
-    #   有图 → 外观交给 <Picture N>（`ref-en:57`）；没图 → 外观来自原片本身（`ref-en:47`）。
+    #   有图 → 外观交给 <Picture N>（`ref-en:57`）；没图 → 外观来自原片本身（`ref-en:314`）。
     #   这两条路必须各说各的，不是同一段话换个主语。
     t_has = A.brief_text(b3)                       # 有定妆图 + 有外观描述
     t_nop = A.brief_text(                          # 没勾换人 = 压根没有定妆图
         A.as_brief(dict(PLAN, slots=[], ordered=[], looks={}, person_ids=[],
                         spec={"audio": "original",
                               "change": {"person": False}}), REC, SPANS))
-    check("有定妆图 → 明说外观交给 <Picture N> 且不写五官",
-          "换人参考图里那个人" in t_has and "不要把五官/脸型写进" in t_has, True)
+    # 🩸 2026-11-01 反转：旧断言是「不写五官」—— 那是自造规则。
+    #   官方 `h3-video-prompt-template.md:20` 明写 `Lock exact face, hairstyle,
+    #   glasses if present, facial proportions, body identity`（中文版 `:42`
+    #   「必须保留脸、人脸比例」），`ref-en:37` 要的是 main features to follow。
+    #   换人时脸不写 = 模型没有锚点，只会照原片那张脸继续走（实测 bestSim 0.177）。
+    def _look_rule_ok(text: str) -> bool:
+        """换人那段必须覆盖官方 character reference card 的四件事：
+
+        · `music-video/SKILL.md:114`：identity / **facial aura** / hairstyle /
+          **clothing silhouette** / proportions / posture —— 面部气质和服装轮廓
+          是 v3 时漏掉的两项（v3 只补了脸）；
+        · `co-op/SKILL.md:24`：**Do not inherit** 原图的光照/画风/写实度。
+        """
+        return all([
+            "换人参考图里那个人" in text,
+            "<Picture N>" in text,
+            "面部气质" in text,
+            "服装轮廓" in text,
+            "Do not inherit" in text,
+            "不要把五官/脸型写进" not in text,
+        ])
+
+    check("有定妆图 → 覆盖角色卡六项（含面部气质/服装轮廓）+ 明说**不继承**原图",
+          _look_rule_ok(t_has), True)
+    # 成对探针：v3 那版（只补了脸、没有面部气质和「不继承」）必须被判红。
+    check("反向对照：v3 措辞（只写脸，缺气质/轮廓/不继承）必须被判红",
+          _look_rule_ok("换人参考图里那个人，外观交给 <Picture N>，"
+                        "写脸型轮廓和最显著的 1–2 个五官特征。"), False)
     check("没有定妆图 → 明说外观来自原片，且不出现换人参考图那段",
           "本单**没有**定妆参考图" in t_nop, True)
     check("两条路不串味：没图的规格书里没有换人参考图那段",
@@ -256,6 +282,18 @@ def main() -> int:
     check("引用不存在的图号 → 红",
           any("不存在的图号" in r for r in red_of(
               brief, GOOD.replace("<Picture 1>", "<Picture 9>", 1))), True)
+
+    # 🩸 2026-11-01 实测：不写「参考图只管角色」那句那一版，脸换对了、**场景整间被搬走**
+    #   （古风庭院顶掉了原片的明亮客厅）。成对：GOOD 里有这句 → 0 红（上面已验）；
+    #   拿掉 → 必须红；改词（must not → should not）→ 也必须红（要的是原样，不是"意思到了"）。
+    _iso = (" The scene, background, lighting, and image style must not be inherited "
+            "from <Picture 1>; they come from <Video 1>.")
+    check("那句「参考图只管角色」在 GOOD 里（成对的下半）", _iso in GOOD, True)
+    check("删掉那句 → 红",
+          any("参考图只管角色" in r for r in red_of(b3, GOOD.replace(_iso, ""))), True)
+    check("把那句改写（must not → should not）→ 红",
+          any("参考图只管角色" in r for r in red_of(
+              b3, GOOD.replace("must not be inherited", "should not be inherited"))), True)
     check("summary 缺官方那句「edited version of <Video 1>」→ 红",
           any("缺官方那句话" in r for r in red_of(
               brief, GOOD.replace(" The target video is an edited version of "

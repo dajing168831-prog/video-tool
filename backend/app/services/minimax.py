@@ -38,6 +38,35 @@ MAX_VIDEO_BYTES = 50 * 1024 * 1024
 FILE_TTL_NOTE = "mm_file:// 引用 7 天后过期"
 
 
+#: 官方错误码 → 给人看的一句话。
+#: 出处：官方《错误码查询》页（`data/official/h3/pull-2026-11-02/api_errorcode.md`，
+#: 第 13-59 行的表；2026-11-02 抓取）。
+#: 🩸 `1000` = **「未知错误/系统默认错误 → 请稍后再试」**（同页第 15 行），
+#: **不是参数错** —— 参数错是 2013（第 32 行）。所以失败文案不许引导用户改参数。
+_ERROR_HINTS = {
+    "1000": "官方系统错误（不是提示词/参数问题），稍后重试即可",
+    "1001": "请求超时，稍后重试",
+    "1002": "请求频率超限，稍后重试",
+    "1004": "API Key 未授权/不匹配",
+    "1008": "余额不足",
+    "1024": "官方内部错误，稍后重试",
+    "1026": "输入内容涉敏，需要调整素材或提示词",
+    "1027": "输出内容涉敏（官方生成时被拦），需要调整输入",
+    "1033": "官方下游服务错误，稍后重试",
+    "1042": "输入里有不可见/非法字符超过 10%",
+    "1045": "任务并发数超限，等前面任务完成再提交",
+    "2013": "请求参数错误",
+    "2022": "模型不存在或无权使用",
+    "2069": "该模型已下线",
+}
+
+
+def _err_hint(err: dict | None) -> str:
+    """把官方错误码翻成一句人话；不认识的码返回空串（不许瞎猜）。"""
+    code = str((err or {}).get("code") or "").strip()
+    return _ERROR_HINTS.get(code, "")
+
+
 class MinimaxError(RuntimeError):
     """带结构的错误：`detail` 放**平台返回的完整对象**（含敏感类型等字段）。
 
@@ -173,8 +202,11 @@ def _poll_download(task_id: str, out: Path, *, timeout: float,
             log.error("MiniMax 任务 %s 失败 完整返回=%s", task_id,
                       __import__("json").dumps(task, ensure_ascii=False,
                                                default=str)[:2000])
-            raise MinimaxError(f"任务 {task_id} 状态 {st}: {task.get('error')}",
-                               detail=detail)
+            _h = _err_hint(task.get("error"))
+            raise MinimaxError(
+                f"任务 {task_id} 状态 {st}: {task.get('error')}"
+                + (f"（{_h}）" if _h else ""),
+                detail=detail)
     if not video_url:
         raise MinimaxError(f"任务 {task_id} 超时（{timeout:.0f}s）")
 
@@ -483,3 +515,81 @@ def reference_video(
         content, out=out, duration=duration, resolution=resolution,
         ratio=_ratio, model=model, timeout=timeout,
     )
+
+
+def context_ir(*, text: str, images=None, videos=None, audios=None,
+               duration: int = 5, ratio: str = "adaptive",
+               timeout: float = 300, poll: float = 4.0) -> str:
+    """官方提示词改写器（H3-Context-IR）：多模态上下文 → 结构化提示词。
+
+    出处 `platform.minimaxi.com/docs/api-reference/video-generation-v2-h3-context-ir`：
+      · `POST /v2/h3_context_ir`，body = `{model, content[], duration, ratio?}`；
+      · `model` 只能填 `MiniMax-H3`（**不是**出片用的那个档位，Lite/Max 都不收）；
+      · 异步任务，用同一个查询接口轮询，成功后从 `task.content.prompt` 取增强提示词。
+    🩸 **它不生成视频**，只返回提示词 —— 别在这个返回里找 url。
+    🩸 官方视频生成指南「全能参考生成」给的示例提示词就是一句自然语言
+      （`人物参考视频1的动作，表演街舞，人物参考图1 图2`），结构化由这个接口产出；
+      我们自己现写六段式 = 绕过了官方的改写器。
+    """
+    text = (text or "").strip()
+    if not text:
+        raise MinimaxError("H3-Context-IR 的 text 不能为空")
+    content: list[dict] = [{"type": "text", "text": text}]
+    # 顺序即编号：官方按 content 里的出现顺序称「图1/图2/视频1」
+    for v in (videos or []):
+        content.append({"type": "video_url",
+                        "video_url": {"url": f"mm_file://{upload_file(Path(v))}"},
+                        "role": "reference_video"})
+    for p in (images or []):
+        content.append({"type": "image_url",
+                        "image_url": {"url": f"mm_file://{upload_file(Path(p))}"},
+                        "role": "reference_image"})
+    for a in (audios or []):
+        content.append({"type": "audio_url",
+                        "audio_url": {"url": f"mm_file://{upload_file(Path(a))}"},
+                        "role": "reference_audio"})
+    body = {
+        "model": "MiniMax-H3",
+        "content": content,
+        "duration": max(4, min(15, int(duration))),
+        "ratio": ratio or "adaptive",
+    }
+    with httpx.Client(timeout=120) as c:
+        r = c.post(f"{_base()}/v2/h3_context_ir", headers=_headers(), json=body)
+    if r.status_code != 200:
+        raise MinimaxError(f"H3-Context-IR 建任务失败 HTTP {r.status_code}: {r.text[:300]}")
+    j = r.json() or {}
+    base = j.get("base_resp") or {}
+    code = base.get("status_code")
+    if code not in (0, None):
+        raise MinimaxError(f"H3-Context-IR 被拒（{code}）：{base.get('status_msg')}")
+    tid = (j.get("task") or {}).get("task_id") or (j.get("task") or {}).get("id") \
+        or j.get("task_id")
+    if not tid:
+        raise MinimaxError(f"H3-Context-IR 没拿到 task_id: {r.text[:200]}")
+    log.info("H3-Context-IR 任务 %s 已提交（%d 图 / %d 视频 / %d 音频）",
+             tid, len(images or []), len(videos or []), len(audios or []))
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        time.sleep(poll)
+        with httpx.Client(timeout=60) as c:
+            q = c.get(f"{_base()}/v2/query/video_generation/{tid}",
+                      headers=_headers())
+        if q.status_code != 200:
+            log.warning("H3-Context-IR 查询 %s 失败 HTTP %s", tid, q.status_code)
+            continue
+        task = (q.json() or {}).get("task") or {}
+        st = task.get("status")
+        if st == "succeeded":
+            pr = (task.get("content") or {}).get("prompt") or ""
+            if not pr.strip():
+                raise MinimaxError(f"H3-Context-IR 成功但没有提示词: {q.text[:300]}")
+            log.info("H3-Context-IR %s 完成，用时 %.0fs，提示词 %d 字",
+                     tid, time.time() - t0, len(pr))
+            return pr.strip()
+        if st in ("failed", "cancelled"):
+            _h = _err_hint(task.get("error"))
+            raise MinimaxError(
+                f"H3-Context-IR {tid} 状态 {st}: {task.get('error')}"
+                + (f"（{_h}）" if _h else ""))
+    raise MinimaxError(f"H3-Context-IR {tid} 超时（{timeout:.0f}s）")

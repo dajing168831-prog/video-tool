@@ -215,6 +215,10 @@ class RenderIn(BaseModel):
     #   确认后同样参数再出一次，前面的段命中缓存不重复扣费。
     max_segments: int = Field(0, ge=0, le=20,
                               description="只出前 N 段预览（0=全部）；继续出全部用同样的参数再调一次")
+    # 🩸 2026-11-02 强制重跑：默认 False —— 同样的输入永远命中缓存（省钱，
+    #   但模型是不确定的，失败了就再也抽不到第二次）。用户明确勾选才跳过
+    #   逐段产物缓存、重新调模型（会再扣一次费）。
+    force: bool = Field(False, description="跳过逐段缓存，强制重新生成（会重新扣费）")
 
 
 class ExtendIn(BaseModel):
@@ -1287,7 +1291,13 @@ async def clone_plan(cid: str, body: RenderIn):
     if _bad:
         return fail(_bad, biz_code=_code)
     try:
-        preview = _preview_call(cid, task, body)
+        # 🩸 只出前 N 段时，预览必须按**前 N 段**报数（2026-11-01）：
+        #   真跑那边 `render` 的 `max_segments` 分支只生成前 N 段、不拼接，
+        #   预览不认这个参数就会出现"点了先出第 1 段，弹窗写 2 段 / 18.067 秒"。
+        #   只在这一条路由上透传：`/prompts` 仍要写**全片**的逐段指令，
+        #   否则只写 1 段、出全部时后面几段会回落成代码版。
+        preview = _preview_call(cid, task, body,
+                                max_segments=int(body.max_segments or 0))
     except Exception as e:  # noqa: BLE001
         log.warning("出片预览失败：%s", e)
         return fail(str(e), biz_code=8)
@@ -1561,6 +1571,8 @@ async def clone_render(cid: str, body: RenderIn):
         "allow_stretch": bool(body.allow_stretch),
         # 只出前 N 段（预览）；0 = 全部。落进任务记录便于对账"这次是不是预览"
         "max_segments": int(body.max_segments or 0),
+        # 这一次有没有跳过缓存强制重跑（对账用：「钱花在哪一次」）
+        "force": bool(body.force),
         # 续出全部（`/continue`）要用同一套参数重建请求，遮罩开关也得留着
         "mask_bottom": bool(body.mask_bottom),
     }
@@ -1575,6 +1587,7 @@ async def clone_render(cid: str, body: RenderIn):
         regen_channel=body.regen_channel,
         edit_spec=spec,
         max_segments=int(body.max_segments or 0),
+        force=bool(body.force),
     )
     return ok({"id": cid, "render_id": rid})
 

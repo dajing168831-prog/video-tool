@@ -1,0 +1,1640 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MiniMax API",
+    "description": "MiniMax video generation V2 (Hailuo-03) API",
+    "license": {
+      "name": "MIT"
+    },
+    "version": "2.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://api.minimax.cn"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/v2/video_generation": {
+      "post": {
+        "summary": "创建视频生成任务",
+        "description": "创建视频生成任务。模型依据传入的文本、图片、视频、音频等多模态信息生成视频。本接口为异步接口，创建成功后返回 `task_id`，需通过[查询任务](/api-reference/video-generation-v2-query)接口轮询任务状态，任务成功后获取生成视频。\n\n当前支持模型：`MiniMax-H3`、`MiniMax-H3-Highspeed`、`MiniMax-H3-Lite`、`MiniMax-H3-Max`。",
+        "operationId": "videoGenerationV2Create",
+        "tags": [
+          "Video V2"
+        ],
+        "parameters": [
+          {
+            "name": "Content-Type",
+            "in": "header",
+            "required": true,
+            "description": "请求体的媒介类型，请设置为 `application/json`。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "application/json"
+              ],
+              "default": "application/json"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoGenerationV2Req"
+              },
+              "examples": {
+                "文生视频 (t2va)": {
+                  "value": {
+                    "model": "MiniMax-H3",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "史诗级太空歌剧院线预告：女舰长独自站在巨大观景窗前，最后一支舰队正在集结并跃迁离去，强光爆闪、舰桥震动，她被留在原地。"
+                      }
+                    ],
+                    "resolution": "2K",
+                    "duration": 5,
+                    "ratio": "16:9"
+                  }
+                },
+                "图生视频 (i2va)": {
+                  "value": {
+                    "model": "MiniMax-H3",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "Pull focus to the people in the background and add more steam to the ramen bowl."
+                      },
+                      {
+                        "type": "image_url",
+                        "image_url": {
+                          "url": "https://cdn.hailuoai.com/prod/hailuo_demo/testsets/H3_AA_I2VA/gallery/sr_v17_variants_seed42_43_20260724/inputs/4a3a90bf9100_KDmcbkhzYo5sjjxr9FqcVmWVnzb.png"
+                        },
+                        "role": "first_frame"
+                      }
+                    ],
+                    "resolution": "2K",
+                    "duration": 5,
+                    "ratio": "adaptive"
+                  }
+                },
+                "多模态参考生视频 (r2va)": {
+                  "value": {
+                    "model": "MiniMax-H3",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "角色说话：Follow the wind, live free.Leave worries behind, enjoy the moment，音色参考音频1"
+                      },
+                      {
+                        "type": "video_url",
+                        "video_url": {
+                          "url": "https://cdn.hailuoai.com/prod/hailuo_demo/testsets/h3_promo_eval_ref2va/gallery/sr_v2p26_trio_seed42_20260724/inputs/297573323635_00_%E8%A7%86%E9%A2%911_YnyRbxEwio_video_20260525_163755_1927e9d3.mp4"
+                        },
+                        "role": "reference_video"
+                      },
+                      {
+                        "type": "audio_url",
+                        "audio_url": {
+                          "url": "https://cdn.hailuoai.com/prod/hailuo_demo/testsets/h3_promo_eval_ref2va/gallery/sr_v2p26_trio_seed42_20260724/inputs/f463d523c5ce_01_%E9%9F%B3%E9%A2%911_RSLcbpzJPo_6%E6%9C%885%E6%97%A5(1).mp3"
+                        },
+                        "role": "reference_audio"
+                      }
+                    ],
+                    "resolution": "2K",
+                    "duration": 5,
+                    "ratio": "adaptive"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "创建成功后返回 `task_id`。使用该 `task_id` 调用[查询任务](/api-reference/video-generation-v2-query)接口获取任务状态与结果。\n\n**查询任务成功响应示例**\n\n```json\n{\n  \"task\": {\n    \"id\": \"424010985738629\",\n    \"model\": \"MiniMax-H3\",\n    \"status\": \"succeeded\",\n    \"created_at\": 1785125529,\n    \"updated_at\": 1785125946,\n    \"content\": {\n      \"url\": \"https://your-cdn.example.com/h3-generated-2k-output.mp4\"\n    },\n    \"resolution\": \"2K\",\n    \"duration\": 5,\n    \"usage\": {\n      \"total_seconds\": 5,\n      \"input_seconds\": 0,\n      \"output_seconds\": 5,\n      \"input_image_count\": 0\n    },\n    \"ratio\": \"16:9\",\n    \"task_type\": \"generation\",\n    \"modality\": \"video\"\n  }\n}\n```",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoGenerationV2Resp"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Err400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Err401"
+          },
+          "402": {
+            "$ref": "#/components/responses/Err402"
+          },
+          "422": {
+            "$ref": "#/components/responses/Err422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Err429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Err500"
+          }
+        }
+      }
+    },
+    "/v2/video_generation/{task_id}": {
+      "delete": {
+        "summary": "取消或删除任务",
+        "description": "根据任务当前状态取消或删除视频生成、H3-Context-IR 及视频再生成任务：\n- `queued`（排队中）：取消任务（`action=cancelled`），任务尚未开始处理。\n- `succeeded` / `failed`：删除任务记录（`action=deleted`）。\n- `running`（运行中）/ `cancelled`（已取消）：不可操作，返回错误。",
+        "operationId": "videoGenerationV2Delete",
+        "tags": [
+          "Video V2"
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "description": "要取消或删除的任务 ID。",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteVideoGenerationV2Resp"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Err400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Err401"
+          },
+          "429": {
+            "$ref": "#/components/responses/Err429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Err500"
+          }
+        }
+      }
+    },
+    "/v2/query/video_generation/{task_id}": {
+      "get": {
+        "summary": "查询任务",
+        "description": "查询单个视频生成、H3-Context-IR 或视频再生成任务的状态与结果。任务成功（`status=succeeded`）后可从 `content` 获取产物：视频任务返回 `content.url`，H3-Context-IR 任务返回 `content.prompt` 中的增强提示词。\n\n> 仅支持查询最近 7 天内的任务记录（窗口 `[T-7天, T)`，`T` 为请求发起时刻的 UTC 时间戳，精确到秒）；超出该窗口的 `task_id` 将返回 `invalid task_id`。视频产物下载链接有时效，请及时下载或转存。",
+        "operationId": "videoGenerationV2Query",
+        "tags": [
+          "Video V2"
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "description": "要查询的任务 ID（创建任务返回的 `task_id`）。",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetVideoGenerationV2Resp"
+                },
+                "examples": {
+                  "视频生成成功": {
+                    "value": {
+                      "task": {
+                        "id": "424010985738629",
+                        "model": "MiniMax-H3",
+                        "status": "succeeded",
+                        "created_at": 1785125529,
+                        "updated_at": 1785125946,
+                        "content": {
+                          "url": "https://cdn.hailuoai.com/prod/hailuo_demo/testsets/h3_promo_eval_ref2va/gallery/sr_v2p26_trio_seed42_20260724/inputs/89f8c0bbee5b_denoise_ids_0_final.mp4"
+                        },
+                        "resolution": "2K",
+                        "duration": 5,
+                        "usage": {
+                          "total_seconds": 5,
+                          "input_seconds": 0,
+                          "output_seconds": 5,
+                          "input_image_count": 1,
+                          "input_audio_seconds": 6,
+                          "total_tokens": 273890,
+                          "prompt_tokens": 13500,
+                          "completion_tokens": 260390
+                        },
+                        "ratio": "16:9",
+                        "task_type": "generation",
+                        "modality": "video"
+                      }
+                    }
+                  },
+                  "H3-Context-IR 成功": {
+                    "value": {
+                      "task": {
+                        "id": "426586401755526",
+                        "model": "MiniMax-H3",
+                        "status": "succeeded",
+                        "created_at": 1785702855,
+                        "updated_at": 1785702884,
+                        "content": {
+                          "prompt": "integrated_multimodal_description: [Shot 1] Cinematic, wide shot with a slow push in on a female captain standing center frame with her back to the camera. She has a slender build and short, swept-back silver hair, wearing a crisp, dark navy-blue futuristic military uniform adorned with rigid silver epaulets. Before her stretches a colossal, curved glass observation window dominating the dimly lit starship bridge. The interior features sleek metallic consoles on the left and right emitting soft cyan light. Outside the window, a massive fleet of dark-grey, heavily armored dreadnoughts and cruisers is assembling against a backdrop of a swirling deep-purple and magenta nebula. The rear thrusters of the distant ships glow intensely with fiery orange light. [Shot 2] At 00:02.800, the camera cuts to a medium close-up of the captain from Shot 1 in profile facing right, while the camera shakes strongly. Her facial features are now visible, revealing a woman in her late forties with sharp cheekbones and a stoic expression. A sudden, blinding flash of brilliant cyan and white light bursts through the window as the fleet outside simultaneously jumps into warp, casting harsh, overexposed illumination across her face. The bridge vibrates violently, causing her shoulders to tense and her uniform collar to tremble. The intense light instantly fades into deep shadow, leaving her completely alone against the newly emptied, pitch-black void of space.\noverall_soundscape: Deep, resonant low-frequency thrumming of ship engines, overlaid with rhythmic, high-pitched electronic beeps from the consoles, followed by a sudden, deafening sub-bass boom and a loud, sizzling crackle as the warp drives engage. The immense acoustic impact causes a heavy, metallic clattering of the bridge panels, which instantly drops off into a stark, quiet mechanical hum.\nnon_diegetic_music: Symphonic orchestral score, beginning with a slow, rising brass and string crescendo that abruptly cuts off, instantly transitioning into a single, sustained, low-register solo cello note with no dynamic swell."
+                        },
+                        "duration": 5,
+                        "usage": {
+                          "total_tokens": 9090,
+                          "prompt_tokens": 5664,
+                          "completion_tokens": 3426
+                        },
+                        "ratio": "16:9",
+                        "task_type": "h3_context_ir",
+                        "modality": "text"
+                      }
+                    }
+                  },
+                  "视频再生成成功": {
+                    "value": {
+                      "task": {
+                        "id": "424010985738631",
+                        "model": "MiniMax-H3",
+                        "status": "succeeded",
+                        "created_at": 1785126000,
+                        "updated_at": 1785126300,
+                        "content": {
+                          "url": "https://your-cdn.example.com/h3-regenerated-2k-output.mp4"
+                        },
+                        "resolution": "2K",
+                        "duration": 5,
+                        "usage": {
+                          "total_seconds": 5,
+                          "input_seconds": 0,
+                          "output_seconds": 5,
+                          "input_image_count": 0,
+                          "total_tokens": 97645,
+                          "prompt_tokens": 0,
+                          "completion_tokens": 97645
+                        },
+                        "ratio": "",
+                        "task_type": "regeneration",
+                        "modality": "video"
+                      }
+                    }
+                  },
+                  "失败": {
+                    "value": {
+                      "task": {
+                        "id": "424010985738630",
+                        "model": "MiniMax-H3",
+                        "status": "failed",
+                        "error": {
+                          "code": "1026",
+                          "message": "video description contains sensitive content"
+                        },
+                        "created_at": 1785125529,
+                        "updated_at": 1785125700,
+                        "resolution": "2K",
+                        "duration": 5,
+                        "usage": {},
+                        "ratio": "16:9",
+                        "task_type": "generation",
+                        "modality": "video"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Err400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Err401"
+          },
+          "429": {
+            "$ref": "#/components/responses/Err429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Err500"
+          }
+        }
+      }
+    },
+    "/v2/query/video_generation": {
+      "get": {
+        "summary": "查询任务列表",
+        "description": "分页查询最近 7 天内的任务列表，支持按状态、任务 ID、模型和任务类型过滤。",
+        "operationId": "videoGenerationV2List",
+        "tags": [
+          "Video V2"
+        ],
+        "parameters": [
+          {
+            "name": "page_num",
+            "in": "query",
+            "required": false,
+            "description": "页码，从 1 开始。",
+            "schema": {
+              "type": "integer",
+              "example": 1
+            },
+            "example": 1
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "description": "每页数量。",
+            "schema": {
+              "type": "integer",
+              "example": 20
+            },
+            "example": 20
+          },
+          {
+            "name": "filter.status",
+            "in": "query",
+            "required": false,
+            "description": "按任务状态过滤。可用值：`queued`、`running`、`succeeded`、`failed`、`cancelled`。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "queued",
+                "running",
+                "succeeded",
+                "failed",
+                "cancelled"
+              ]
+            }
+          },
+          {
+            "name": "filter.task_ids",
+            "in": "query",
+            "required": false,
+            "description": "按任务 ID 过滤，可传多个。",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "filter.model",
+            "in": "query",
+            "required": false,
+            "description": "按模型名称过滤，如 `MiniMax-H3`。",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "filter.task_type",
+            "in": "query",
+            "required": false,
+            "description": "按任务类型过滤。可用值：`generation`（视频生成）、`h3_context_ir`（H3-Context-IR）、`regeneration`（视频再生成）。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "generation",
+                "h3_context_ir",
+                "regeneration"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListVideoGenerationV2Resp"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Err400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Err401"
+          },
+          "429": {
+            "$ref": "#/components/responses/Err429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Err500"
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "source": "curl --request GET \\\n  --url 'https://api.minimax.cn/v2/query/video_generation?page_num=1&page_size=4' \\\n  --header 'Authorization: Bearer <token>'"
+          }
+        ]
+      }
+    },
+    "/v2/h3_context_ir": {
+      "post": {
+        "summary": "创建 H3-Context-IR 任务",
+        "description": "H3-Context-IR 深度理解文本、图像、音频和视频等多模态上下文，分析素材之间以及素材与目标生成结果之间的关系，并进行复杂逻辑推理。系统会将理解结果转换为结构化表达，在尽量保持用户原始意图的前提下丰富语义细节。本接口只返回增强提示词，不创建视频生成任务。\n\nH3-Context-IR 是一个复杂系统，暂不提供开源实现；本 API 既可用于验证 Full 2K-Workflow 的官方效果，也可集成到生产工作流中。",
+        "operationId": "h3ContextIRV2Create",
+        "tags": [
+          "Video V2"
+        ],
+        "parameters": [
+          {
+            "name": "Content-Type",
+            "in": "header",
+            "required": true,
+            "description": "请求体的媒介类型，请设置为 `application/json`。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "application/json"
+              ],
+              "default": "application/json"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/H3ContextIRReq"
+              },
+              "examples": {
+                "文生视频 (t2va)": {
+                  "value": {
+                    "model": "MiniMax-H3",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "史诗级太空歌剧院线预告：女舰长独自站在巨大观景窗前，最后一支舰队正在集结并跃迁离去，强光爆闪、舰桥震动，她被留在原地。"
+                      }
+                    ],
+                    "duration": 5,
+                    "ratio": "16:9"
+                  }
+                },
+                "图生视频 (i2va)": {
+                  "value": {
+                    "model": "MiniMax-H3",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "Pull focus to the people in the background and add more steam to the ramen bowl."
+                      },
+                      {
+                        "type": "image_url",
+                        "image_url": {
+                          "url": "https://cdn.hailuoai.com/prod/hailuo_demo/testsets/H3_AA_I2VA/gallery/sr_v17_variants_seed42_43_20260724/inputs/4a3a90bf9100_KDmcbkhzYo5sjjxr9FqcVmWVnzb.png"
+                        },
+                        "role": "first_frame"
+                      }
+                    ],
+                    "duration": 5,
+                    "ratio": "adaptive"
+                  }
+                },
+                "多模态参考生视频 (r2va)": {
+                  "value": {
+                    "model": "MiniMax-H3",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "角色说话：Follow the wind, live free.Leave worries behind, enjoy the moment，音色参考音频1"
+                      },
+                      {
+                        "type": "video_url",
+                        "video_url": {
+                          "url": "https://cdn.hailuoai.com/prod/hailuo_demo/testsets/h3_promo_eval_ref2va/gallery/sr_v2p26_trio_seed42_20260724/inputs/297573323635_00_%E8%A7%86%E9%A2%911_YnyRbxEwio_video_20260525_163755_1927e9d3.mp4"
+                        },
+                        "role": "reference_video"
+                      },
+                      {
+                        "type": "audio_url",
+                        "audio_url": {
+                          "url": "https://cdn.hailuoai.com/prod/hailuo_demo/testsets/h3_promo_eval_ref2va/gallery/sr_v2p26_trio_seed42_20260724/inputs/f463d523c5ce_01_%E9%9F%B3%E9%A2%911_RSLcbpzJPo_6%E6%9C%885%E6%97%A5(1).mp3"
+                        },
+                        "role": "reference_audio"
+                      }
+                    ],
+                    "duration": 5,
+                    "ratio": "adaptive"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "创建成功后返回 `task_id`。使用该 `task_id` 调用[查询任务](/api-reference/video-generation-v2-query)接口获取任务状态与结果。任务成功后，从 `content.prompt` 获取增强提示词。\n\n**查询任务成功响应示例**\n\n```json\n{\n  \"task\": {\n    \"id\": \"426586401755526\",\n    \"model\": \"MiniMax-H3\",\n    \"status\": \"succeeded\",\n    \"created_at\": 1785702855,\n    \"updated_at\": 1785702884,\n    \"content\": {\n      \"prompt\": \"integrated_multimodal_description: [Shot 1] Cinematic, wide shot with a slow push in on a female captain standing center frame with her back to the camera. She has a slender build and short, swept-back silver hair, wearing a crisp, dark navy-blue futuristic military uniform adorned with rigid silver epaulets. Before her stretches a colossal, curved glass observation window dominating the dimly lit starship bridge. The interior features sleek metallic consoles on the left and right emitting soft cyan light. Outside the window, a massive fleet of dark-grey, heavily armored dreadnoughts and cruisers is assembling against a backdrop of a swirling deep-purple and magenta nebula. The rear thrusters of the distant ships glow intensely with fiery orange light. [Shot 2] At 00:02.800, the camera cuts to a medium close-up of the captain from Shot 1 in profile facing right, while the camera shakes strongly. Her facial features are now visible, revealing a woman in her late forties with sharp cheekbones and a stoic expression. A sudden, blinding flash of brilliant cyan and white light bursts through the window as the fleet outside simultaneously jumps into warp, casting harsh, overexposed illumination across her face. The bridge vibrates violently, causing her shoulders to tense and her uniform collar to tremble. The intense light instantly fades into deep shadow, leaving her completely alone against the newly emptied, pitch-black void of space.\\noverall_soundscape: Deep, resonant low-frequency thrumming of ship engines, overlaid with rhythmic, high-pitched electronic beeps from the consoles, followed by a sudden, deafening sub-bass boom and a loud, sizzling crackle as the warp drives engage. The immense acoustic impact causes a heavy, metallic clattering of the bridge panels, which instantly drops off into a stark, quiet mechanical hum.\\nnon_diegetic_music: Symphonic orchestral score, beginning with a slow, rising brass and string crescendo that abruptly cuts off, instantly transitioning into a single, sustained, low-register solo cello note with no dynamic swell.\"\n    },\n    \"duration\": 5,\n    \"usage\": {\n      \"total_tokens\": 9090,\n      \"prompt_tokens\": 5664,\n      \"completion_tokens\": 3426\n    },\n    \"ratio\": \"16:9\",\n    \"task_type\": \"h3_context_ir\",\n    \"modality\": \"text\"\n  }\n}\n```",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoGenerationV2Resp"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Err400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Err401"
+          },
+          "402": {
+            "$ref": "#/components/responses/Err402"
+          },
+          "422": {
+            "$ref": "#/components/responses/Err422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Err429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Err500"
+          }
+        }
+      }
+    },
+    "/v2/video_regeneration": {
+      "post": {
+        "summary": "创建视频再生成任务",
+        "description": "创建视频再生成任务：对符合 MiniMax-H3 768P 输出规格的源视频再生成为 2K 视频。支持两种输入模式，`source_task_id` 与 `content`（含 `base_video`）**必须且只能提供其一**（都提供或都不提供均返回参数错误）：\n\n- **按任务 ID 再生成（`source_task_id`）**：传入一个已有 `/v2/video_generation` 成功任务的 `source_task_id`，以其产物为源再生成。该模式需开通白名单；源任务须属于当前账号、状态为 `succeeded`，且仍在 `/v2/query/video_generation` 的 7 天查询窗口内。无需再传 `content`。\n- **按源视频再生成（`base_video`）**：在 `content` 中提供且仅提供一个 `type=video_url`、`role=base_video` 的源视频项，并原样附上生成该 768P 视频时的其余输入。\n\n本接口为异步接口，创建成功后返回 `task_id`，通过[查询任务](/api-reference/video-generation-v2-query)轮询任务状态；`task_type` 为 `regeneration`。当前支持模型：`MiniMax-H3`。",
+        "operationId": "videoRegenerationV2Create",
+        "tags": [
+          "Video V2"
+        ],
+        "parameters": [
+          {
+            "name": "Content-Type",
+            "in": "header",
+            "required": true,
+            "description": "请求体的媒介类型,请设置为 `application/json`。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "application/json"
+              ],
+              "default": "application/json"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/VideoRegenerationSourceTaskReq"
+                  },
+                  {
+                    "$ref": "#/components/schemas/VideoRegenerationBaseVideoReq"
+                  }
+                ]
+              },
+              "examples": {
+                "按任务 ID 再生成（source_task_id）": {
+                  "value": {
+                    "model": "MiniMax-H3",
+                    "source_task_id": "424010985738629",
+                    "resolution": "2K"
+                  }
+                },
+                "按源视频再生成（base_video）· 文生": {
+                  "value": {
+                    "model": "MiniMax-H3",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "史诗级太空歌剧院线预告：女舰长独自站在巨大观景窗前，最后一支舰队正在集结并跃迁离去，强光爆闪、舰桥震动，她被留在原地。"
+                      },
+                      {
+                        "type": "video_url",
+                        "video_url": {
+                          "url": "https://your-cdn.example.com/h3-t2va-768p.mp4"
+                        },
+                        "role": "base_video"
+                      }
+                    ],
+                    "resolution": "2K"
+                  }
+                },
+                "按源视频再生成（base_video）· 图生": {
+                  "value": {
+                    "model": "MiniMax-H3",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "Pull focus to the people in the background and add more steam to the ramen bowl."
+                      },
+                      {
+                        "type": "image_url",
+                        "image_url": {
+                          "url": "https://cdn.hailuoai.com/prod/hailuo_demo/testsets/H3_AA_I2VA/gallery/sr_v17_variants_seed42_43_20260724/inputs/4a3a90bf9100_KDmcbkhzYo5sjjxr9FqcVmWVnzb.png"
+                        },
+                        "role": "first_frame"
+                      },
+                      {
+                        "type": "video_url",
+                        "video_url": {
+                          "url": "https://your-cdn.example.com/h3-i2va-768p.mp4"
+                        },
+                        "role": "base_video"
+                      }
+                    ],
+                    "resolution": "2K"
+                  }
+                },
+                "按源视频再生成（base_video）· 多模态参考": {
+                  "value": {
+                    "model": "MiniMax-H3",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "角色说话：Follow the wind, live free. Leave worries behind, enjoy the moment，音色参考音频1"
+                      },
+                      {
+                        "type": "video_url",
+                        "video_url": {
+                          "url": "https://cdn.hailuoai.com/prod/hailuo_demo/testsets/h3_promo_eval_ref2va/gallery/sr_v2p26_trio_seed42_20260724/inputs/297573323635_00_%E8%A7%86%E9%A2%911_YnyRbxEwio_video_20260525_163755_1927e9d3.mp4"
+                        },
+                        "role": "reference_video"
+                      },
+                      {
+                        "type": "audio_url",
+                        "audio_url": {
+                          "url": "https://cdn.hailuoai.com/prod/hailuo_demo/testsets/h3_promo_eval_ref2va/gallery/sr_v2p26_trio_seed42_20260724/inputs/f463d523c5ce_01_%E9%9F%B3%E9%A2%911_RSLcbpzJPo_6%E6%9C%885%E6%97%A5(1).mp3"
+                        },
+                        "role": "reference_audio"
+                      },
+                      {
+                        "type": "video_url",
+                        "video_url": {
+                          "url": "https://your-cdn.example.com/h3-r2va-768p.mp4"
+                        },
+                        "role": "base_video"
+                      }
+                    ],
+                    "resolution": "2K"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "创建成功后返回 `task_id`。使用该 `task_id` 调用[查询任务](/api-reference/video-generation-v2-query)接口获取任务状态与结果。\n\n**查询任务成功响应示例**\n\n```json\n{\n  \"task\": {\n    \"id\": \"424010985738631\",\n    \"model\": \"MiniMax-H3\",\n    \"status\": \"succeeded\",\n    \"created_at\": 1785126000,\n    \"updated_at\": 1785126300,\n    \"content\": {\n      \"url\": \"https://your-cdn.example.com/h3-regenerated-2k-output.mp4\"\n    },\n    \"resolution\": \"2K\",\n    \"duration\": 5,\n    \"usage\": {\n      \"total_seconds\": 5,\n      \"input_seconds\": 0,\n      \"output_seconds\": 5,\n      \"input_image_count\": 0\n    },\n    \"ratio\": \"\",\n    \"task_type\": \"regeneration\",\n    \"modality\": \"video\"\n  }\n}\n```",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoGenerationV2Resp"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Err400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Err401"
+          },
+          "402": {
+            "$ref": "#/components/responses/Err402"
+          },
+          "422": {
+            "$ref": "#/components/responses/Err422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Err429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Err500"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "VideoGenerationV2Req": {
+        "type": "object",
+        "required": [
+          "model",
+          "content",
+          "resolution",
+          "duration"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "模型名称。当前可用值：`MiniMax-H3`、`MiniMax-H3-Highspeed`、`MiniMax-H3-Lite`、`MiniMax-H3-Max`。\n\n- **`MiniMax-H3`**：**适合高品质视频创作的版本**。支持文生视频、图生视频（首帧 / 尾帧）与多模态参考生视频；分辨率 `768P` / `2K`，时长 4~15 秒。\n- **`MiniMax-H3-Highspeed`**：**兼顾生成质量与速度的版本**。支持文生视频、图生视频（首帧 / 尾帧）与多模态参考生视频（参考图 / 参考视频 / 参考音频）；分辨率 `480P` / `768P`，**不支持 `2K`**；时长 4~15 秒。\n- **`MiniMax-H3-Lite`**：**轻量版本**。支持文生视频、图生视频（首帧 / 尾帧）与多模态参考生视频（参考图 / 参考视频 / 参考音频）；分辨率 `480P` / `768P`，**不支持 `2K`**；时长 4~15 秒。\n- **`MiniMax-H3-Max`**：**极速生成版本**。支持文生视频、图生视频（首帧 / 尾帧）与多模态参考生视频（参考图 / 参考视频 / 参考音频）；分辨率 `480P` / `768P`，**不支持 `2K`**；时长 5~15 秒。",
+            "enum": [
+              "MiniMax-H3",
+              "MiniMax-H3-Highspeed",
+              "MiniMax-H3-Lite",
+              "MiniMax-H3-Max"
+            ]
+          },
+          "content": {
+            "type": "array",
+            "description": "多模态输入内容数组，描述用于生成视频的信息。每个元素通过 `type` 区分类型（`text` / `image_url` / `video_url` / `audio_url`），并可通过 `role` 标注用途。\n\n**每次请求必须包含一个非空 `text` 项（prompt 必填）**；缺失会返回参数错误。\n\n支持的输入组合（对应不同生成场景）：\n- **文生视频**：仅一个 `text` 元素。\n- **图生视频-首帧**：`text` + 1 张 `image_url`（`role=first_frame` 或不填）。\n- **图生视频-尾帧**：`text` + 1 张 `image_url`（`role=last_frame`）。\n- **图生视频-首尾帧**：`text` + 2 张 `image_url`（`role` 分别为 `first_frame`、`last_frame`）。\n- **多模态参考生视频**：`text` + 参考图片（`role=reference_image`）+ 参考视频（`role=reference_video`）+ 参考音频（`role=reference_audio`）的组合。\n\n> **图生视频与多模态参考生视频互斥**：content 中出现 `reference_image` / `reference_video` / `reference_audio` 任一 role，就不能再出现 `first_frame` / `last_frame`（反之亦然），二者不可混用。\n\n---\n\n**输入媒体限制**（请求体总大小 ≤ 64 MB，大文件请用公网 URL，勿用 Base64）\n\n图片 `image_url`：\n\n| 项 | 限制 |\n| :--- | :--- |\n| 格式 | JPG、JPEG、PNG、WEBP、HEIC、HEIF |\n| 单文件大小 | ≤ 30 MB |\n| 宽高范围 | [256, 5760] px |\n| 长宽比（宽/高） | [0.4, 2.5] |\n| 数量 | 首帧 ≤ 1、尾帧 ≤ 1、参考图 ≤ 9 |\n\n视频 `video_url`（仅多模态参考场景）：\n\n| 项 | 限制 |\n| :--- | :--- |\n| 容器 / 格式 | MP4（`.mp4`）、MOV（`.mov`） |\n| 编码 | 视频 H.264/AVC、H.265/HEVC；音频 AAC、MP3 |\n| 单文件大小 | ≤ 50 MB |\n| 个数 | ≤ 3 |\n| 单段时长 | [2, 15] s；总时长 ≤ 15 s |\n| 宽高范围 | [256, 5760] px |\n| 长宽比（宽/高） | [0.4, 2.5] |\n| 帧率 | [23.976, 60] |\n\n音频 `audio_url`（仅多模态参考场景）：\n\n| 项 | 限制 |\n| :--- | :--- |\n| 格式 | WAV、MP3 |\n| 单文件大小 | ≤ 15 MB |\n| 个数 | ≤ 3 |\n| 单段时长 | [2, 15] s；总时长 ≤ 15 s |",
+            "items": {
+              "$ref": "#/components/schemas/ContentItem"
+            }
+          },
+          "resolution": {
+            "type": "string",
+            "description": "视频分辨率。不同模型支持的档位不同：\n\n- **`MiniMax-H3`**：`768P`、`2K`\n- **`MiniMax-H3-Highspeed`**：`480P`、`768P`（不支持 `2K`）\n- **`MiniMax-H3-Lite`**：`480P`、`768P`（不支持 `2K`）\n- **`MiniMax-H3-Max`**：`480P`、`768P`（不支持 `2K`）",
+            "enum": [
+              "480P",
+              "768P",
+              "2K"
+            ]
+          },
+          "duration": {
+            "type": "integer",
+            "description": "生成视频时长（秒），必选，整数。不同模型可用值不同：\n\n- **`MiniMax-H3`**：`4`~`15`\n- **`MiniMax-H3-Highspeed`**：`4`~`15`\n- **`MiniMax-H3-Lite`**：`4`~`15`\n- **`MiniMax-H3-Max`**：`5`~`15`（不支持 4 秒）",
+            "enum": [
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ]
+          },
+          "ratio": {
+            "type": "string",
+            "description": "生成视频的宽高比，默认 `adaptive`（自动，由输入自适应选择最合适的宽高比，实际比例可在查询接口的 `ratio` 字段获取）。可用值：`adaptive`、`21:9`、`16:9`、`4:3`、`1:1`、`3:4`、`9:16`。\n\n**文生视频（t2va，content 仅含 `text`）**：`ratio` 必填，且不能为 `adaptive`；可用值 `21:9`、`16:9`、`4:3`、`1:1`、`3:4`、`9:16`。\n\n**图生视频（i2va，content 含 `first_frame` / `last_frame` 图片）**：宽高比由输入图片决定，`ratio` 恒为 `adaptive`；传入其他合理值不会报错，但会被忽略并按 `adaptive` 处理。\n\n**多模态参考生视频（r2va，content 含 `reference_image` / `reference_video` / `reference_audio`）**：`ratio` 可选，默认 `adaptive`；也可显式指定上述任一具体比例。`MiniMax-H3-Lite` 暂不支持 `adaptive`，需显式指定具体比例。",
+            "enum": [
+              "adaptive",
+              "21:9",
+              "16:9",
+              "4:3",
+              "1:1",
+              "3:4",
+              "9:16"
+            ]
+          },
+          "extra": {
+            "type": "object",
+            "description": "`MiniMax-H3-Max` 的额外生成选项。当前仅支持 `prompt_expansion_mode`。不传 `extra` 或不传此属性时，使用 `balanced`。不要传 `balance`、空字符串、布尔值或其他未声明字段。",
+            "properties": {
+              "prompt_expansion_mode": {
+                "type": "string",
+                "description": "提示词扩写模式。`disabled` 表示关闭提示词扩写；`balanced` 表示均衡扩写且为默认值；`quality` 表示质量优先扩写。",
+                "enum": [
+                  "disabled",
+                  "balanced",
+                  "quality"
+                ],
+                "default": "balanced"
+              }
+            },
+            "additionalProperties": false
+          },
+          "callback_url": {
+            "type": "string",
+            "description": "任务状态变更的回调通知地址。配置后 MiniMax 服务器会先发送含 `challenge` 字段的验证请求（需 3 秒内原样返回 `challenge` 完成验证），验证成功后每当任务状态变更即向该地址 POST 推送，推送体结构与[查询任务](/api-reference/video-generation-v2-query)接口的响应一致。\n\n回调 `status` 取值：`queued`（排队中）、`running`（运行中）、`succeeded`（成功）、`failed`（失败）、`cancelled`（已取消）。"
+          },
+          "aigc_watermark": {
+            "type": "boolean",
+            "description": "是否在生成视频中添加 AIGC 标识水印，默认 `false`。"
+          }
+        },
+        "example": {
+          "model": "MiniMax-H3",
+          "content": [
+            {
+              "type": "text",
+              "text": "一个男孩在海边打篮球"
+            }
+          ],
+          "resolution": "2K",
+          "duration": 5,
+          "ratio": "16:9"
+        }
+      },
+      "H3ContextIRReq": {
+        "type": "object",
+        "description": "创建 H3-Context-IR 任务的请求参数。",
+        "required": [
+          "model",
+          "content",
+          "duration"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "模型名称。当前可用值：`MiniMax-H3`。",
+            "enum": [
+              "MiniMax-H3"
+            ]
+          },
+          "content": {
+            "type": "array",
+            "description": "多模态上下文输入数组，用于描述目标视频及各类素材之间的关系。每个元素通过 `type` 区分类型（`text` / `image_url` / `video_url` / `audio_url`），并可通过 `role` 标注用途。\n\n**每次请求必须包含一个非空 `text` 项（prompt 必填）**；缺失会返回参数错误。\n\n支持的输入组合（对应不同生成场景）：\n- **文生视频**：仅一个 `text` 元素。\n- **图生视频-首帧**：`text` + 1 张 `image_url`（`role=first_frame` 或不填）。\n- **图生视频-尾帧**：`text` + 1 张 `image_url`（`role=last_frame`）。\n- **图生视频-首尾帧**：`text` + 2 张 `image_url`（`role` 分别为 `first_frame`、`last_frame`）。\n- **多模态参考生视频**：`text` + 参考图片（`role=reference_image`）+ 参考视频（`role=reference_video`）+ 参考音频（`role=reference_audio`）的组合。\n\n> **图生视频与多模态参考生视频互斥**：content 中出现 `reference_image` / `reference_video` / `reference_audio` 任一 role，就不能再出现 `first_frame` / `last_frame`（反之亦然），二者不可混用。\n\n---\n\n**输入媒体限制**（请求体总大小 ≤ 64 MB，大文件请用公网 URL，勿用 Base64）\n\n图片 `image_url`：\n\n| 项 | 限制 |\n| :--- | :--- |\n| 格式 | JPG、JPEG、PNG、WEBP、HEIC、HEIF |\n| 单文件大小 | ≤ 30 MB |\n| 宽高范围 | [256, 5760] px |\n| 长宽比（宽/高） | [0.4, 2.5] |\n| 数量 | 首帧 ≤ 1、尾帧 ≤ 1、参考图 ≤ 9 |\n\n视频 `video_url`（仅多模态参考场景）：\n\n| 项 | 限制 |\n| :--- | :--- |\n| 容器 / 格式 | MP4（`.mp4`）、MOV（`.mov`） |\n| 编码 | 视频 H.264/AVC、H.265/HEVC；音频 AAC、MP3 |\n| 单文件大小 | ≤ 50 MB |\n| 个数 | ≤ 3 |\n| 单段时长 | [2, 15] s；总时长 ≤ 15 s |\n| 宽高范围 | [256, 5760] px |\n| 长宽比（宽/高） | [0.4, 2.5] |\n| 帧率 | [23.976, 60] |\n\n音频 `audio_url`（仅多模态参考场景）：\n\n| 项 | 限制 |\n| :--- | :--- |\n| 格式 | WAV、MP3 |\n| 单文件大小 | ≤ 15 MB |\n| 个数 | ≤ 3 |\n| 单段时长 | [2, 15] s；总时长 ≤ 15 s |",
+            "items": {
+              "$ref": "#/components/schemas/ContentItem"
+            }
+          },
+          "duration": {
+            "type": "integer",
+            "description": "目标视频时长（秒），必选，整数。可用值：`4`~`15`。",
+            "enum": [
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ]
+          },
+          "ratio": {
+            "type": "string",
+            "description": "目标视频的宽高比，默认 `adaptive`。可用值：`adaptive`、`21:9`、`16:9`、`4:3`、`1:1`、`3:4`、`9:16`。\n\n**文生视频（t2va，content 仅含 `text`）**：`ratio` 必填，且不能为 `adaptive`；可用值 `21:9`、`16:9`、`4:3`、`1:1`、`3:4`、`9:16`。\n\n**图生视频（i2va，content 含 `first_frame` / `last_frame` 图片）**：宽高比由输入图片决定，`ratio` 恒为 `adaptive`；传入其他合理值不会报错，但会被忽略并按 `adaptive` 处理。\n\n**多模态参考生视频（r2va，content 含 `reference_image` / `reference_video` / `reference_audio`）**：`ratio` 可选，默认 `adaptive`；也可显式指定上述任一具体比例。",
+            "enum": [
+              "adaptive",
+              "21:9",
+              "16:9",
+              "4:3",
+              "1:1",
+              "3:4",
+              "9:16"
+            ]
+          },
+          "callback_url": {
+            "type": "string",
+            "description": "任务状态变更的回调通知地址。配置后 MiniMax 服务器会先发送含 `challenge` 字段的验证请求（需 3 秒内原样返回 `challenge` 完成验证），验证成功后每当任务状态变更即向该地址 POST 推送，推送体结构与[查询任务](/api-reference/video-generation-v2-query)接口的响应一致。\n\n回调 `status` 取值：`queued`（排队中）、`running`（运行中）、`succeeded`（成功）、`failed`（失败）、`cancelled`（已取消）。"
+          }
+        },
+        "example": {
+          "model": "MiniMax-H3",
+          "content": [
+            {
+              "type": "text",
+              "text": "一个男孩在海边打篮球"
+            }
+          ],
+          "duration": 5,
+          "ratio": "16:9"
+        }
+      },
+      "ContentItem": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "输入内容的类型。",
+            "enum": [
+              "text",
+              "image_url",
+              "video_url",
+              "audio_url"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "description": "文本提示词（prompt），**必填**：所有场景都需包含一个非空 `text`，描述期望生成的视频。按字符数计算长度，单个 `text` 最多 7000 个字符。"
+          },
+          "image_url": {
+            "type": "object",
+            "description": "当 `type=image_url` 时的图片对象（格式 / 大小 / 尺寸 / 数量限制见上方 content 说明）。",
+            "required": [
+              "url"
+            ],
+            "properties": {
+              "url": {
+                "type": "string",
+                "description": "图片地址,支持:公网 URL;`mm_file://{file_id}`(引用平台已有文件,如上传或历史产物的 file_id);`data:image/<格式>;base64,<Base64>` data URI(`<格式>` 小写)。"
+              }
+            }
+          },
+          "video_url": {
+            "type": "object",
+            "description": "当 `type=video_url` 时的视频对象（参考视频，仅多模态参考场景；格式 / 大小 / 时长限制见上方 content 说明）。",
+            "required": [
+              "url"
+            ],
+            "properties": {
+              "url": {
+                "type": "string",
+                "description": "视频地址,支持:公网 URL;`mm_file://{file_id}`(引用平台已有文件的 file_id);`data:video/mp4;base64,<Base64>` data URI。注意请求体总大小 ≤ 64 MB、Base64 会放大约 33%,大视频请用公网 URL 或 mm_file://。"
+              }
+            }
+          },
+          "audio_url": {
+            "type": "object",
+            "description": "当 `type=audio_url` 时的音频对象（参考音频，仅多模态参考场景；格式 / 大小 / 时长限制见上方 content 说明）。",
+            "required": [
+              "url"
+            ],
+            "properties": {
+              "url": {
+                "type": "string",
+                "description": "音频地址,支持:公网 URL;`mm_file://{file_id}`(引用平台已有文件的 file_id);`data:audio/<格式>;base64,<Base64>` data URI(`<格式>` 小写)。"
+              }
+            }
+          },
+          "role": {
+            "type": "string",
+            "description": "内容的位置或用途，条件必填：\n- `first_frame`：首帧图片（图生视频；仅一张图且不填 role 时默认按 first_frame 处理）。\n- `last_frame`：尾帧图片（图生视频-首尾帧，需与 first_frame 成对）。\n- `reference_image`：参考图片（多模态参考生视频）。\n- `reference_video`：参考视频（多模态参考生视频）。\n- `reference_audio`：参考音频（多模态参考生视频）。",
+            "enum": [
+              "first_frame",
+              "last_frame",
+              "reference_image",
+              "reference_video",
+              "reference_audio"
+            ]
+          }
+        }
+      },
+      "MediaURL": {
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "媒体地址，支持两种形式：\n- **公网 URL**：图片 / 视频 / 音频的可直接访问的 URL。\n- **Base64 data URI**：`data:<mime>;base64,<Base64编码>`，如 `data:image/jpeg;base64,/9j/4AAQ...`（`<mime>` 需小写）。\n\n> 单次请求体大小上限 64 MB；大文件请勿使用 Base64，改用公网 URL。"
+          }
+        }
+      },
+      "VideoGenerationV2Resp": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "任务 ID，用于后续查询任务状态与结果。"
+          }
+        },
+        "example": {
+          "task_id": "424010985738629"
+        }
+      },
+      "GetVideoGenerationV2Resp": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "$ref": "#/components/schemas/VideoTask"
+          }
+        },
+        "example": {
+          "task": {
+            "id": "424010985738629",
+            "model": "MiniMax-H3",
+            "status": "succeeded",
+            "created_at": 1785125529,
+            "updated_at": 1785125946,
+            "content": {
+              "url": "https://video-product.cdn.minimax.io/inference_output/rollout/2026-07-27/6c68f487-4b33-48cb-8c92-1631f63f6682/output.mp4"
+            },
+            "resolution": "2K",
+            "duration": 5,
+            "usage": {
+              "total_seconds": 5,
+              "input_seconds": 0,
+              "output_seconds": 5,
+              "input_image_count": 1,
+              "input_audio_seconds": 6,
+              "total_tokens": 273890,
+              "prompt_tokens": 13500,
+              "completion_tokens": 260390
+            },
+            "ratio": "16:9",
+            "task_type": "generation"
+          }
+        }
+      },
+      "ListVideoGenerationV2Resp": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "任务列表。",
+            "items": {
+              "$ref": "#/components/schemas/VideoTask"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "description": "符合过滤条件的任务总数（仅统计最近 7 天内的任务）。"
+          }
+        },
+        "example": {
+          "items": [
+            {
+              "id": "424635601932571",
+              "model": "MiniMax-H3",
+              "status": "succeeded",
+              "created_at": 1785225940,
+              "updated_at": 1785226100,
+              "content": {
+                "url": "https://video-product.cdn.minimax.io/inference_output/rollout/2026-07-28/5fe7ec4a-6f51-4d69-880e-220e59535d98/output.mp4"
+              },
+              "resolution": "2K",
+              "duration": 5,
+              "usage": {
+                "total_seconds": 5,
+                "input_seconds": 0,
+                "output_seconds": 5,
+                "input_image_count": 1,
+                "input_audio_seconds": 6,
+                "total_tokens": 273890,
+                "prompt_tokens": 13500,
+                "completion_tokens": 260390
+              },
+              "ratio": "adaptive",
+              "task_type": "generation"
+            },
+            {
+              "id": "424635601932588",
+              "model": "MiniMax-H3",
+              "status": "running",
+              "created_at": 1785225940,
+              "updated_at": 1785226100,
+              "resolution": "2K",
+              "duration": 10,
+              "usage": {},
+              "ratio": "9:16",
+              "task_type": "generation"
+            },
+            {
+              "id": "424635601932587",
+              "model": "MiniMax-H3",
+              "status": "queued",
+              "created_at": 1785225940,
+              "updated_at": 1785226100,
+              "resolution": "2K",
+              "duration": 8,
+              "usage": {},
+              "ratio": "9:16",
+              "task_type": "generation"
+            },
+            {
+              "id": "424635601932586",
+              "model": "MiniMax-H3",
+              "status": "failed",
+              "created_at": 1785225940,
+              "updated_at": 1785226100,
+              "error": {
+                "code": "1026",
+                "message": "video description contains sensitive content"
+              },
+              "resolution": "2K",
+              "duration": 12,
+              "usage": {},
+              "ratio": "9:16",
+              "task_type": "generation"
+            }
+          ],
+          "total": 476
+        }
+      },
+      "DeleteVideoGenerationV2Resp": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "被操作的任务 ID。"
+          },
+          "action": {
+            "type": "string",
+            "description": "实际执行的操作：`cancelled`（取消，仅 queued 态）或 `deleted`（删除成功或失败的任务记录）。",
+            "enum": [
+              "cancelled",
+              "deleted"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "操作结果状态：`cancelled`（已取消）或 `deleted`（记录已删除）。",
+            "enum": [
+              "cancelled",
+              "deleted"
+            ]
+          }
+        },
+        "example": {
+          "task_id": "424010985738629",
+          "action": "cancelled",
+          "status": "cancelled"
+        }
+      },
+      "VideoTask": {
+        "type": "object",
+        "description": "H3 共享任务查询和列表接口返回的任务对象。",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "任务 ID。"
+          },
+          "model": {
+            "type": "string",
+            "description": "任务使用的模型名称，如 `MiniMax-H3`。"
+          },
+          "status": {
+            "type": "string",
+            "description": "任务状态：\n- `queued`：排队中\n- `running`：运行中\n- `succeeded`：成功\n- `failed`：失败\n- `cancelled`：已取消",
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "error": {
+            "$ref": "#/components/schemas/VideoTaskError",
+            "description": "错误信息，任务成功时不返回；任务失败时返回 `code` 与 `message`。"
+          },
+          "created_at": {
+            "type": "integer",
+            "description": "任务创建时间的 Unix 时间戳（秒）。"
+          },
+          "updated_at": {
+            "type": "integer",
+            "description": "任务状态更新时间的 Unix 时间戳（秒）。"
+          },
+          "content": {
+            "$ref": "#/components/schemas/VideoTaskContent",
+            "description": "任务输出内容，任务成功后返回。"
+          },
+          "resolution": {
+            "type": "string",
+            "description": "任务产物的分辨率。"
+          },
+          "duration": {
+            "type": "integer",
+            "description": "任务产物的时长（秒）。"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/VideoTaskUsage",
+            "description": "本次请求的用量。视频任务返回按秒计量的字段；H3-Context-IR 任务返回 Token 用量字段。仅任务成功时返回。"
+          },
+          "ratio": {
+            "type": "string",
+            "description": "任务产物的宽高比；不适用于当前任务类型时可能返回空字符串。"
+          },
+          "task_type": {
+            "type": "string",
+            "description": "任务类型：\n- `generation`：视频生成\n- `h3_context_ir`：H3-Context-IR（`/v2/h3_context_ir`）\n- `regeneration`：视频再生成（`/v2/video_regeneration`）",
+            "enum": [
+              "generation",
+              "h3_context_ir",
+              "regeneration"
+            ]
+          },
+          "modality": {
+            "type": "string",
+            "description": "产物模态。视频生成和视频再生成任务返回 `video`；H3-Context-IR 任务返回 `text`。",
+            "enum": [
+              "video",
+              "text"
+            ]
+          }
+        }
+      },
+      "VideoTaskContent": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "视频任务产物的限时下载 URL，请及时下载或转存；过期后可重新查询获取。"
+          },
+          "prompt": {
+            "type": "string",
+            "description": "H3-Context-IR 任务生成的结构化增强提示词。仅当 `task_type=h3_context_ir` 且任务成功时返回。"
+          }
+        }
+      },
+      "VideoTaskUsage": {
+        "type": "object",
+        "description": "本次请求的用量。视频任务返回按秒计量的字段；H3-Context-IR 任务返回 Token 用量字段。仅任务成功时返回。",
+        "properties": {
+          "total_seconds": {
+            "type": "integer",
+            "description": "本次计量总秒数 = 输入秒数 + 输出秒数。"
+          },
+          "input_seconds": {
+            "type": "integer",
+            "description": "输入参考视频秒数（含参考视频时计）。"
+          },
+          "output_seconds": {
+            "type": "integer",
+            "description": "输出视频秒数。"
+          },
+          "input_image_count": {
+            "type": "integer",
+            "description": "本次输入的图片总数量（first_frame + last_frame + reference_image 全部相加）。"
+          },
+          "input_audio_seconds": {
+            "type": "integer",
+            "description": "输入参考音频秒数（各段取和四舍五入）；无参考音频时不返回。"
+          },
+          "total_tokens": {
+            "type": "integer",
+            "description": "本次总 Token 数 = prompt_tokens + completion_tokens。\n- 视频任务由用量折算；\n- H3-Context-IR 任务使用的 Token 总数。"
+          },
+          "prompt_tokens": {
+            "type": "integer",
+            "description": "输入 Token 数。\n- 视频任务 = 输入参考视频秒数折算 + 全部输入图片数折算 + 输入参考音频秒数折算，无上述输入时为 0；\n- H3-Context-IR 任务的输入 Token 数。"
+          },
+          "completion_tokens": {
+            "type": "integer",
+            "description": "输出 Token 数。\n- 视频任务 = 输出视频秒数折算；\n- H3-Context-IR 任务的输出 Token 数。"
+          }
+        }
+      },
+      "VideoTaskError": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "错误码。"
+          },
+          "message": {
+            "type": "string",
+            "description": "错误提示信息。"
+          }
+        }
+      },
+      "OaiError": {
+        "type": "object",
+        "description": "OpenAI 风格错误响应。出错时 HTTP 状态码为真实错误码(401/400/429/402/422/500…),响应体为该结构。",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "固定为 `error`。",
+            "example": "error"
+          },
+          "error": {
+            "$ref": "#/components/schemas/OaiErrorDetail"
+          },
+          "request_id": {
+            "type": "string",
+            "description": "请求追踪 ID(便于排查)。"
+          }
+        }
+      },
+      "OaiErrorDetail": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "错误类型:`authorized_error`(401)/`bad_request_error`(400)/`rate_limit_error`(429)/`insufficient_balance_error`(402)/`unprocessable_entity_error`(422)/`overloaded_error`(529)/`server_error`(500) 等。"
+          },
+          "message": {
+            "type": "string",
+            "description": "错误详情,结尾括号内为内部错误码(如 `... (1004)`)。"
+          },
+          "http_code": {
+            "type": "string",
+            "description": "HTTP 状态码字符串,如 `401`。"
+          }
+        }
+      },
+      "RegenContentItem": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "输入内容的类型。",
+            "enum": [
+              "text",
+              "image_url",
+              "video_url",
+              "audio_url"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "description": "**必须使用生成 768P 源视频时实际送入模型的最终 prompt，不可使用 H3-Context-IR 处理前的原始 prompt**。按字符数计算长度，单个 `text` 最多 40000 个字符。"
+          },
+          "image_url": {
+            "type": "object",
+            "description": "当 `type=image_url` 时的图片对象（格式 / 大小 / 尺寸 / 数量限制参见[创建视频生成任务](/api-reference/video-generation-v2-create#body-content)接口的 content 说明）。",
+            "required": [
+              "url"
+            ],
+            "properties": {
+              "url": {
+                "type": "string",
+                "description": "图片地址,支持:公网 URL;`mm_file://{file_id}`(引用平台已有文件,如上传或历史产物的 file_id);`data:image/<格式>;base64,<Base64>` data URI(`<格式>` 小写)。"
+              }
+            }
+          },
+          "video_url": {
+            "type": "object",
+            "description": "当 `type=video_url` 时的视频对象（参考视频，仅多模态参考场景；格式 / 大小 / 时长限制参见[创建视频生成任务](/api-reference/video-generation-v2-create#body-content)接口的 content 说明）。",
+            "required": [
+              "url"
+            ],
+            "properties": {
+              "url": {
+                "type": "string",
+                "description": "视频地址,支持:公网 URL;`mm_file://{file_id}`(引用平台已有文件的 file_id);`data:video/mp4;base64,<Base64>` data URI。注意请求体总大小 ≤ 64 MB、Base64 会放大约 33%,大视频请用公网 URL 或 mm_file://。"
+              }
+            }
+          },
+          "audio_url": {
+            "type": "object",
+            "description": "当 `type=audio_url` 时的音频对象（参考音频，仅多模态参考场景；格式 / 大小 / 时长限制参见[创建视频生成任务](/api-reference/video-generation-v2-create#body-content)接口的 content 说明）。",
+            "required": [
+              "url"
+            ],
+            "properties": {
+              "url": {
+                "type": "string",
+                "description": "音频地址,支持:公网 URL;`mm_file://{file_id}`(引用平台已有文件的 file_id);`data:audio/<格式>;base64,<Base64>` data URI(`<格式>` 小写)。"
+              }
+            }
+          },
+          "role": {
+            "type": "string",
+            "description": "内容的位置或用途，条件必填：\n- **`base_video`：视频再生成源视频**（仅 `/v2/video_regeneration` 使用）；**源视频项必须显式设置该 `role`，`content` 中必须且只能有 1 个。**\n- `first_frame`：首帧图片（图生视频；仅一张图且不填 role 时默认按 first_frame 处理）。\n- `last_frame`：尾帧图片（图生视频-首尾帧，需与 first_frame 成对）。\n- `reference_image`：参考图片（多模态参考生视频）。\n- `reference_video`：参考视频（多模态参考生视频）。\n- `reference_audio`：参考音频（多模态参考生视频）。",
+            "enum": [
+              "base_video",
+              "first_frame",
+              "last_frame",
+              "reference_image",
+              "reference_video",
+              "reference_audio"
+            ]
+          }
+        },
+        "description": "视频再生成输入项：可以是原始生成 content 中的 text / image_url / video_url / audio_url，也可以是标记源视频的 base_video。base_video 项必须包含 `type`、`video_url` 和 `role=base_video`。"
+      },
+      "VideoRegenerationSourceTaskReq": {
+        "type": "object",
+        "title": "按任务 ID 再生成（source_task_id）",
+        "required": [
+          "model",
+          "source_task_id",
+          "resolution"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "模型名称，必填。当前支持 `MiniMax-H3`。",
+            "enum": [
+              "MiniMax-H3"
+            ]
+          },
+          "source_task_id": {
+            "type": "string",
+            "description": "已有 `/v2/video_generation` **成功任务**的 `task_id`，以其产物为源再生成。使用限制：需开通白名单；源任务须属于当前账号、状态为 `succeeded`，且仍可通过 `/v2/query/video_generation` 查到（创建于 7 天内）。"
+          },
+          "resolution": {
+            "type": "string",
+            "description": "视频再生成的目标分辨率，必填。当前支持 `2K`。",
+            "enum": [
+              "2K"
+            ]
+          },
+          "callback_url": {
+            "type": "string",
+            "description": "任务状态变更的回调 URL,可选。行为同创建视频生成任务的 `callback_url`。"
+          },
+          "aigc_watermark": {
+            "type": "boolean",
+            "description": "是否为生成视频添加 AIGC 水印，可选，默认 `false`。",
+            "default": false
+          }
+        }
+      },
+      "VideoRegenerationBaseVideoReq": {
+        "type": "object",
+        "title": "按源视频再生成（base_video）",
+        "required": [
+          "model",
+          "content",
+          "resolution"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "模型名称，必填。当前支持 `MiniMax-H3`。",
+            "enum": [
+              "MiniMax-H3"
+            ]
+          },
+          "content": {
+            "type": "array",
+            "description": "视频再生成输入内容数组。请在数组中包含：\n\n- **必须原样提交生成 768P 源视频时实际送入模型的全部输入**。其中，**`text` 必须使用当时实际送入模型的最终 prompt，不可使用 H3-Context-IR 处理前的原始 prompt**；所有参考图片、视频和音频也必须与生成时一致。**任何输入不一致，都可能无法达到预期的再生成效果**\n- 一个 768P 源视频项，`type=video_url` 且 `role=base_video`；该项必须且只能有一个\n\n`base_video` 必须符合以下 MiniMax-H3 768P 输出规格。本接口不支持任意视频的通用再生成。\n\n| 项目 | 规格 |\n| :--- | :--- |\n| 音轨 | 需包含音轨，不支持无音轨视频 |\n| 帧率 | 24 fps |\n| 宽 / 高 | 均需能被 32 整除 |\n| 面积（宽 × 高） | 768 × 768（589,824 像素）≤ 面积 ≤ 768 × 1344（1,032,192 像素） |\n| 总帧数 | 107–362 帧，每档递增 17 帧（约 4–15 秒） |\n\n---\n\n**输入媒体限制**：请求体总大小 ≤ 64 MB，大文件请用公网 URL，勿用 Base64。参考图片 / 视频 / 音频的格式、单文件大小等限制同[创建视频生成任务](/api-reference/video-generation-v2-create)。",
+            "items": {
+              "$ref": "#/components/schemas/RegenContentItem"
+            },
+            "contains": {
+              "type": "object",
+              "required": [
+                "type",
+                "video_url",
+                "role"
+              ],
+              "properties": {
+                "type": {
+                  "const": "video_url"
+                },
+                "role": {
+                  "const": "base_video"
+                }
+              }
+            },
+            "minContains": 1,
+            "maxContains": 1
+          },
+          "resolution": {
+            "type": "string",
+            "description": "视频再生成的目标分辨率，必填。当前支持 `2K`。",
+            "enum": [
+              "2K"
+            ]
+          },
+          "callback_url": {
+            "type": "string",
+            "description": "任务状态变更的回调 URL,可选。行为同创建视频生成任务的 `callback_url`。"
+          },
+          "aigc_watermark": {
+            "type": "boolean",
+            "description": "是否为生成视频添加 AIGC 水印，可选，默认 `false`。",
+            "default": false
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "`HTTP: Bearer Auth`\n - Security Scheme Type: http\n - HTTP Authorization Scheme: Bearer API_key，用于验证账户信息，可在 [账户管理>接口密钥](https://platform.minimax.cn/user-center/basic-information/interface-key) 中查看。"
+      }
+    },
+    "responses": {
+      "Err400": {
+        "description": "参数错误",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/OaiError"
+            },
+            "example": {
+              "type": "error",
+              "error": {
+                "type": "bad_request_error",
+                "message": "invalid params, content must include a non-empty text item (prompt is required) (2013)",
+                "http_code": "400"
+              },
+              "request_id": "021785229015510a2c883cf675b9804d"
+            }
+          }
+        }
+      },
+      "Err401": {
+        "description": "鉴权失败",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/OaiError"
+            },
+            "example": {
+              "type": "error",
+              "error": {
+                "type": "authorized_error",
+                "message": "login fail: Please carry the API secret key in the 'Authorization' field of the request header (1004)",
+                "http_code": "401"
+              },
+              "request_id": "021785229015510a2c883cf675b9804d"
+            }
+          }
+        }
+      },
+      "Err402": {
+        "description": "余额/额度不足",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/OaiError"
+            },
+            "example": {
+              "type": "error",
+              "error": {
+                "type": "insufficient_balance_error",
+                "message": "insufficient balance (1008)",
+                "http_code": "402"
+              },
+              "request_id": "021785229015510a2c883cf675b9804d"
+            }
+          }
+        }
+      },
+      "Err422": {
+        "description": "输入涉及敏感内容",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/OaiError"
+            },
+            "example": {
+              "type": "error",
+              "error": {
+                "type": "unprocessable_entity_error",
+                "message": "video description contains sensitive content (1026)",
+                "http_code": "422"
+              },
+              "request_id": "021785229015510a2c883cf675b9804d"
+            }
+          }
+        }
+      },
+      "Err429": {
+        "description": "触发限流",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/OaiError"
+            },
+            "example": {
+              "type": "error",
+              "error": {
+                "type": "rate_limit_error",
+                "message": "rate limit, please retry later (1002)",
+                "http_code": "429"
+              },
+              "request_id": "021785229015510a2c883cf675b9804d"
+            }
+          }
+        }
+      },
+      "Err500": {
+        "description": "服务端错误",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/OaiError"
+            },
+            "example": {
+              "type": "error",
+              "error": {
+                "type": "server_error",
+                "message": "internal error (1000)",
+                "http_code": "500"
+              },
+              "request_id": "021785229015510a2c883cf675b9804d"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -35,6 +35,15 @@ class Caps:
     min_dur: float = 2.0
     ref_audio: bool = False          # 编辑任务能不能喂参考音频
     edit_task_param: bool = False    # 用不用"编辑任务"这套参数（2.5 的专有形态）
+    #: 母版视频自带音轨，是否等同于「已经提供了音频参考」。
+    #: 🩸 默认 False —— 两家官方口径都是**音频要单独作为 `reference_audio` 送**。
+    #:   H3 更是明说反话：`ref-en:112`「An ordinary reference video does not
+    #:   create `<Audio N>` merely because the file contains sound.」
+    #:   曾经靠 `not edit_task_param` 隐式让 H3 走母版（注释写「只对 2.0 生效」，
+    #:   可 2.0 下架后 2.5 被 edit_task_param 挡掉，**只剩 H3 走进去**）⇒
+    #:   请求里一条音频都没有、提示词却写着 `<Audio 1>` ⇒ 嘴型必错。
+    #:   2026-11-01 真实快照实锤（`audio=false` / `audio_in_master=false`）。
+    audio_from_master: bool = False
     prompt_chars: int = NO_CAP       # 提示词硬上限（超了接口直接拒）
     default_resolution: str = "720p"
     #: 分辨率映射：{"1080p": "1080P"} 这类；空 = 原样传
@@ -69,6 +78,17 @@ class Caps:
     max_ref_images: int = 0
     #: 缺逐镜描述时要不要先补一次盘点再重算提示词（H3）
     ensure_shot_source: bool = False
+    #: 逐段提示词改由**这家自己的函数**产出（例如官方的提示词改写服务）。
+    #: 签名 `(cid, n, *, video, images, slots, audio, dur, extra) -> str`；
+    #: None = 用代码编译的那一版（默认）。
+    #: 🩸 共用层只认"有没有这个函数"，不认型号名、也不 import 任何一家的模块。
+    prompt_for: Callable[..., str] | None = None
+    #: 同上那套输入的**指纹**（只算不发请求、不花钱）。出片核心要在查段缓存
+    #: **之前**知道"这一次的提示词会不会变"，所以必须有它；没有 = 只有
+    #: `prompt_for` 的机器，核心退回人工版本标记。
+    #: 🩸 2026-11-02：以前只有 `prompt_for`，改写器产出的词进不了段缓存键，
+    #:   全靠人工升 `:irN`；漏升一次，新词永远用不上（三次渲染拿回同一段旧片）。
+    prompt_sig: Callable[..., str] | None = None
     #: 边界帧受不受「必须能钉死编辑任务类型」这条限制（2.0 / 2.5 受，H3 不受）
     boundary_by_edit_task: bool = False
     #: 输出时长只能取**整数秒**（2.0 系列，`sd20.md:119`「输出时长 4~15 秒」，

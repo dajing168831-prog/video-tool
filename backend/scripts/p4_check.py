@@ -323,7 +323,23 @@ def phase_c() -> None:
     from app.services import model_specs as _ms
     _ch = rec.get("regen_channel") or "volc"
     _used = rec.get("regen_model") or ""
-    if _used and _used not in [x for x, _ in _ms.MODELS.get(_ch, [])]:
+    # 🩸 2026-11-02：**分诊/分段规则改过之后，旧快照就不具可比性**。
+    #   实例：最新一条真跑（45fff4bb / 72db24c5）出片时，分诊里还有「静止镜
+    #   压着台词 → video」这条规则，末镜被并进前一段 → 1 段；该规则已按主人
+    #   要求回退，同一 intent 现在按规则算出 2 段（末段 1.37s 判 still），
+    #   两边**都对**，只是规则不同。拿它报红 = 拿两套规则互比。
+    #   判据改成「真跑时间晚于规则文件最后一次改动」才比，规则一改自动跳过，
+    #   下一次真跑之后恢复比较 —— 不需要人工升版本号。
+    _rule_files = [ROOT / "app" / "services" / p for p in
+                   ("triage.py", "video_edit.py", "work.py", "clone_pipeline.py")]
+    _rule_mtime = max((p.stat().st_mtime for p in _rule_files if p.is_file()),
+                      default=0.0)
+    _ran_at = float(rec.get("created_at") or 0.0)
+    if _ran_at and _ran_at < _rule_mtime:
+        chk("C1 真实任务：plan 的段数 == 真跑的段数", None,
+            f"跳过：这条真跑早于最近一次分诊/分段规则改动 "
+            f"(plan {units} / 真跑 {meta.get('segments')})，不具可比性")
+    elif _used and _used not in [x for x, _ in _ms.MODELS.get(_ch, [])]:
         chk("C1 真实任务：plan 的段数 == 真跑的段数", None,
             f"跳过：这条真跑用的是 {_used}，已下架；plan 按 2.5 重算 "
             f"(plan {units} / 真跑 {meta.get('segments')})，不具可比性")

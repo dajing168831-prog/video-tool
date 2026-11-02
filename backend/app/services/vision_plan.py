@@ -667,16 +667,52 @@ _DESC_SYSTEM = (
     "供视频模型在多镜头里认出并保持一致。"
 )
 
+#: 🩸 2026-11-01 改（主人：「你干什么老是跑去别的模型查资料」）。
+#: 旧版写的是「2–3 个即可，宁少勿多」—— 那是 **Seedance 2.0** 的规范
+#: （`sd20/skills/sd2-pe/references/guide.md:95`「使用 2–3 个清晰、稳定的静态特征…
+#: 确保唯一可识别性」），H3 官方全库没有这一条。拿它喂 H3 的后果实测到了：
+#: 视觉模型挑走最醒目的发髻和长裙，**把脸挤掉**（`subject_desc.json` 里没有一个字
+#: 是五官）→ agent 无从写脸 → `retention_analysis` 只列发型服装 → 成片保留原脸，
+#: bestSim 0.177。
+#:
+#: H3 的口径是 `ref-en.txt:37`「explain what its label denotes, its reference role,
+#: and **the main features to follow**」——「要跟随的主要特征」，没有数量上限。
+#: 对**人物参考图**，MiniMax 官方 H3 视频提示词模板把主特征写死为身份锚点：
+#:   · `h3-video-prompt-template.md:20` `PLAYER 1 identity anchor. Lock exact face,
+#:     hairstyle, glasses if present, **facial proportions**, body identity`
+#:   · 同文件 `:42`（中文）「五官信息参考…**必须保留脸、人脸比例**、发型、眼镜（如有）、个人身份」
+#:   · `co-op-game-intro-generator/SKILL.md:24` `only for identity mapping:
+#:     recognizable **face silhouette**, hairstyle, glasses, **relative facial
+#:     proportions**, and distinctive traits`
+#:   · `music-video-subtitle-generator/SKILL.md:114` `character reference card:
+#:     controls character identity, **facial aura**, hairstyle, clothing silhouette…`
+#: 所以「脸」在这份清单里是**必填项**，不是可选。
 _DESC_ASK = (
-    "看这张人物参考图，写出 2–3 个最稳定的静态特征，用于在视频里指认这个人。\n"
-    "要求：\n"
-    "1. 只取**静态、跨镜头不变**的特征：发型/发色、脸型或显著五官、常穿服装、"
-    "显著配饰。2–3 个即可，宁少勿多。\n"
-    "2. 不要写表情、动作、姿态、背景、光线、镜头、画质、年龄评价。\n"
-    "3. 不要写泛化美词（漂亮、精致、气质好）。\n"
-    "4. desc_zh 用中文名词短语，desc_en 用英文名词短语（对应官方示例的写法）。\n"
-    "5. 两个字段描述的必须是同一组特征。\n"
-    "6. 另外单独给一个 gender 字段：male / female / unspecified。\n"
+    "看这张人物参考图，写出**这个人要跟随的特征**，供视频模型在换人时认出并保持是同一个人。\n"
+    "H3 官方把这种图的职责写死成一张清单（`music-video-subtitle-generator/SKILL.md:114`）："
+    "「Character reference card: controls character **identity, facial aura, hairstyle, "
+    "clothing silhouette, proportions, posture, and presence**」。逐项写：\n"
+    "1. **identity / 面部（必写，任何情况下不能省）**：脸型轮廓 + 最显著的 1–2 个五官"
+    "特征（眉眼/鼻/嘴的形状）；戴眼镜就写眼镜。官方换人模板把它写死成 "
+    "「Lock exact face, hairstyle, glasses if present, facial proportions, body identity」"
+    "（`h3-video-prompt-template.md:20`，中文版 `:42`「必须保留脸、人脸比例」）。\n"
+    "2. **facial aura（面部气质，必写）**：这张脸给人的整体感觉，一个词就够 —— "
+    "清冷 / 凌厉 / 温婉 / 英气 / 甜 / 憨。只写看得出来的，不要写「气质好」「漂亮」"
+    "这种评价词。\n"
+    "3. **hairstyle**：发型发色。\n"
+    "4. **clothing silhouette（服装轮廓）**：写版型和轮廓（古风长裙 / 短外套 / 宽松 / "
+    "贴身 / 高领），**不要**逐个写花纹、纽扣、刺绣、褶皱这些细节。\n"
+    "5. **proportions（身体比例）与体型类别**：高矮胖瘦这一级就够 —— 官方 `:20` 要的是 "
+    "body identity。**不要**写任何具体部位。\n"
+    "6. **不要写**：背景、场景、光线、画风、画质、写实度、镜头、表情、动作、姿态、"
+    "年龄评价。这张图**只负责角色**，场景和光照由原片负责 —— 官方 `:111`"
+    "「Assign each reference image **one narrow job**」，`:24`"
+    "「**Do not inherit** photographic realism, skin texture, real-world lighting, "
+    "camera quality, or the original image style」。（姿态在复刻里一律跟随原片视频，"
+    "所以这里不写。）\n"
+    "7. 不设数量上限 —— 面部是必选项，其余按醒目程度写。\n"
+    "8. desc_zh 用中文名词短语，desc_en 用英文名词短语；两个字段描述的是同一组特征。\n"
+    "9. 另外单独给一个 gender 字段：male / female / unspecified。\n"
     "   看**这张图里的人本身**，不要按服装或场景推断；看不清就填 unspecified，"
     "**绝对不要猜**。"
 )
@@ -697,7 +733,12 @@ _DESC_SCHEMA = {
 
 #: 描述的版本号。改了提问/字段就加一 —— 老缓存会被当成过期重算
 #: （不加的话，用户重传同一张图仍拿回没有 gender 的旧描述）。
-_DESC_VERSION = 2
+#: v3（2026-11-01）：加了「面部必写」，旧的一批描述都把脸漏了，必须重算。
+#: v4（2026-11-01）：按 H3 官方 character reference card 的六项重排（`music-video
+#:   SKILL.md:114`：identity / facial aura / hairstyle / clothing silhouette /
+#:   proportions / posture），并明确**不写**原图的背景/光照/画风（`:24`）。
+#:   v3 只补了脸，缺 facial aura 和「不继承原图」两条。
+_DESC_VERSION = 4
 
 
 def _image_inline(image: Path) -> str:

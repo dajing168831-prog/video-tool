@@ -561,6 +561,10 @@ def render(
     #   只把已生成的那几段交出来；继续出全部时同参数重跑，前面的段命中缓存
     #   不重复扣费（缓存键含每段最终提示词，见 `video_edit._gen_spans`）。
     max_segments: int = 0,
+    # 🩸 2026-11-02 `force`：跳过逐段产物缓存，重新调模型（会再扣费）。
+    #   默认 False —— 同一键永远复用；只有用户明确点「强制重跑」才置 True。
+    #   原样透传到 `video_edit._gen_spans`，中间层不做任何判断。
+    force: bool = False,
 ) -> dict:
     """拿配方和新文案出片。script 传 None 表示沿用原片文案。
 
@@ -928,7 +932,8 @@ def render(
                 subject_image=subject_image, subject_asset=subject_asset,
                 channel=regen_channel, model=regen_model, inventory=inventory,
                 style_video=_style_video_of(cid, spec),
-                workdir=workdir, progress=progress, max_segments=max_segments)
+                workdir=workdir, progress=progress, max_segments=max_segments,
+                force=force)
             prev_path = _r.get("preview") or _r.get("video")
             _ch_used, _md_used = _r.get("channel", ""), _r.get("model", "")
             _meta.update({"mode": "whole",
@@ -953,7 +958,7 @@ def render(
             _clips = _ve_prev.replace_spans(
                 video, rec, _spans, cid=cid, plan=_plan, inventory=inventory,
                 workdir=workdir / "triage", progress=progress,
-                max_segments=max_segments)
+                max_segments=max_segments, force=force)
             prev_path = _clips[0] if _clips else None
             _ch_used, _md_used = _plan.get("ch", ""), _plan.get("model", "")
             _meta.update({"mode": "auto",
@@ -972,10 +977,19 @@ def render(
                 _out_prev.parent.mkdir(parents=True, exist_ok=True)
                 _sh_prev.copyfile(prev_path, _out_prev)
             prev_path = _out_prev
+        # 🩸 预览段也要有封面：`cover: None` 会让历史卡片那一版是**一片灰**
+        #   （`p7_check` 3.1 实测红：缺封面 949c0b2f）。抽一帧而已，本机完成，不花钱。
+        _cover_prev = None
+        if prev_path:
+            try:
+                _cover_prev = compose.make_cover(
+                    prev_path, workdir / "cover.jpg", at=0.5)
+            except Exception as e:  # noqa: BLE001
+                log.warning("预览段封面没抽出来（不影响看片）：%s", e)
         _p(progress, "done", 100)
         return {
             "video": prev_path, "preview": prev_path, "partial": True,
-            "cover": None, "voice": None,
+            "cover": _cover_prev, "voice": None,
             "duration": (scene.probe(prev_path)["duration"]
                          if prev_path else 0.0),
             "segments": [],
@@ -1007,7 +1021,7 @@ def render(
                 subject_image=subject_image, subject_asset=subject_asset,
                 channel=regen_channel, model=regen_model, inventory=inventory,
                 style_video=_style_video_of(cid, spec),
-                workdir=workdir, progress=progress,
+                workdir=workdir, progress=progress, force=force,
             )
             source_video = r["video"]
             replaced = int(r.get("chunks") or 0)
@@ -1066,7 +1080,7 @@ def render(
             if spans:
                 clips = video_edit.replace_spans(
                     video, rec, spans, cid=cid, plan=plan, inventory=inventory,
-                    workdir=workdir / "triage", progress=progress,
+                    workdir=workdir / "triage", progress=progress, force=force,
                 )
                 intervals.extend(_span_intervals(clips, spans, shots, only=video_only))
 
@@ -1276,6 +1290,7 @@ def preview_render(
     speech_rate: int | None = None,
     with_agent: bool = False,
     agent_force: bool = False,
+    max_segments: int = 0,
 ) -> dict:
     """出片前预览：**全本地计算，不调 TTS / 图 / 视频模型，不传 OSS，不花钱**。
 
@@ -1484,6 +1499,20 @@ def preview_render(
         if change["video_calls"] or change["still_calls"]:
             warnings.append("预览未做视觉盘点：视频段数按上限报，实际可能更少")
 
+    # 🩸 只出前 N 段（2026-11-01）：确认框报的数字必须等于**这一下真会生成的东西**。
+    #   真跑走 `render` 的 `max_segments` 分支（只生成前 N 段、不拼接），
+    #   预览以前不认这个参数 ⇒ 用户点「先出第 1 段」，弹窗还写「2 段 / 18.067 秒」。
+    #   这里把 `spans` 截断到前 N 段：段数、秒数、逐段提示词、报价全部跟着变，
+    #   整片的总量另存 `total_*`，界面可以写成「1 段（整片共 2 段）」。
+    if max_segments and spans and len(spans) > max_segments:
+        change["partial"] = True
+        change["total_video_calls"] = int(change["video_calls"])
+        change["total_video_seconds"] = float(change["video_seconds"])
+        spans = spans[:max_segments]
+        change["video_calls"] = len(spans)
+        change["video_seconds"] = round(sum(b - a for a, b in spans), 3)
+        change["spans"] = [[round(a, 3), round(b, 3)] for a, b in spans]
+
     # 风格参考视频（A9）的时长预算：预览就把「这些段放不下」说出来，
     # 别等点了出片才被拦。判据和真跑是同一个函数（`_gen_spans` 里也叫它）。
     if plan is not None and spans and plan.get("style_video"):
@@ -1522,6 +1551,14 @@ def preview_render(
         #   的真实结论，写出真跑不会发的那句话。直接按同一套输入算。
         prompts = work_mod._video_prompts(plan, spans, rec.get("shots") or [],
                                           audio_ref=audio_on, rec=rec)
+        # 🩸 2026-11-02：这一家的提示词由**官方改写器**在出片时产出
+        #   （`Caps.prompt_for`）。预览没有切片后的原片/配音/边界帧，给不出那一份，
+        #   所以下面这版只能标成"参考，不会发出" —— 绝不能让它看起来像要发的东西。
+        from app.services import models as _models_p
+
+        _ir_on = _models_p.adapter_for(
+            model=plan.get("model") or "",
+            channel=plan.get("ch") or "").caps.prompt_for is not None
         for (a, b), p in zip(spans, prompts):
             segments.append({
                 "start": round(a, 3),
@@ -1530,11 +1567,15 @@ def preview_render(
                 # 判据和 `video_edit._seg_audio` 一致：短于 2s 的那段不喂
                 "audio": bool(audio_on and (min(b, src_total) - a) >= 2.0),
                 "prompt": p,
-                # 这段指令是**代码拼的**还是 **agent 读官方 skill 现写的**。
-                # 同一段文字两种来源，效果不一样（2026-10-31 实测两段会写重）；
-                # 界面必须能标出来，不然用户分不清看的是哪一版。
-                "prompt_source": "code",
+                # 这段指令是 `code`（代码拼）/ `agent`（读官方 skill 现写）/
+                # `ir`（出片时由官方改写器按真实素材生成，这里这版只是参考）。
+                # 同一段文字不同来源效果不一样，界面必须能标出来。
+                "prompt_source": ("ir" if _ir_on else "code"),
             })
+        if _ir_on:
+            warnings.append("这一家的逐段提示词由官方改写器在出片时生成："
+                            "下面这版只是按规则算的参考，不会发出去；"
+                            "真正发出去的词在渲染目录的 request_00N.json 里")
         if want_audio and not audio_on:
             warnings.append("原片没有音轨：这一段不会喂音频，口型只能靠原片表演")
         if plan.get("person_ids"):
@@ -1553,7 +1594,20 @@ def preview_render(
 
         _agent = _models.adapter_for(model=plan.get("model") or "",
                                      channel=plan.get("ch") or "").agent
-        if not cid:
+        # 🩸 2026-11-02：这家的逐段提示词由**官方改写器**在出片时产出
+        #   （H3-Context-IR，见 `h3_ir`）。改写器要看的是**切片后的原片段 +
+        #   这一段的参考图 + 配音切片** —— 预览阶段这些还没切、也不该为了
+        #   预览去切一遍（切法已经有两处，第三处必然漂）。所以这里老老实实说清：
+        #   出片时由官方改写器写，不在这里现编一份假装那就是要发的。
+        _writer = _models.adapter_for(
+            model=plan.get("model") or "",
+            channel=plan.get("ch") or "").caps.prompt_for
+        if _writer is not None:
+            agent_error = ("这一家的逐段提示词由官方改写器在出片时生成"
+                           "（H3-Context-IR：一句自然语言 + 这一段真正的素材），"
+                           "预览这里不给改写结果；出片后实际发出去的提示词在"
+                           "渲染目录的 request_00N.json 里")
+        elif not cid:
             agent_error = "缺少任务号，无法落盘逐段指令"
         elif _agent is None:
             agent_error = "这个型号没有 agent 版逐段指令，用代码编译的那一版"
@@ -1572,7 +1626,11 @@ def preview_render(
                 agent_error = str(e)
                 log.warning("逐段指令生成失败，仍用代码编译版：%s", e)
 
-    target = max(src_total, voice_dur)
+    # 只出前 N 段时交付的是**片段**（真跑那边也不拼接，见 `render`），
+    # 合同就按这一段的时长算；整片的数字留在 `change.total_video_seconds`，
+    # 界面用它说清"还差多少没出"。
+    target = (float(change["video_seconds"]) if change.get("partial")
+              else max(src_total, voice_dur))
     frames = int(round(target * fps)) if fps > 0 else 0
     samples = int(round(frames / fps * 48000)) if fps > 0 and frames else 0
 
