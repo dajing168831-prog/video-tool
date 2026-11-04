@@ -176,8 +176,11 @@ if SEL == "volc20":
         "光线和色调" not in P20_IMG and "光线和色调" not in P20_VID, P20_IMG)
     # 🩸 原判据判的是「光线和色调」——2.0 的保留句已换成 LAS `las_cn.md:405`
     #    的「保留原视频动作、位置、互动、镜头和背景」，判据跟着换。
+    # 🧹 2026-11-04 清理（`docs/SD20-RULE-CLEANUP.md` 病灶 B）：保留句已从
+    #   LAS 算子的「保留原视频动作、位置、互动、镜头和背景」退回官方
+    #   `sd2-pe:126` 原句「动作和运镜不变」。
     chk("S5 2.0 没有风格参考时照旧保留",
-        "保留原视频动作、位置、互动、镜头和背景" in P20_PLAIN, P20_PLAIN)
+        "动作和运镜不变" in P20_PLAIN, P20_PLAIN)
     chk("S5 2.0 官方兜底包仍挂着（画质/稳定/水印，不是风格句能省的）",
         "高清电影质感" in P20_IMG and "不要生成水印" in P20_IMG, P20_IMG)
 
@@ -208,8 +211,9 @@ chk("S7 只勾了第 1 镜：第 1 镜 video，其余 keep（用户的选择优�
 #   2.5 那一档 ⇒ 它拿到的预算也是 30 秒，不再有「15 秒装不下」这条退路。
 chk("S8 型号表里有总时长上限，2.5=30",
     model_specs.volc(V25)["ref_video_total_sec"] == 30, "")
-chk("S8 已下架的 2.0 型号回落 2.5 → 预算按 30 秒算",
-    model_specs.volc(V20)["ref_video_total_sec"] == 30, "")
+# 🔓 2026-11-04：2.0 重新上线 → 按它自己的 15 秒预算（`video-generation-tutorial.md:2148`）
+chk("S8 2.0 参考视频总预算 15 秒（官方）",
+    model_specs.volc(V20)["ref_video_total_sec"] == 15, "")
 
 c28, e28 = video_edit.style_video_budget("volc", V25, [(0.0, 28.0)])
 chk("S8 2.5 + 28 秒母版段 → 拦下（30 秒装不下 28+2）", c28 == 0.0 and bool(e28),

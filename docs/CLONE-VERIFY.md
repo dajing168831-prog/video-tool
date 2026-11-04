@@ -419,3 +419,18 @@ MiniMax 那边的 `<Subject N> (Sx)` 是 H3 官方 prompt skill 的语法，火�
 
 **本机实测**（a47631b0，迷你 3 段 / 火山 3 段 / 2.5 单段三条路径都跑过，零费用）。
 **未真跑**。
+
+### 补四：2026-11-04 出片连挂两次 → 是两个不同原因（不是链路问题）
+
+同一个任务 `74c1500d…`，16:43 → 16:46 两次失败，**原因不同**：
+
+| 时间 | 通道 / 型号 | 结果 | 证据 |
+|---|---|---|---|
+| 16:43:54 | 火山 `doubao-seedance-2-5-260628` | HTTP 400 `InputVideoSensitiveContentDetected.PolicyViolation` | `render/e3adead2…/errors/render_20261104-164354.json` |
+| 16:46:11 | MiniMax `MiniMax-H3-Lite` 768P | HTTP 402 `insufficient_balance_error (1008)` | `render/faa194e0…/errors/render_20261104-164611.json` |
+
+- 火山那条 = **参考视频被判可能涉版权**（`param: content[1]`），不是真人脸、不是参数错。
+  拿别人的成片当编辑输入，火山这路大概率走不通（同 `CLONE-CHANNELS.md` §十八）。
+- 换到 MiniMax 后 **账户余额不足**，跟提示词、跟 2.0/2.5/H3 都无关。
+- 🩸 结论：这两次失败**不能拿来做任何提示词层面的判断**（一次没跑到模型，一次没跑到模型）。
+  要判效果必须先把余额补上，再跑通一条。

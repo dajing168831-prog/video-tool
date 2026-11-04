@@ -113,9 +113,9 @@ _DEFAULT_MINIMAX = "MiniMax-H3"
 
 
 # 各家的模块在末尾 `register()` 自己；放在这里是为了避免循环导入。
-# 🩸 2026-10-31 主人：「复刻视频直接下架 2.0 模型，以后都不需要用到」。
-#   `volc20.py` / `volc20_compile.py` 是**复刻视频**的适配器与编译器（编译 2.0 提示词、
-#   调方舟出片），已归档到 `backend/_archive/sd20/`，这里不再注册。
-#   ⚠️ 提示词优化**不受影响**：那条线走 `sd20_skill` → `volc20_pe`（独立的规则校验），
-#   以及 `model_specs` 的 2.0 参数表，两者都不经过注册表。
-from app.services.models import h3, volc25  # noqa: E402,F401
+# 🩸 2026-10-31 曾按主人「复刻视频直接下架 2.0 模型」把 2.0 归档；
+#   **2026-11-04 主人重新部署**：「模型全上，因为调试好不影响 2.0 模型的使用，
+#   他们都是同一套提示词的」→ `volc20.py` / `volc20_compile.py` 已 `git mv` 回来，
+#   三档（标准 / fast / mini）全上。
+#   ⚠️ 提示词优化那条线始终走 `sd20_skill` → `volc20_pe`（独立规则校验），不经过注册表。
+from app.services.models import h3, volc20, volc25  # noqa: E402,F401

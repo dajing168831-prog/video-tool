@@ -237,6 +237,89 @@ SPECS = {
         "edit_duration": -1,
         "edit_ratio": "adaptive",
     },
+    # ------------------------------------------------------------ 火山 2.0 三档
+    # 🔓 2026-11-04 主人重新部署：「**模型全上**，因为调试好不影响 2.0 模型的使用，
+    #    他们都是同一套提示词的」→ 三档全部恢复（10-31 下架时整块删掉过）。
+    #
+    # 三档只差**分辨率**，其余参数完全相同（`api-create.md:412-414`）：
+    #   标准版 480p / 720p / **1080p** / **4k**（4k = 10bit HEVC，`:405`）
+    #   fast / mini 只到 720p，`:454` 表格明写「Seedance 2.0 fast/mini 暂不支持 1080p」
+    # 素材上限出自 `video-generation-tutorial.md:2137 / :2148 / :2171`：
+    #   图片 1~9 张；视频单段 [2,15]s、≤3 段、总 ≤15s；音频单段 [2,15]s、≤3 段、总 ≤15s。
+    # `edit_task_param=False`：2.0 官方**没有** `omni_reference_task_type`
+    #   （`api-create.md:621/640` 的 draft/service_tier 也都不属 2.0 系列）。
+    "seedance-2-0": {
+        "label": "火山 Seedance 2.0",
+        "min_sec": 4.0,
+        "max_sec": 15.0,
+        "resolutions": ("480p", "720p", "1080p", "4k"),
+        "default_resolution": "720p",
+        "max_ref_images": 9,
+        "max_ref_videos": 3,
+        "ref_video_total_sec": 15,
+        "max_ref_audio": 3,
+        # 人数标准：与 H3 对齐 = 4 人（2026-10-22 主人定），是**产品标准**不是官方口径。
+        "stable_subjects": 4,
+        "max_subjects": 4,
+        "ref_audio": True,
+        "max_ref_total": 12,
+        "prompt_chars": None,
+        # 官方 `api-create.md:148`：「提示词字数**建议**：中文不超过 500 字」（建议非硬限）
+        "prompt_advised": "500",
+        "ref_style": "@图片N / @视频N / @音频N",
+        # 官方 skill `sd2-pe` 强制兜底包（画质 / 稳定 / 水印 Logo / 字幕）
+        "auto_constraint": True,
+        "negative_domain": True,
+        "edit_task_param": False,
+        "edit_duration": None,
+        "edit_ratio": None,
+    },
+    "seedance-2-0-fast": {
+        "label": "火山 Seedance 2.0 fast",
+        "min_sec": 4.0,
+        "max_sec": 15.0,
+        "resolutions": ("480p", "720p"),
+        "default_resolution": "720p",
+        "max_ref_images": 9,
+        "max_ref_videos": 3,
+        "ref_video_total_sec": 15,
+        "max_ref_audio": 3,
+        "stable_subjects": 4,
+        "max_subjects": 4,
+        "ref_audio": True,
+        "max_ref_total": 12,
+        "prompt_chars": None,
+        "prompt_advised": "500",
+        "ref_style": "@图片N / @视频N / @音频N",
+        "auto_constraint": True,
+        "negative_domain": True,
+        "edit_task_param": False,
+        "edit_duration": None,
+        "edit_ratio": None,
+    },
+    "seedance-2-0-mini": {
+        "label": "火山 Seedance 2.0 mini",
+        "min_sec": 4.0,
+        "max_sec": 15.0,
+        "resolutions": ("480p", "720p"),
+        "default_resolution": "720p",
+        "max_ref_images": 9,
+        "max_ref_videos": 3,
+        "ref_video_total_sec": 15,
+        "max_ref_audio": 3,
+        "stable_subjects": 4,
+        "max_subjects": 4,
+        "ref_audio": True,
+        "max_ref_total": 12,
+        "prompt_chars": None,
+        "prompt_advised": "500",
+        "ref_style": "@图片N / @视频N / @音频N",
+        "auto_constraint": True,
+        "negative_domain": True,
+        "edit_task_param": False,
+        "edit_duration": None,
+        "edit_ratio": None,
+    },
 }
 
 # 可选型号：ID 取自官方「模型列表」（2026-10-21）
@@ -244,16 +327,17 @@ SPECS = {
 #   MiniMax https://platform.minimaxi.com/docs/api-reference/video-generation-v2-create
 # 1.0 pro / 1.0 pro fast 官方标「即将下线」，且不支持参考视频换主体，不放进选项。
 MODELS = {
-    # 🩸 2026-10-31 主人拍板：**2.0 三档全部下架**，界面不再提供。
-    #   依据：29 次真实换画面请求全是 2.0 Mini（2.5 零次），而 2.0 Mini
-    #     ① 分辨率天花板 720p；② 没有编辑任务身份（`edit_task_param=False`）；
-    #     ③ 强制挂「细节丰富/电影质感」兜底包（`volc20_compile.py:1272`），
-    #        与「保留原片」方向相反。
-    #   SPECS 里的 2.0 条目**已随下架删除**（2026-10-31，见 `SPECS` 上方注释）。
-    #   历史任务带旧 2.0 型号 ID 时不查表，`volc()` 直接回落 2.5 那一档 ——
-    #   「再生成」照样能跑，只是按 2.5 的 30s 上限切段。别再按旧注释去找 2.0 表。
+    # 🔓 2026-11-04 主人重新部署：「模型全上」→ 2.0 三档全部回到界面。
+    #   10-31 的三条下架理由复核结果（`docs/SD20-REDEPLOY-AUDIT.md` §四）：
+    #     ①「720p 天花板」→ **只对 mini 成立**，标准版有 1080p/4k；
+    #     ②「没有编辑任务身份」→ 官方 2.0 本来就没有 `omni_reference_task_type`，
+    #        是事实不是缺陷；
+    #     ③「强制兜底包与保真相反」→ 唯一真冲突，主人 2026-11-04 拍板：**留**。
     "volc": [
         ("doubao-seedance-2-5-260628", "Seedance 2.5"),
+        ("doubao-seedance-2-0-260128", "Seedance 2.0"),
+        ("doubao-seedance-2-0-fast-260128", "Seedance 2.0 fast"),
+        ("doubao-seedance-2-0-mini-260615", "Seedance 2.0 mini"),
     ],
     # 🔓 2026-11-03 主人：「接回机械版」—— H3 通道恢复，但**只挂机械编译器**。
     #   四档型号 ID 与 `SPECS["h3-*"]` 的键一一对应（`model_specs.minimax()` 按
@@ -308,8 +392,14 @@ def volc(model: str) -> dict:
         return minimax(model)
     if "seedance-2-5" in m or "seedance-2.5" in m:
         return SPECS["seedance-2-5"]
-    # 🩸 2026-10-31：2.0 的参数表随复刻视频下架一并删除。传旧 2.0 型号
-    #   （历史请求/老前端缓存）会落到下面的默认档（2.5），不会 KeyError。
+    # 🔓 2026-11-04 恢复：先判 fast / mini（它们的 ID 里同样含 seedance-2-0，
+    #   顺序反了会把 fast/mini 当成标准版，进而放行 1080p/4k → 接口直接拒）。
+    if "seedance-2-0" in m or "seedance-2.0" in m:
+        if "fast" in m:
+            return SPECS["seedance-2-0-fast"]
+        if "mini" in m:
+            return SPECS["seedance-2-0-mini"]
+        return SPECS["seedance-2-0"]
     return SPECS[_DEFAULT_VOLC]
 
 

@@ -161,7 +161,7 @@ Doubao Seedance 2.0 系列（火山方舟）官方资料
 | 线路 | 现状 | 对应代码 |
 |---|---|---|
 | **提示词优化**（`/prompt/*`） | ✅ 在用 | `app/services/sd20_skill.py` → `models/volc20_pe.py`（规则校验，`RULES` 178 行起）；`api/prompt.py:44/580` |
-| **复刻爆款**（换人/换装） | 🧊 **2.0 已下架**（2026-11-03） | `volc20.py` / `volc20_compile.py` 归档在 `backend/_archive/sd20/`；`test_edit_spec_sd20.py` / `ruler_sd20.py` 仍 import 已归档文件 → `--model volc20` 一律 ImportError（尾巴未清，见 `local-current-task`） |
+| **复刻爆款**（换人/换装） | ✅ **已重新部署**（2026-11-04，三档全上） | `app/services/models/volc20.py` / `volc20_compile.py`（已从 `_archive/sd20/` 搬回并注册）；判据 `check_all --model volc20` **48 通过 / 4 跳过 / 红 0** |
 | **型号参数** | ✅ 保留 | `app/services/model_specs.py`（2.0 与 H3 都是 4 人上限） |
 
 **代码里引用的旧文件名对照**（历史注释用的是这些名字，别去盘上找不到就以为资料丢了）：
@@ -170,7 +170,7 @@ Doubao Seedance 2.0 系列（火山方舟）官方资料
 |---|---|
 | `seedance-20-guide.md:987` | `skills/sd2-pe/references/guide.md:987` = `pull-2026-11-04/prompt-guide.md:987`（"最多 3 段视频、总时长 ≤15 秒"） |
 | `sd2-pe/SKILL.md` | `skills/sd2-pe/SKILL.md` |
-| `volc20_compile.py:…` | `backend/_archive/sd20/volc20_compile.py`（已归档） |
+| `volc20_compile.py:…` | `backend/app/services/models/volc20_compile.py`（2026-11-04 起在现役目录；`_archive/sd20/` 里那份是下架期的旧拷贝） |
 
 ---
 

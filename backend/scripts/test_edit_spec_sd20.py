@@ -25,6 +25,23 @@ from test_edit_spec_common import (  # noqa: E402
 MODEL = "volc20"
 LABEL = "火山 2.0"
 
+# 🩸 2026-11-04 清理时发现：本文件测的就是 2.0，但 `compile_prompt("volc", …)`
+#   **不传 model 时走的是全局默认档**，而 10-31 下架 2.0 时默认档已从 2.0 改成 2.5
+#   → 本文件里 15 处不带 model 的调用，量到的是 **2.5 的输出**（表现为
+#   `ep.index("保留原视频")` 直接抛 ValueError）。
+#   逐个补容易漏、以后新增还会漏，所以在入口统一补 2.0 型号；显式传了的不覆盖。
+_M20 = "doubao-seedance-2-0-260128"
+_orig_compile_prompt = edit_spec.compile_prompt
+
+
+def _compile_prompt_20(channel, spec, **kw):
+    if channel == "volc" and not kw.get("model"):
+        kw["model"] = _M20
+    return _orig_compile_prompt(channel, spec, **kw)
+
+
+edit_spec.compile_prompt = _compile_prompt_20
+
 
 def run() -> None:
     print("== 火山 2.0 提示词 ==")
@@ -40,7 +57,10 @@ def run() -> None:
     # 🩸 2026-10-28：2.0 的保留句 2026-10-27 起就是官方「单点编辑」原句
     #   （「保留原视频动作、位置、互动、镜头和背景。」），不再写「保持@视频1的…」。
     #   这条断言锚的是**淘汰掉的旧写法**，靠"编译时不传 model"才活着 = 假绿。
-    check("含保留句", "保留原视频" in v, True)
+    # 🧹 2026-11-04 清理（`docs/SD20-RULE-CLEANUP.md` 病灶 B）：保留句从
+    #   LAS `las_cn.md:405` 的「保留原视频动作、位置、互动、镜头和背景」
+    #   退回官方 `sd2-pe:126` 原句「动作和运镜不变」。
+    check("含保留句", "动作和运镜不变" in v, True)
 
     _p20 = edit_spec.compile_prompt("volc", p, model="doubao-seedance-2-0-mini")
     check("2.0 不写范围闭环（官方默认保持不变）",
@@ -256,8 +276,13 @@ def run() -> None:
         slots=["person"])
     check("① 单人在场 → 不出标签（已验证的写法不许被动到）",
           "<主体" not in _p20one, True)
-    check("① 单人单图 → 图职责句仍是官方两句原样",
-          "参考@图片1中人物的面部特征和妆造" in _p20one, True)
+    # 🩸 2026-11-04 晚：**恢复**（上午以「属路径 B 生成任务」为由停用，判断过头了）。
+    #   官方 `prompt-guide.md:317`（人脸参考不准确）的解法原句就是
+    #   「<主体1> 的面部特征参考 @图片1，妆造参考 @图片2」；
+    #   `SKILL.md:121` 路径 A 公式第二个槽就是「[主体与素材绑定]」。
+    #   一人一张图 ⇒ 两项职责都指同一张（`volc20_compile.person_duty`）。
+    check("① 单人单图 → 写官方 :317 的「面部特征和妆造」职责句",
+          "面部特征" in _p20one and "和妆造" in _p20one, True)
     check("② 2.0 任何形态都不写「参考@视频1」（官方 :56）",
           all("参考@视频1" not in x for x in
               (_p20one, _p20dup, _p20uniq, _p20p, _p20m, _p20multi)), True)
@@ -509,11 +534,16 @@ def run() -> None:
     check("2.0 不会出现连写句号", "。。" in v20, False)
 
     print("== 补充说明顺序 ==")
-    ep = edit_spec.compile_prompt("volc", common.ex)
-    # 🩸 2026-10-28：这里原来找的是「保持@视频1」—— 那是淘汰掉的旧写法，
-    #   只有"编译时不传 model"才会出现（真实出片一定带 model）。改成找现行写法。
+    # 🩸 2026-11-04：必须**显式点名 2.0 型号**。`compile_prompt` 不传 model 时
+    #   走 `_DEFAULT_VOLC`，而 10-31 下架 2.0 时默认档已改成 2.5 —— 这条断言
+    #   因此在 2.0 线里悄悄量的是 2.5 的输出（找不到「保留原视频」就崩）。
+    ep = edit_spec.compile_prompt("volc", common.ex,
+                                  model="doubao-seedance-2-0-260128")
+    # 保留句的现行写法 = 官方 `sd2-pe:126`「动作和运镜不变」
+    # （清理时删掉了 LAS `las_cn.md:405` 那句「保留原视频动作、位置、互动、镜头和背景」，
+    #   见 `docs/SD20-RULE-CLEANUP.md` 病灶 B）。
     check("补充说明在保留句之前",
-          ep.index("画面更亮一点") < ep.index("保留原视频"), True)
+          ep.index("画面更亮一点") < ep.index("动作和运镜不变"), True)
 
     print("== 一个人一张图（2026-10-26，台账 D48）==")
     # 🩸 以前这里断言「有大头照时追加全身照」，那是把官方 `sd20-guide:305`
@@ -529,11 +559,10 @@ def run() -> None:
     # 🩸 2026-10-23：这句「@图片N是替换后人物的唯一身份来源…」出处是第三方
     # ReplicaPilot，官方原话不是这个写法 → 断言"不许回来"。
     check("不写第三方来源的身份锁句", "唯一身份来源" not in one_p, True)
-    check("面部特征按官方句子写了", "参考@图片1中人物的面部特征和妆造" in one_p, True)
-    # 🩸 2026-10-30：面部与妆造现在是**同一句参考句里的两个维度**
-    #   （「参考@图片1中人物的面部特征和妆造」），不再拆成「…；妆造参考@图片1」。
-    check("妆造也指同一张（官方只给妆造，没第二张就指回图片1）",
-          "和妆造" in one_p and "@图片2" not in one_p, True)
+    # 🩸 2026-11-04 晚：**恢复**。官方 `prompt-guide.md:317` 就是这条的原文，
+    #   `SKILL.md:121` 路径 A 公式的「[主体与素材绑定]」槽也要求它。
+    check("写职责句（`prompt-guide.md:317`）", "面部特征" in one_p, True)
+    check("妆造也指同一张图（一人一张）", "和妆造" in one_p, True)
     check("不写「体型」（官方只给妆造，加了会改景别）", "体型以@" not in one_p, True)
     check("不会冒出图里没有的 @图片2", "@图片2" in one_p, False)
 
@@ -555,7 +584,10 @@ def run() -> None:
     check("参考图描述不再改变 2.0 提示词", p_yes == p_no, True)
     check("替换宾语是图内对象（sd20-guide:126）",
           "替换为@图片1中的人物" in p_yes, True)
-    check("职责句保留面部与妆造", "参考@图片1中人物的面部特征和妆造" in p_yes, True)
+    # 🩸 2026-11-04 晚：**恢复**职责句（`prompt-guide.md:317`）。
+    #   注意这里测的是另一件事：**参考图描述**仍不进 2.0 提示词（上一行
+    #   `p_yes == p_no`），职责句与描述无关，它只指图号。
+    check("职责句在（官方 :317）", "面部特征" in p_yes, True)
 
     print("== 换服装 ==")
     wd = edit_spec.normalize({"wardrobe": True, "wardrobe_desc": "米色风衣"})
@@ -645,14 +677,11 @@ def run() -> None:
     # 模型把「身着…和服」当成修改对象 → 只换衣服不换脸
     # （与原片同人 49/56 帧、与参考图 0/65 帧）。这条判据冻结的就是那一次。
     check("单人画面不写原片外表描述", src_face["desc_zh"] not in p20, True)
-    # 🩸 官方有、我们之前漏写的一句（`seedance-20-guide.md:317` / `sd2-pe:139`）：
-    #   「<主体1> 的面部特征参考 @图片1（大头照）」
-    # 只有一张图时也要写。🩸 2026-10-25：句式从「只写面部特征」改成
-    # 「面部特征 + 妆造都指这一张」—— 官方把「妆造」挂在第二张（全身照）上，
-    # 没有第二张就**一个字都不写妆造 = 衣服不跟着换**（主人当场问出来的）。
-    # 判据仍然守原意：**不许编一个不存在的图号**（只以 @图片1 为准）。
-    check("换人句写明面部特征参考哪张图", "参考@图片1中" in p20 and "的面部特征" in p20, True)
-    check("只有一张图时妆造也指同一张", "和妆造" in p20, True)
+    # 🩸 2026-11-04 晚：**恢复**（上午随句停用，判断过头了）。出处见
+    #   `volc20_compile.person_duty`：`prompt-guide.md:317` 原句 +
+    #   `SKILL.md:121` 路径 A 的「[主体与素材绑定]」槽。
+    check("写面部特征职责句（官方 :317）", "面部特征" in p20, True)
+    check("写妆造（一人一张，都指这张）", "和妆造" in p20, True)
     check("只有一张图时不编不存在的图号", "@图片2" not in p20, True)
     # 🩸 2026-10-23：下面三句出处都是第三方（ReplicaPilot / 旧自造），
     # 两家官方说明书都没有 → 已删除。断言改成"不许回来"。

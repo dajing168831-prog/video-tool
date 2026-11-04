@@ -101,10 +101,12 @@ def main() -> int:
         check("2.0 只有一个槽位", slots, ["person"])
         check_true("发的就是原图（不自动裁大头照）", Path(paths[0]) == orig, str(paths[0]))
         p20 = prompt_for("volc", slots)
-        # 🩸 2026-10-30：职责句改成**前置**的一整句「参考@图片N中…的面部特征和妆造」
-        #   （官方 `sd20-guide:59-65` 组合任务句式：参考分句排在「严格编辑」之前）。
-        check_true("2.0 一张图时面部与妆造都指图片1",
-                   "参考@图片1中人物的面部特征和妆造" in p20, p20)
+        # 🩸 2026-11-04 晚：**恢复**（上午随句停用，判断过头了）。
+        #   职责句出处 = `prompt-guide.md:317`（人脸参考不准确的解法原句）+
+        #   `SKILL.md:121` 路径 A 公式的「[主体与素材绑定]」槽；
+        #   一人一张图时两项职责都指这张（`volc20_compile.person_duty`）。
+        check_true("2.0 写职责句（面部特征 + 妆造）",
+                   "面部特征" in p20 and "和妆造" in p20, p20)
         check_true("2.0 不出现第二张人物图", "@图片2" not in p20, p20)
 
     if sel == "volc25":
@@ -164,22 +166,21 @@ def main() -> int:
         check("2.0：两人各一张", slots5, ["person", "person2"])
         pr5 = prompt_for("volc", slots5)
 
-        # 🩸 判据按**效果**写，不锁字面（2026-10-25：多人改用官方 `<主体N>` 指代，
-        # 原句「面部特征参考@图片1中的人物」变成「<主体1>的面部特征参考@图片1」）。
-        # 关心的是"第 1 位的脸和妆造都指图片1、第 2 位都指图片2"。
-        def _duty(prompt: str, face_pic: str) -> str:
-            """取「指向 face_pic 的那一小句」（按 ； 切，别被别的分句干扰）。"""
-            for seg in prompt.split("；"):
-                if "面部特征" in seg and re.search(rf"参考{face_pic}(?!\d)", seg):
-                    return seg
-            return ""
-
-        seg1 = _duty(pr5, "@图片1")
-        check_true("第 1 位：面部与妆造都→图片1",
-                   bool(re.search(r"参考@图片1中[^，]*的面部特征和妆造", seg1)), pr5)
-        seg2 = _duty(pr5, "@图片2")
-        check_true("第 2 位：面部与妆造都→图片2",
-                   bool(re.search(r"参考@图片2中[^，]*的面部特征和妆造", seg2)), pr5)
+        # 🩸 2026-11-04 晚：**恢复**（上午随句停用，判断过头了）。
+        #   出处 `prompt-guide.md:317` + `SKILL.md:121` 路径 A 的
+        #   「[主体与素材绑定]」槽。一人一张图 ⇒ 每位换的人一张图、
+        #   脸和妆造都指**自己那张**，两位之间不许串。
+        check_true("第 1 位脸和妆造都指图片1",
+                   "参考@图片1中" in pr5 and "的面部特征和妆造" in pr5, pr5)
+        check_true("第 2 位脸和妆造都指图片2",
+                   "参考@图片2中" in pr5, pr5)
+        check_true("两人的职责句各绑各的图（不串）",
+                   len(re.findall(r"参考@图片\d中[^，。]*的面部特征和妆造", pr5)) == 2,
+                   pr5)
+        check_true("第 1 位绑@图片1",
+                   bool(re.search(r"替换为@图片1中的人物", pr5)), pr5)
+        check_true("第 2 位绑@图片2",
+                   bool(re.search(r"替换为@图片2中的人物", pr5)), pr5)
         check_true("双人：不出现第三张图", "@图片3" not in pr5, pr5)
 
         # 🩸 2026-10-26 19:xx：原来这三条锁的是

@@ -370,12 +370,22 @@ def r21_too_many_people(p, ctx):
 
 
 def r22_material_first(p, ctx):
-    """sd2-pe:65 重要素材前置。"""
-    i = p.find("@视频1")
-    if i < 0:
-        i = p.find("视频1")
-    if i > len(p) // 3 and i >= 0:
-        return [f"@视频1 出现在第 {i}/{len(p)} 字"]
+    """sd2-pe:65「越需要精准参考的**素材**（如人脸大头照），位置越靠前」。
+
+    🩸 2026-11-04：以前只量 `@视频1` 的位置。多主体时编译器按官方 `:110`
+    的示例把**主体定义**放最前（「将@图片1中…定义为<主体1>，将@视频1中…
+    定义为<主体2>。严格编辑…」），`@视频1` 自然被推到后面 —— 这条当场报黄，
+    可那句话本身正是 `:65` 想要的形状：`@图片1` 在第 3 个字。
+    官方写的是**素材**，不是"@视频1"，`:65` 的例子里点名的也是人脸大头照。
+    ⇒ 改成量**第一个素材引用**（`@图片N` 或 `@视频N`）的位置。
+    反例（一大段说明文字之后才出现素材）仍然响，判据没变宽。
+    """
+    pos = [m.start() for m in re.finditer(r"@?(?:图片|视频)\s*\d+", p)]
+    if not pos:
+        return []
+    i = min(pos)
+    if i > len(p) // 3:
+        return [f"第一个素材引用出现在第 {i}/{len(p)} 字"]
     return []
 
 
@@ -633,8 +643,10 @@ RULES = [
      r25_dangling_generate),
     # 🩸 R26 与 R09「宾语必须唯一可指认」同源（都是"同一段话里两处说法打架"），
     #    官方 `:121` 明写「避免语义冲突」→ 红。
+    # 🧹 2026-11-04 清理：出处由 LAS `las_cn.md:385`（另一套算子）改为
+    #    `prompt-guide.md:41`「对于保持不变的元素，在提示词中加以强调」。
     ("R26", "红", "「其他…保持不变」不得列出本次被换的类别",
-     "las_cn.md:385 · sd20-guide:121", r26_others_contradiction),
+     "sd20-guide:41 · sd20-guide:121", r26_others_contradiction),
     # 🩸 2026-10-28（主人：「提示词产出有误直接生成失败而不是被拒，这才是最可怕的
     #    钱花了没达到想要的」）：R01–R26 全在问「该写的写没写」，没有一条问
     #    「该有内容的地方有没有内容」。真实付费原文里就出现过空宾语残句。
@@ -657,8 +669,10 @@ RULES = [
 
 # ================================================================ 原文锚句
 # 🩸 2026-10-29 主人：「是不是又没抓到官方出处，你现在要做这个是整个项目的判断核心」。
-# 每条规则绑一句**从 `sd20-guide` / `sd2-pe` / `las_cn.md` 逐字复制**的锚句，
+# 每条规则绑一句**从 `sd20-guide` / `sd2-pe` 逐字复制**的锚句，
 # 由 `ruler_sources.py` 机器校验：缺锚句 = 红；锚句找不到 = 红；行号不符 = 红。
+# 🧹 2026-11-04：`las_cn.md` 已从本尺子的出处清单里移除（那是「视频编辑增强版
+#   算子」的文档，不是 Seedance 原生提示词；导图 15 篇里也没有它）。
 # ⛔ 不许改写、不许翻译、不许省略中间 —— 复制粘贴。
 QUOTES = {
     "R01": "以免被误判为参考任务",
@@ -2065,17 +2079,15 @@ def _d9_params() -> list[tuple[str, bool, str]]:
         ("resolution", (ONE, {}),
          ({"person": True, "person_ids": ["P1"], "resolution": "480p"}, {}),
          False, "请求参数，不进提示词"),
-        # 🩸 2026-10-27 二次修订（主人：「LAS 也有明确的提示词输出」）：
-        # 保留句现在**按任务类型分**，两家官方各管一摊：
-        #   · 换人物 → LAS `las_cn.md:405` `replace/person_replace` 原句
-        #     「保留原视频动作、位置、互动、镜头和背景」—— **有背景**；
-        #   · 换物体/背景 → `sd2-pe` 单点编辑 + `sd20-guide:941`「动作和运镜不变」。
-        # 这条用例是换人（`person`），所以关掉 background **必须改变输出**。
-        # 原来期望「不变」是按 sd2-pe 换物体的句子定的 —— 那时还不认识 LAS。
-        ("keep 单项关闭：background（换人时官方写了此项）", (ONE, {}),
+        # 🧹 2026-11-04 清理（`docs/SD20-RULE-CLEANUP.md` 病灶 B）：换人不再用
+        #   LAS `las_cn.md:405` 那句（它含「背景」），保留句统一成官方
+        #   `sd2-pe:126` 的「动作和运镜不变」。⇒ **关掉 background 不再改变输出**。
+        #   这在 2.0 是对的：官方 `prompt-guide.md:33`「未提及的部分，默认保持不变」，
+        #   背景本来就不变，不需要靠 keep 句再声明一遍。
+        ("keep 单项关闭：background（2.0 不用声明，官方默认不变）", (ONE, {}),
          ({"person": True, "person_ids": ["P1"],
-           "keep": {"background": False}}, {}), True,
-         "LAS person_replace 原句含背景；关掉就必须少这一项"),
+           "keep": {"background": False}}, {}), False,
+         "官方默认「未提及的保持不变」，保留句不写背景 ⇒ 关掉也不变"),
         ("keep 单项关闭：camera", (ONE, {}),
          ({"person": True, "person_ids": ["P1"],
            "keep": {"camera": False}}, {}), True, ""),
@@ -2570,19 +2582,10 @@ def _d19_wardrobe_target() -> list[tuple[str, bool, str]]:
         slots=["person"])
     rows.append(("有描述：写成「修改为米色风衣」",
                  "修改为米色风衣" in p2, p2[:120]))
-    # 🩸 2026-10-27（人工审读真实组合抓到的同句语义冲突）：换人 + 换装同时勾选时，
-    # 「妆造参考@图片1」（妆造含服装）与「服装换成@图片2」在同一段字里给出两个答案，
-    # 正是官方 `sd20-guide:121`「避免语义冲突（如同一主体出现矛盾特征）」。
-    # 成对：纯换人时妆造句**必须还在**（`052dcbf0` 验过的形状，别一起删掉）。
-    p_pure = _es.compile_prompt(
-        "volc", _es.normalize({"person": True, "person_ids": ["P1"]}),
-        model=SD_M, source_people=fr, frame_people=fr,
-        desc_by_id={"P1": {"zh": "体型偏胖的男子", "en": ""}},
-        slots=["person"])
-    # 🩸 2026-10-30：职责句改成前置的「参考@图片N中…的面部特征和妆造」
-    #   （官方 `sd20-guide:59-65` 组合任务句式：参考分句在「严格编辑」之前）。
-    rows.append(("纯换人：妆造句仍在（对照，有鉴别力）",
-                 "的面部特征和妆造" in p_pure, p_pure[:120]))
+    # 🧹 2026-11-04 清理（`docs/SD20-RULE-CLEANUP.md` 病灶 A）：职责句整句停用，
+    #   原来「纯换人妆造句仍在」「换人+换装面部特征仍指换人图」两条对照断言
+    #   随被测句式一起下线。D19 的本职（换装必须给具体目标，不许兜底
+    #   「另一套服装」）由上面两条继续守。
     p_w = _es.compile_prompt(
         "volc", _es.normalize({"person": True, "person_ids": ["P1"],
                                "wardrobe": True, "wardrobe_ids": ["P1"],
@@ -2590,10 +2593,9 @@ def _d19_wardrobe_target() -> list[tuple[str, bool, str]]:
         model=SD_M, source_people=fr, frame_people=fr,
         desc_by_id={"P1": {"zh": "体型偏胖的男子", "en": ""}},
         slots=["person", "wardrobe"])
-    rows.append(("换人+换装：妆造句让位，不同句给两个服装答案",
-                 "和妆造" not in p_w and "米色风衣" in p_w, p_w[:160]))
-    rows.append(("换人+换装：面部特征仍指换人图",
-                 "的面部特征" in p_w and "@图片1中人物的面部特征" in p_w, p_w[:160]))
+    # 换装句本身仍然要在：勾了换装、给了描述，就必须落到句子里
+    rows.append(("换人+换装：换装句在、且给了具体目标",
+                 "米色风衣" in p_w, p_w[:160]))
     return rows
 
 
@@ -2623,13 +2625,15 @@ def _d20_las_forms() -> list[tuple[str, bool, str]]:
             desc_by_id={"P1": {"zh": "体型偏胖的男子", "en": ""}},
             slots=slots, **kw)
 
-    # ① 换人：LAS person_replace 原句
+    # 🧹 2026-11-04 清理（`docs/SD20-RULE-CLEANUP.md` 病灶 B）：换人**不再**用
+    #   LAS `las_cn.md:405` 的「保留原视频动作、位置、互动、镜头和背景」——
+    #   那是「视频编辑增强版算子」的模板，不是 Seedance 原生提示词。
+    #   退回官方 `sd2-pe:126` 原句「动作和运镜不变」。原来那两条 LAS 断言随句式下线。
     p_person = _c({"person": True, "person_ids": ["P1"]}, ["person"])
-    rows.append(("换人：保留句含位置/互动/背景（LAS :405）",
-                 "保留原视频动作、位置、互动、镜头和背景" in p_person,
-                 p_person[:120]))
-    rows.append(("换人：不再只写「动作和运镜不变」",
-                 "动作和运镜不变" not in p_person, p_person[:120]))
+    rows.append(("换人：保留句用官方原句「动作和运镜不变」",
+                 "动作和运镜不变" in p_person, p_person[:120]))
+    rows.append(("换人：不写 LAS 算子那三项（位置/互动/背景）",
+                 "保留原视频动作、位置、互动" not in p_person, p_person[:120]))
 
     # ② 换物体：LAS general 原句 + sd2-pe 的「动作和运镜不变」
     p_prod = _c({"product": True}, ["product"])
@@ -2650,9 +2654,14 @@ def _d20_las_forms() -> list[tuple[str, bool, str]]:
     # ④ 风格迁移：LAS style_transfer 原句
     p_style = _c({"person": True, "person_ids": ["P1"],
                   "style_ref": True}, ["person", "style_ref"])
-    rows.append(("风格迁移：含人物身份/数量/时间线（LAS :432）",
-                 all(w in p_style for w in ("人物身份", "数量", "时间线")),
+    # 🧹 2026-11-04 清理：原句引 LAS `las_cn.md:432`（视频编辑增强版算子，
+    #   不是 Seedance 原生提示词）→ 已删。2.0 官方口径：`:33` 未提及默认不变、
+    #   `:357` 要强调**目标风格**而不是补一串保留项。
+    rows.append(("风格迁移：不写 LAS 那串保留项（人物身份/数量/时间线）",
+                 all(w not in p_style for w in ("人物身份", "时间线")),
                  p_style[:140]))
+    rows.append(("风格迁移：仍写目标风格（官方 :357）",
+                 "风格" in p_style or "色调" in p_style, p_style[:140]))
     rows.append(("风格迁移：不再另写「动作和运镜不变」（重叠）",
                  "动作和运镜不变" not in p_style, p_style[:140]))
 
@@ -2929,7 +2938,7 @@ def exhaustive() -> int:
                         ("D17 风格词×风格参考叠加", _d17_style_stack),
                         ("D18 音色×语种断开", _d18_voice_lang_sep),
                         ("D19 换装×目标必填", _d19_wardrobe_target),
-                        ("D20 LAS 三种保留句分工", _d20_las_forms),
+                        ("D20 保留句分工与鉴别力", _d20_las_forms),
                         ("D21 真实盘点形状×病句", _d21_real_shape)]:
         rows = _fn()
         ok = 0

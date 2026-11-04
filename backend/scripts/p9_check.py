@@ -231,8 +231,14 @@ def phase_e() -> None:
     chk("E1 chip 是多选（按名单判断，不是单选比较）",
         "pickedIds.indexOf(p.id) >= 0" in vue and ":class=\"{ on: edit.person_id === p.id }\"" not in vue)
     chk("E2 请求体带 person_ids", "person_ids: []" in vue and "edit: { ...this.edit }" in vue)
+    # 🩸 2026-11-04：`diagnose.vue` 的 `extraPeople` 改成「按已传的图滚雪球」时，
+    #   循环起点从 i=0 改成 i=1（第 1 格是 `person`，从第 2 格起才进 extraPeople），
+    #   槽位算式随之 `person${i + 2}` → `person${i + 1}`。
+    #   产品行为没变（第 2/3 个人照样各有自己的上传行），是**断言跟字面量一起陈旧**了。
+    #   查「渲染的是 extraPeople 这个列表」比查某个偏移量更贴这条断言的本意。
     chk("E3 第 2/3 个人各有自己的上传行",
-        "extraPeople" in vue and "person${i + 2}" in vue)
+        "extraPeople" in vue and 'v-for="pp in extraPeople"' in vue
+        and "slot: `person${i + 1}`" in vue)
     chk("E4 人数上限跟着型号走（不再写死 3 人）",
         "ids.length < cap" in vue and "subjectLimit.max" in vue)
     chk("E5 选了人却没传图 → 提交前拦住", "还没传图" in vue)

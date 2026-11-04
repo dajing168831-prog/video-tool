@@ -89,7 +89,11 @@ def _compile(spec: dict, *, channel: str = "volc", **kw) -> str:
         # 🩸 参考图里那个人的外观描述（`subject_desc.json`）。以前这里没转发，
         # 编译器拿不到 ⇒ 参考侧永远只有一句「@图片1中的人物」，官方 `:95`
         # 要的 2–3 个静态特征一个都没有。
-        subject_look=kw.get("subject_look"))
+        subject_look=kw.get("subject_look"),
+        # 🩸 2026-11-04：**逐槽位**的参考图外观描述（`{槽位: {zh, en}}`）。
+        # 以前只转发单人版 `subject_look`，2 人全换时第二张图的描述被丢掉，
+        # 目标只能写「@图片N中的人物」——哪张图配哪个人模型只能猜（`de591f35`）。
+        subject_looks=kw.get("subject_looks"))
 
 
 def _gate(inventory=None, slots=None, person_ids=None, spec=None, **kw) -> None:

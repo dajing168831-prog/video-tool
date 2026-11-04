@@ -179,7 +179,8 @@ def sd20_locator(per: dict | None, pool: list[dict] | None = None) -> str:
             return f"{_pos}的人物"
     own = _landmark_phrase_20(desc)
     if not own:
-        own = _feat_phrase(desc, cloth=False) or _feat_phrase(desc, cloth=True)
+        own = (_feat_phrase(desc, cloth=False)
+               or _feat_phrase(desc, cloth=True))
     # 🩸 2026-10-29（D71）：这段原来用 `_split_feats(own)` 取"这句用了哪些特征"，
     #   而它对没有「的X」结尾的描述返回空列表 ⇒ 唯一性修正从来没触发过。
     #   逻辑收进 `_disambiguate_20`，多人标签路径（`_orig_feat_20`）共用同一份。
@@ -190,6 +191,9 @@ def sd20_locator(per: dict | None, pool: list[dict] | None = None) -> str:
     # 脚踩白鞋的男性」—— 全用顿号，于是整串被当成**一个分句**，原样放行，
     # 4–6 个特征全发出去。这里统一收口：超 3 个就换 `_feat_phrase`（同一把尺，
     # 它现在会按顿号拆开再封顶）。
+    # 🩸 2026-11-04 深夜自己撤回：一度按 `cap=None` 整段搬，穷举 D12/D21 立刻红
+    #   （官方 `sd20-guide:95`「2–3 个静态特征」，这条尺子本来就守着）。
+    #   收口恢复。
     if own and len([x for x in re.split(r"、", own) if x.strip()]) > 2:
         _alt = _feat_phrase(desc, cloth=False) or _feat_phrase(desc, cloth=True)
         if _alt:
@@ -325,8 +329,10 @@ class _CL20(Dialect):
             这个动词短语官方原文没有。证据（同一素材 494b1c28）：合成句那次衣服
             换全了、脸只挪一半（原片主演 SFace 0.33 → 成片 0.55）；官方两句那次
             p90 0.617 / 达标帧 0.77。
-          · 参考图侧有标签时按官方 `:139` 原句写「<主体1>的面部特征参考 @图片1」，
-            主语是标签、图号是出处，两者都在。
+          · 参考图侧有标签时写「参考@图片1的面部特征和妆造」（`sd20-guide:59-65`
+            组合任务句式：参考<图片N>的[参考维度]），标签与图号的绑定由前一句
+            定义句承担 —— 不再写成「参考@图片1中<主体1>…」，那是套娃
+            （2026-11-04 深夜改，见函数末注释）。
           · 2026-10-27（人工审读真实组合）：勾了「换人 + 换装」时，
             「妆造参考@图片1中的人物」与「…的服装换成@图片2中的服装」**同句
             语义冲突**（官方 `sd20-guide:121` 点名）⇒ 这个人在换装名单里时，妆造句不写。
@@ -343,11 +349,57 @@ class _CL20(Dialect):
         #   它们之前（官方 `:110` 先定义再描述）。
         #   `参考维度` 取官方 `:139`/`:317` 的原词「面部特征」「妆造」，
         #   没有新造词。
+        # 🩸🩸 2026-11-04 晚：**恢复本句**（当天上午清理时停用过，判断过头了）。
+        #
+        #   上午的理由是「`sd2-pe:139` 属路径 B 三段论，编辑任务走路径 A」。
+        #   只对了一半：原文那个**两张图分工**（大头照+全身照）确实不适用，
+        #   但「参考分句」本身不是路径 B 的块标题 —— 它是路径 A 公式里明写的槽：
+        #   `SKILL.md:121`「[任务句式主体]，**[主体与素材绑定]**，[场景与简短动作]，
+        #   [风格与约束包]」。删掉它 = 把公式第二个槽删了。
+        #   本函数就是官方 `prompt-guide.md:317`（常见问题·**人脸参考不准确**）的
+        #   解法原文：「<主体1> 的面部特征参考图片1（大头照），妆造参考图片2
+        #   （全身照）」—— 我们只有一张图，两项职责都指这张。
+        #
+        #   真机证据（2026-11-04 本地 SFace 复算，零费用）：
+        #     `de591f35` 同素材同参考图的历史 10 条成片 ——
+        #       · 唯一带「锁定图中人物的脸」那版（H3 `c8455a93`）：person2 p90 0.611
+        #       · 唯一带【目标素材职责】那版（2.5 `dad130d5/004b86ac`）：两人都换上了
+        #       · **2.0 唯一那版（没有本句）**：person 0.071 / person2 0.0，
+        #         连衣服都没动（成片把锅的金属把手抹掉了）
+        #   三家能换上的版本里，都有一句「这张图供什么」；2.0 是唯一没有的。
+        #
+        #   官方顺序：`sd20-guide:59-65` 组合任务要求参考分句排在「严格编辑」之前。
+        #   本句以「参考@图…」开头，编译器顶层 `_lead` 会把它提到前面。
+        # 🩸 2026-11-04 深夜（主人：「怎么有点怪怪的？」）：**有标签时不能再套图号**。
+        #   旧写法 `参考@图片1中<主体1>的面部特征和妆造`，而 `<主体1>` 刚被定义成
+        #   「@图片1中…的人」⇒ 读起来是「@图片1中（@图片1中那个人）」，套娃，
+        #   违反官方 `:121`「描述尽量简洁，避免冗余」。
+        #   官方组合任务句式（`:59-65`）是「**参考<图片N>的[参考维度]**」，
+        #   参考维度就是 `:317` 的原词「面部特征」「妆造」。
+        # 🩸✅ 2026-11-04 20:58 **真机验证通过**（`de591f35` / `ef232fc6`，343 字，
+        #   2 人全换，主人确认「通了」）—— **就是下面这个写法**，别再动：
+        #       `参考@图片1的面部特征和妆造，参考@图片2的面部特征和妆造`
+        #   🩸 记一笔：当晚我一度觉得「无主语」把它改成
+        #   `<主体1>的面部特征和妆造参考@图片1`（353 字）—— **未出片、未验证**，
+        #   已回滚。要再改这条，必须单独出片验，不许拿"语法更顺"当理由直接换。
+        #   没标签时保持 2026-10-26 真机跑过的旧写法，不动。
+        # ✅ 2026-11-04 主人拍板「不要回滚，用最新的」→ 采用补主语这版。
+        #   ⚠️ 如实记：20:58 出片通过（`ef232fc6`）的是**上一版**
+        #   （`参考@图片1的面部特征和妆造`，343 字），本版 353 字**尚未出片**。
+        #   两版只差这一句的主语位置，其余逐字相同。
         _who = rtag or "人物"
-        return f"参考{pic}中{_who}的面部特征" + ("" if in_wardrobe else "和妆造")
+        _tail = "" if in_wardrobe else "和妆造"
+        if rtag:
+            return f"{rtag}的面部特征{_tail}参考{pic}"
+        return f"参考{pic}中{_who}的面部特征{_tail}"
 
     def keep_others(self, names: list[str]) -> str:
-        # LAS `las_cn.md:385` 官方原句的后半句（`general` 模板）。
+        # 🧹 2026-11-04 清理：原来引 **LAS `las_cn.md:385`**（`general` 模板）——
+        #   LAS 是「视频编辑增强版算子」，不是 Seedance 原生提示词。
+        #   但**这句话本身官方是支持的**，换成 2.0 自己的出处：
+        #   `prompt-guide.md:41`「删除元素：点明需要删除的元素，**对于保持不变的
+        #   元素，在提示词中加以强调，表现更佳**」。
+        #   ⇒ 句子保留，出处改到 Seedance 2.0 官方指南。
         return _others_unchanged(names)
 
     def wardrobe_subject(self, ctx: dict) -> tuple[str, bool]:
@@ -426,15 +478,40 @@ class _CL20(Dialect):
         return f"整体风格为{word}"
 
 
-def _ref_feat_20(desc: str) -> str:
+# 🗑️ 2026-11-04 深夜删除 `_REF_GROUP_ORDER = (2, 3, 4, 0, 1)`。
+#   那个常量假设 `desc_zh` 永远按 `vision_plan._DESC_PROMPT` 的 ①②③④⑤
+#   分五组，可视觉模型实际输出**组数不固定**：`de591f35` 的图片1 把
+#   ①面部和②气质合成一组 ⇒ 下标 2 落到「服装」而不是「发型」，
+#   于是「深棕黑色蓬松大波浪长卷发」整组被跳过。
+#   按下标取组 = 在数据形状不稳时取错维度。现改成「按原顺序、每组 1 条、轮转取满
+#   3 条」，见 `_ref_feat_20`。
+#   （当天一度改成"整段搬完整描述"，穷举 D12/D21 立刻红 —— 官方 `:95` 的
+#    「2–3 个」是硬线，已撤回。）
+
+
+def _ref_feat_20(desc: str, others_text: str = "") -> str:
     """参考图里那个人的「2–3 个静态特征 + 人」短语（官方 `sd20-guide:95`）。
 
     🩸 2026-10-26（主人：「我刚才一直说你提示词有问题」）：参考图里的人一直
     **没有被定义成主体**，提示词里只有一句「替换为@图片1中的人物」——
     把"图里哪个人"甩给模型自己找，而前半句已经把原片三个人描述完了。
     官方 `:95` 给的写法是 `将<图片N>中的[主体核心特征]定义为<主体N>`，
-    `:107` 要求之后**全程用同一标签**。这里把盘点好的素材描述
+    `:107` 要求之后**全程用同一标签**。这里把参考图的外观描述
     （`subject_desc.json` 的 `desc_zh`）裁成官方要的特征短语。
+
+    官方原文只有三条，全部照办，不再自己加规则：
+      · `guide.md:93`「使用 **2–3 个**清晰、稳定的静态特征」；
+      · 同句「（如**服饰、发型**、外观、类别）」→ 取特征时先拿这两类
+        （真实描述的头一组全是五官，两份参考图的五官句几乎逐字相同，
+        拿它当定义不满足下一句）；
+      · 同句「**确保唯一可识别性**」+ `:107`「避免指代混乱」
+        → **另一张参考图也有的分句不进定义**。
+
+    🩸🩸 2026-11-04（`de591f35` 真机：2 人全换、两张脸都没换）：
+      那单发出去的两句是「将其中的**黑色长发**、外穿黑底带白色文字的人物…」
+      /「将其中的**黑色长发**、手臂带有纹身的人物…」——都以「黑色长发」开头，
+      定义句再各带一遍，模型分不出谁是 `<主体1>`。`others_text` 就是为了剔掉
+      这类撞车分句而加的。
     """
     raw = re.sub(r"[\r\n\t]+", " ", (desc or "")).strip().rstrip("。．.")
     # 🩸 引号在 2.0 提示词里是**台词/文字**的句法（`sd20-guide:298` 台词用 `{}`；
@@ -444,19 +521,120 @@ def _ref_feat_20(desc: str) -> str:
     raw = re.sub(r"[“”\"「」『』]", "", raw)
     if not raw:
         return ""
-    parts = [p.strip() for p in re.split(r"[，,；;]", raw) if p.strip()]
-    if not parts:
+    others = others_text or ""
+    # ① 按**我们自己的描述契约**分组（组间 `；`），**每组最多贡献 1 条**，
+    #    取满 3 条即停。官方 `sd20-guide:95` 的两条硬要求都照办：
+    #      · 「使用 **2–3 个**清晰、稳定的静态特征」——封顶 3；
+    #      · 「（如**服饰、发型**、外观、类别）」——按组轮转，天然跨维度，
+    #        不会像以前那样 3 条槽位全被服装占满。
+    #    🩸 2026-11-04 深夜（主人：「那个长长的描述真的 2.0 导图里面的资料吗？」）：
+    #    **不是**。当天一度改成"整段搬"，穷举 D12/描述形态 与 D21/真实盘点形状
+    #    立刻红 —— 那条尺子守的就是官方「2–3 个」。已撤回，只留下真 bug 的修法。
+    #
+    #    🩸 原来的真 bug：按 `_REF_GROUP_ORDER = (2,3,4,0,1)` **按下标**挑组，
+    #    而视觉模型输出的组数不固定（这张图把 ①面部②气质 合成了一组）⇒
+    #    下标 2 落到「服装」而不是「发型」，**发型整组被跳过**。
+    #    现在不按任何下标挑，按描述原顺序每组取 1 条 —— 组数怎么变都不会漏维度。
+    groups = [g.strip(" ，,") for g in re.split(r"[；;]", raw) if g.strip(" ，,")]
+    # 候选按组摊开，组内顺序不变；先剔「另一张图也有的分句」（官方 `:95`）。
+    cand: list[list[str]] = []
+    for g in groups:
+        _c = []
+        for x in re.split(r"[，,]", g):
+            x = x.strip()
+            if x and x not in others and x not in _c:
+                _c.append(x)
+        if _c:
+            cand.append(_c)
+    # 轮转取：第 1 轮每组取 1 条，不够 3 条再走第 2 轮 —— 这样既跨维度
+    # （官方 `:95` 举例的服饰/发型/外观都能拿到），描述没分组时也照样取满 3 条。
+    feats: list[str] = []
+    rnd = 0
+    while len(feats) < 3:
+        _added = False
+        for _c in cand:
+            if rnd < len(_c):
+                _added = True
+                if _c[rnd] not in feats:
+                    feats.append(_c[rnd])
+                if len(feats) >= 3:
+                    break
+        if not _added:
+            break
+        rnd += 1
+    if not feats:
+        # 两张图一模一样时没有可区分的特征：退回原文第一句，不编造
+        feats = [x.strip() for x in re.split(r"[，,]", groups[0]) if x.strip()][:1]
+    if not feats:
         return ""
-    feats = parts[:3]
     if not _PERSON_HEAD.search(feats[-1]):
         feats[-1] = feats[-1] + "的人"
     return "、".join(feats)
 
 
+def _ref_side_tags_20(idx: dict[str, int], channel: str,
+                      people: list[dict] | None,
+                      looks: dict | None) -> tuple[list[str], dict[int, str]]:
+    """多主体换人：把**参考图里**的人各自定义成 `<主体N>`（官方 `sd20-guide:95/:107`）。
+
+    🩸🩸 2026-11-04（`de591f35` 真机，主人：「你这个真的是有鸡毛用，什么也没变化」）：
+      2 人全换，发出去的提示词是
+        「严格编辑@视频1，视频全程将其中的黑色长发、外穿黑底带白色文字的人物
+          替换为@图片1中的人物；将其中的黑色长发、手臂带有纹身的人物
+          替换为@图片2中的人物。动作和运镜不变。…」
+      ① 两条**源**宾语都以「黑色长发」开头（两张参考图也都有这一条）；
+      ② **目标**侧全是「@图片N中的人物」—— 哪张图配哪个人，模型只能猜。
+      成片两张脸都是原片演员，SFace 17% / 0%。
+      官方三条都在说这件事：`:95`「将<图片N>中的[2–3 个静态特征]定义为<主体N>」、
+      `:109`「当视频中存在多个主体时，需要**分别定义**，并使用标签区分」、
+      `:119`「每次提到主体时，都应使用同一标签」。⇒ 目标宾语写 `<主体N>`。
+
+    **只在 ≥2 个换人目标、且每张参考图都有外观描述时**才发：
+      · 单人换人：官方 `20 单人` 的标准示例就写「@图片1中的人物」，多一句定义是添乱
+        （也是 2026-10-30 停用定义句那条决定的适用面，本函数不碰它）；
+      · 只要有一张描述缺失 → 整组不发：发半组标签等于给模型留一句悬空引用
+        （官方 `:88` 定义主体的目的是「精准引用素材中的特定对象」）。
+    编号从 `<主体1>` 起：原片侧标签 2026-10-30 起停用，不会与本表抢号；
+    真要恢复原片侧标签，按旧的「图片侧先占号、原片侧接着编」规则改这里。
+
+    返回 `(定义句列表, {people 下标: "<主体N>"})`；发不出时返回 `([], {})`。
+    """
+    looks = looks or {}
+    ppl = people or []
+    if not ppl or not looks:
+        return [], {}
+    targets: list[tuple[int, str]] = []
+    for i, slot in enumerate(PERSON_SLOTS):
+        if slot not in idx:
+            continue
+        # 下标对齐规则与 `edit_spec._clauses` 一致：`people[i]` 配 `PERSON_SLOTS[i]`
+        if i >= len(ppl) or ppl[i] is None or not _present(ppl[i]):
+            continue
+        if not str(((looks.get(slot) or {}).get("zh") or "")).strip():
+            return [], {}
+        targets.append((i, slot))
+    if len(targets) < 2:
+        return [], {}
+    texts = {i: str((looks.get(slot) or {}).get("zh") or "") for i, slot in targets}
+    defs: list[str] = []
+    tags: dict[int, str] = {}
+    for n, (i, slot) in enumerate(targets, start=1):
+        # 另一张参考图的描述：共有的分句不进定义（见 `_ref_feat_20` 的 11-04 注释）
+        others = " ".join(t for k, t in texts.items() if k != i)
+        feat = _ref_feat_20(texts[i], others)
+        if not feat:
+            return [], {}
+        tag = f"<主体{n}>"
+        tags[i] = tag
+        defs.append(f"将{_pic(channel, idx[slot])}中{feat}定义为{tag}")
+    return defs, tags
+
+
 def _person_tags_20(c: dict, idx: dict[str, int], channel: str,
                       people: list[dict] | None = None,
                       frame_people: list[dict] | None = None,
-                      ref_desc: str = ""
+                      ref_desc: str = "",
+                      subject_looks: dict | None = None
                       ) -> tuple[list[str], dict[str, str], str]:
     """2.0 多人换人：把画面里的每个人都绑成一个 `<主体N>`。
 
@@ -477,7 +655,8 @@ def _person_tags_20(c: dict, idx: dict[str, int], channel: str,
         「将视频1中的高个子男人定义为警察，将另一个矮个子男人定义为小偷。场景…」
         —— 所以绑定句放在 `严格编辑@视频1，` 之前是对的。
 
-    编号：原片侧从 `<主体1>` 起。参考图侧不发标签（见函数内 18:xx 注释）。
+    编号：原片侧从 `<主体1>` 起（2026-10-30 起停用）；参考图侧由
+    `_ref_side_tags_20` 发，编号也从 `<主体1>` 起（见该函数 11-04 注释）。
     """
     # 🩸🩸 2026-10-30 停用（主人：「是不是主体问题？有没有必要说主体」）：
     #   **一换一不发任何 `<主体N>` 定义**。
@@ -492,8 +671,12 @@ def _person_tags_20(c: dict, idx: dict[str, int], channel: str,
     #       正好抵消换脸。2026-10-26 三次实测都是这个现象（衣服换、脸不换）。
     #   ⇒ 宾语退回官方 `:126` 的图内对象「@图片N中的人物」，指认靠方位/发型
     #     短语直接写进「将其中的…」那位（`sd20_locator` 那一套仍在，是闸在用）。
+    #   **只停用原片侧** —— 参考图侧照旧由下面 `_ref_side_tags_20` 发（见 11-04 注释）。
     #   保留整个函数体：以后要恢复标签体系，注释里有全部历史依据。
-    return [], {}, ""
+    _ref_defs, _ref_tags = _ref_side_tags_20(idx, channel, people, subject_looks)
+    if not _ref_defs:
+        return [], {}, ""
+    return _ref_defs, {}, _ref_tags
 
     ppl = people or []
     # 🩸 「在场几个人」必须按**整个画面**数。生产形状（`video_edit._span_people`）
@@ -991,44 +1174,53 @@ def _keep_point_edit(spec: dict) -> str:
        （正是当初说"加一家要改 10 处"的那种形状）。搬回 2.0 自己的编译器：
        共用层只负责算"该保哪些项"，**怎么写成一句话由各家自己定**。
 
-    出处（三家官方原文，逐字，不混写）：
+    出处（**只引 Seedance 2.0 自己的官方文件**，逐字，不混写）：
 
-    ① 风格迁移 —— LAS `las_cn.md:432` 的 `style_transfer/general` 原句：
-       「将完整视频转换为高完成度日系二维动画，**保持人物身份、数量、动作、
-       口型、镜头、构图和时间线**，不要字幕和水印」。
-       风格一变，模型最容易干的三件事就是换脸、把人变多、把时长改了 ——
-       这三样正好是这句管住的。它已覆盖动作/镜头/构图，所以这时**不再另写**
-       keep 句（重叠 = `sd20-guide:121` 说的冗余）。
+    ① ~~风格迁移~~ —— **2026-11-04 清理时删除**。原引 LAS `las_cn.md:432`
+       （`style_transfer/general` 模板），那是「视频编辑增强版算子」的
+       `user_prompt`，不是 Seedance 原生提示词，导图 15 篇里也没有它。
+       2.0 官方对风格只讲两件事：`:33`「未提及的部分，默认保持不变」、
+       `:357`「提示词中未强调视频风格，有概率漂移成真人写实」——
+       ⇒ 该强调**目标风格**，不补一串保留项。`keep_others` 那句另引 `:41`。
 
-    ② 有人物的编辑 —— LAS `:405` 的 `replace/person_replace` 原句：
-       「…使用目标人物的脸、发型、体型、服装和配饰，**保留原视频动作、位置、
-       互动、镜头和背景**」。人在画面里有位置和互动，换成的人得坐在同一处、
-       和同一批人保持同样的关系；`sd2-pe` 的「动作和运镜」是拿**换物体**举的例
-       （香水→面霜），管不到这两样。
+    ② ~~有人物的编辑~~ —— **2026-11-04 清理时删除**（出处 `las_cn.md:405` 属
+       LAS「视频编辑增强版算子」，不是 Seedance 原生提示词；详见下方代码注释
+       与 `docs/SD20-RULE-CLEANUP.md` 病灶 B）。
 
-    ③ 换物体/背景（无人）—— `sd2-pe` 单点编辑原句与 `sd20-guide:941` 逐字一致：
+    ③ **所有编辑**（换人 / 换装 / 换物体 / 换背景）—— `sd2-pe:126` 单点编辑原句
+       与 `sd20-guide:941` 逐字一致：
        「动作和运镜不变」。
 
     三种都仍按 keep 开关取子集（关掉还照写 = 说一套做一套）。
     """
     _kp = spec.get("keep") or {}
     _chg = spec.get("change") or {}
+    # 🧹 2026-11-04 清理（`docs/SD20-RULE-CLEANUP.md`）：这行原引 **LAS
+    #   `las_cn.md:432`** `style_transfer/general` 的模板句 —— LAS 是
+    #   「视频编辑增强版算子」，不是 Seedance 原生提示词，导图 15 篇里也没有它。
+    #   Seedance 2.0 官方对风格迁移只讲两件事：
+    #     · `prompt-guide.md:33`「未提及的部分，**默认保持不变**」→ 不写也保持不变；
+    #     · `prompt-guide.md:357`「提示词中**未强调视频风格**，生成的视频有概率
+    #       漂移成真人写实风格」→ 该强调的是**目标风格**，不是补一串保留项。
+    #   ⇒ 整句删除，风格目标由 `change.style_words` 那一路写死。
     if _chg.get("style_ref") or _chg.get("style_video"):
-        return "保持人物身份、数量、动作、口型、镜头、构图和时间线。"
-    if _chg.get("person") or _chg.get("wardrobe"):
-        _bits = []
-        if _kp.get("motion"):
-            # 动作/位置/互动同属「人物的表演」，一个开关管三样
-            _bits += ["动作", "位置", "互动"]
-        if _kp.get("camera"):
-            _bits.append("镜头")
-        if _kp.get("background"):
-            _bits.append("背景")
-        if not _bits:
-            return ""
-        _body = ("、".join(_bits[:-1]) + "和" + _bits[-1]) if len(_bits) > 1 \
-            else _bits[0]
-        return f"保留原视频{_body}。"
+        return ""
+    # 🧹 2026-11-04 清理（`docs/SD20-RULE-CLEANUP.md` 病灶 B）：换人/换装分支**已删**，
+    #   统一落到下面的 2.0 原生写法（`sd2-pe:126`「动作和运镜不变」，`sd20-guide:941` 逐字一致）。
+    #
+    #   删掉的那句是「保留原视频动作、位置、互动、镜头和背景」，出处
+    #   `las_cn.md:405` —— **LAS「视频编辑增强版 2.0 算子」**（服务端还要再做
+    #   VLM / 关键帧重绘 / 提示词组装），不是 Seedance 原生 API 的提示词。
+    #   `las_cn.md` 甚至不在 `SD20-SOURCES-MINDMAP.md` 的 15 篇里。
+    #   同一段文字的前半句（「完整替换 + 使用目标人物的脸…」）已在
+    #   2026-10-30 由 `scripts/prompt_model_standards_check.py:215` 撤回，
+    #   **后半句却还留在这里** —— 一处撤回、一处没撤，本身就该清。
+    #
+    #   而且它和本编译器的另一条规则**自相矛盾**：`_volc` 里写着
+    #   「2.0 不写范围闭环，因为 `sd20-guide:33` 已把『未提及的部分』定义成默认不变」，
+    #   这里却把"要变的那些"又列了一遍。
+    #
+    #   🔁 退路：LAS 原句与 2026-10-27 的实测记录都在 git 历史里。
     _bits = []
     if _kp.get("motion"):
         _bits.append("动作")
@@ -1046,7 +1238,8 @@ def _volc(spec: dict, c: dict, idx: dict[str, int], *, model: str = "",
           boundary_pic: int = 0,
           shot_lines: list[list[dict]] | None = None,
           style_video: bool = False,
-          subject_look: dict | None = None) -> str:
+          subject_look: dict | None = None,
+          subject_looks: dict | None = None) -> str:
     from app.services import model_specs
 
     ms = model_specs.volc(model)
@@ -1076,7 +1269,8 @@ def _volc(spec: dict, c: dict, idx: dict[str, int], *, model: str = "",
     if not ms.get("edit_task_param"):
         defs, orig_tags, ref_tag = _person_tags_20(
             c, idx, "volc", people, frame_people=frame_people,
-            ref_desc=str((subject_look or {}).get("zh") or ""))
+            ref_desc=str((subject_look or {}).get("zh") or ""),
+            subject_looks=subject_looks)
     parts = _clauses("volc", c, idx, dialect=CL20,
                      people=people, desc_by_id=desc_by_id,
                      frame_people=frame_people,
@@ -1101,9 +1295,13 @@ def _volc(spec: dict, c: dict, idx: dict[str, int], *, model: str = "",
     # 风格这一支漏了 —— 现在补齐，两条走同一个位置。
     # 只挑真正以「参考<素材N>的…」开头的分句；风格**约束词**（`整体风格为X`，
     # 官方 `:713` 示例本身就在句末）留在原处不动。
-    _lead = [x for x in parts if re.match(r"^参考[@图]", x)]
+    # 参考分句两种形状都要前置（官方 `:59-65`「参考…，严格编辑…」）：
+    #   ① 「参考@图片N的…」（无标签 / 风格 / 音频）
+    #   ② 「<主体N>的面部特征…参考@图片N」（有标签的职责句）
+    _is_ref = r"^(?:参考[@图]|<主体\s*\d+>[^。；]*参考[@图])"
+    _lead = [x for x in parts if re.match(_is_ref, x)]
     if _lead:
-        parts = [x for x in parts if not re.match(r"^参考[@图]", x)]
+        parts = [x for x in parts if not re.match(_is_ref, x)]
     body = "；".join(parts)
     # 官方编辑句式，两家 skill 各给一句，正好按型号分：
     #   2.0  sd2-pe「严格编辑 @视频N，将其中的<原特征>修改为<新特征>」
@@ -1124,6 +1322,11 @@ def _volc(spec: dict, c: dict, idx: dict[str, int], *, model: str = "",
         # 异步报 TaskTypeMismatch）。2.0 没有这个参数、也没有这个报错
         # （2.0 教程全文零命中），搬过来纯属多一句话。
         # 2.0 走官方 `:39` 的编辑句式起头即可。
+        # 🩸 2026-11-04：**后面还有补充说明时用逗号连**，不另起一句。
+        #   官方所有编辑句式都是逗号连接（`prompt-guide.md:38`
+        #   「严格编辑<视频N>，将其中的<原特征>修改为<新特征>」）；
+        #   以前拼出来是「严格编辑@视频1。画面更亮一点。」—— 断成两句。
+        #   尾逗号由下面的 join 识别（以「，」结尾的段不补句号）。
         head = "严格编辑" + _vid("volc")
     # 🩸 有音频参考时按官方**组合任务**句式起头（`seedance-20-guide.md:65`）：
     #   「参考<图片/视频N>的[参考维度]，严格编辑<视频X>，[具体编辑内容]」
@@ -1279,7 +1482,21 @@ def _volc(spec: dict, c: dict, idx: dict[str, int], *, model: str = "",
     # 放在 `严格编辑@视频1，` 后面的话会读成"编辑把X定义成Y"，语义是错的。
     bind = ("，".join(defs) + "。") if defs else ""
     # 各句自己可能已经带句号（保留句就是这样），再拼一个就会出现「。。」
-    return bind + "。".join(x.rstrip("。") for x in (head, master, shot_clause, scope,
-                                                    audio_clause, lines_clause, extra,
-                                                    tail, *guards)
-                            if x).strip()
+    # 🩸 2026-11-04：**只有「补充说明」跟在空的编辑句后面才用逗号连**
+    #   （官方 `prompt-guide.md:38`「严格编辑<视频N>，将其中的…」是逗号连接）。
+    #   兜底包 / 保留句仍然独立成句 —— 它们不是编辑动作的一部分。
+    _bare = "严格编辑" + _vid("volc")
+    _segs = [(x, k) for x, k in (
+        (head, 0), (master, 0), (shot_clause, 0), (scope, 0),
+        (audio_clause, 0), (lines_clause, 0), (extra, 2),
+        (tail, 0), *[(g, 0) for g in guards]) if x]
+    out = bind
+    for _x, _k in _segs:
+        _x = _x.rstrip("。")
+        if not out:
+            out = _x
+        elif _k == 2 and out == _bare:
+            out += "，" + _x      # 补充说明接在空编辑句后面，同一句
+        else:
+            out += "。" + _x
+    return out.strip()
