@@ -1,0 +1,174 @@
+{
+  "family": "sd20",
+  "display": "Doubao Seedance 2.0 系列（火山方舟）",
+  "model_prefixes": [
+    "doubao-seedance-2-0-"
+  ],
+  "one_rule": "一个型号一把尺：本目录以外的官方资料，与本家无关，不得引用。",
+  "aliases_note": "裸 `guide` 不是任何一家的缩写；引用一律写 `sd20-guide:` / `sd25-guide:`。本地 `skills/sd2-pe/references/guide.md` 与 `pull-2026-11-04/prompt-guide.md` 逐字节相同。",
+  "pulled_at": "2026-11-04",
+  "source_index": "https://ark.volcengine.com/llms.txt",
+  "mindmap": "docs/SD20-SOURCES-MINDMAP.md",
+  "files": [
+    {
+      "path": "pull-2026-11-04/api-cancel.md",
+      "role": "取消/删除视频生成任务 API",
+      "abbr": "sd20",
+      "lines": 174,
+      "bytes": 3954,
+      "sha256": "69aef3ffa27fbac35c9883dfa25b35a6014c5e552901a076e60b3a7d425250b7"
+    },
+    {
+      "path": "pull-2026-11-04/api-create.md",
+      "role": "创建视频生成任务 API",
+      "abbr": "sd20",
+      "lines": 3104,
+      "bytes": 120823,
+      "sha256": "a779514c668fc18272275f07351034078e5aeec9da98cb1352b11a083751f324"
+    },
+    {
+      "path": "pull-2026-11-04/api-get.md",
+      "role": "查询视频生成任务 API",
+      "abbr": "sd20",
+      "lines": 454,
+      "bytes": 11641,
+      "sha256": "d492415589ccaae8985fab79b133e1ece84ee7bd319a5fc79851100c5500f83c"
+    },
+    {
+      "path": "pull-2026-11-04/api-list.md",
+      "role": "查询视频生成任务列表 API",
+      "abbr": "sd20",
+      "lines": 839,
+      "bytes": 23641,
+      "sha256": "176621bb14fdb3fa1551736b087753f45fd171836e34f68a2b55dc190d238cbe"
+    },
+    {
+      "path": "pull-2026-11-04/error-codes.md",
+      "role": "全站错误码",
+      "abbr": "sd20",
+      "lines": 265,
+      "bytes": 44867,
+      "sha256": "86c07dad00e86e35090d858caff38bf0e0268e48b5a256ef4e4ef12906a94f80"
+    },
+    {
+      "path": "pull-2026-11-04/model-list.md",
+      "role": "模型列表与限流",
+      "abbr": "sd20",
+      "lines": 786,
+      "bytes": 57554,
+      "sha256": "44b6838ceb0bd8891a6bb2442b1a365fc0af16126fcf5dfbf89c26acd1144e19"
+    },
+    {
+      "path": "pull-2026-11-04/models-2-0-fast.md",
+      "role": "模型卡：Seedance 2.0 Fast",
+      "abbr": "sd20",
+      "lines": 13,
+      "bytes": 533,
+      "sha256": "227cac5b3012bf7c7bbdade485221db844b5afa94824fed4c653af90e0826e37"
+    },
+    {
+      "path": "pull-2026-11-04/models-2-0-mini.md",
+      "role": "模型卡：Seedance 2.0 Mini",
+      "abbr": "sd20",
+      "lines": 13,
+      "bytes": 588,
+      "sha256": "624db19f398be3bb60b89bc2c9a7b7e92181faa62a6f000e92b5e18fb7d68aea"
+    },
+    {
+      "path": "pull-2026-11-04/models-2-0.md",
+      "role": "模型卡：Seedance 2.0",
+      "abbr": "sd20",
+      "lines": 13,
+      "bytes": 741,
+      "sha256": "5ff43a1d70e33654b992e0cf061a0d308bcf455c6d18bf015c82fcd01141d7c9"
+    },
+    {
+      "path": "pull-2026-11-04/portrait-asset.md",
+      "role": "含肖像视频合规通道总览",
+      "abbr": "sd20",
+      "lines": 720,
+      "bytes": 30202,
+      "sha256": "6c33cb2b6202c60811566470a8028671227b7f13a34716fadabbebec507995c3"
+    },
+    {
+      "path": "pull-2026-11-04/pricing.md",
+      "role": "模型价格",
+      "abbr": "sd20",
+      "lines": 577,
+      "bytes": 30194,
+      "sha256": "c93a73de8f9db86686a4499065a401c08b04dcd3b972fe51b8ff3f2c43908231"
+    },
+    {
+      "path": "pull-2026-11-04/prompt-guide.md",
+      "role": "Seedance 2.0 系列提示词指南",
+      "abbr": "sd20",
+      "lines": 1007,
+      "bytes": 46222,
+      "sha256": "dd7fe63c28fd67a05b7d36609a322be0c2121051bc7732cf907bd70528840494"
+    },
+    {
+      "path": "pull-2026-11-04/real-person-asset.md",
+      "role": "本人授权真人形象素材录入",
+      "abbr": "sd20",
+      "lines": 168,
+      "bytes": 8537,
+      "sha256": "8c6ac3bda8b432923edb70ee7ce32a9c7969d7928d76302179ff457663c522bc"
+    },
+    {
+      "path": "pull-2026-11-04/tutorial.md",
+      "role": "Seedance 2.0 系列教程",
+      "abbr": "sd20",
+      "lines": 1947,
+      "bytes": 80804,
+      "sha256": "594ec2eeb19d1bb430acfa20450db4c1c7f1b5f17223717021ecac3bf2351a10"
+    },
+    {
+      "path": "pull-2026-11-04/video-generation-tutorial.md",
+      "role": "视频生成通用教程（全家共用）",
+      "abbr": "sd20",
+      "lines": 2283,
+      "bytes": 90699,
+      "sha256": "b6ab65a81477021bafd598d01d9a11ffbe7dd5802de96ccdf006bd8ea6fc64e4"
+    },
+    {
+      "path": "skills/sd2-pe/references/camera-terms.md",
+      "role": "官方提示词优化 skill sd2-pe",
+      "abbr": "sd20-skill",
+      "lines": 32,
+      "bytes": 1705,
+      "sha256": "61776c8d5fa1866cdb7ceef7739007d04acae2f56cec0d9978a0138e5e9efa00"
+    },
+    {
+      "path": "skills/sd2-pe/references/guide.md",
+      "role": "官方提示词优化 skill sd2-pe",
+      "abbr": "sd20-skill",
+      "lines": 1007,
+      "bytes": 46222,
+      "sha256": "dd7fe63c28fd67a05b7d36609a322be0c2121051bc7732cf907bd70528840494"
+    },
+    {
+      "path": "skills/sd2-pe/references/tips.md",
+      "role": "官方提示词优化 skill sd2-pe",
+      "abbr": "sd20-skill",
+      "lines": 38,
+      "bytes": 2441,
+      "sha256": "386cf8abac656ef94a19621a46c7efd7e2eb8c20fe28be1afc12159bc561eb09"
+    },
+    {
+      "path": "skills/sd2-pe/references/trouble.md",
+      "role": "官方提示词优化 skill sd2-pe",
+      "abbr": "sd20-skill",
+      "lines": 383,
+      "bytes": 22316,
+      "sha256": "36d939cf503b1e77097b4173109546c567880189428be56202983c33d4dec7e5"
+    },
+    {
+      "path": "skills/sd2-pe/SKILL.md",
+      "role": "官方提示词优化 skill sd2-pe",
+      "abbr": "sd20-skill",
+      "lines": 225,
+      "bytes": 21854,
+      "sha256": "8836cdb2bc4f7d8a329c4ecd33cca19efdcfc71afdd927e8defe6e1f9a2e2b3c"
+    }
+  ]
+}

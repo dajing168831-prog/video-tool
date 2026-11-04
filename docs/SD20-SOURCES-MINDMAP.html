@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Doubao Seedance 2.0 官方资料 · 思维导图（2026-11-04）</title>
+<style>
+  :root{
+    --bg:#0f1216; --panel:#151a21; --line:#2a323d; --fg:#e6edf3; --dim:#8b98a5;
+    --ok:#3fb950; --warn:#d29922; --bad:#f85149; --todo:#58a6ff; --accent:#7c3aed;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  header{padding:18px 26px;border-bottom:1px solid var(--line);background:var(--panel);
+         position:sticky;top:0;z-index:9}
+  h1{margin:0;font-size:18px;letter-spacing:.5px}
+  .sub{color:var(--dim);font-size:12.5px;margin-top:6px}
+  .legend{margin-top:10px;display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--dim)}
+  .legend b{font-weight:600}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
+  .toolbar{position:fixed;right:22px;bottom:22px;display:flex;gap:8px;z-index:9}
+  .toolbar button{background:var(--panel);color:var(--fg);border:1px solid var(--line);
+                  border-radius:8px;padding:8px 12px;cursor:pointer;font-size:12.5px}
+  .toolbar button:hover{border-color:var(--accent)}
+  main{padding:26px 26px 90px;overflow-x:auto}
+
+  ul.tree,ul.tree ul{list-style:none;margin:0;padding-left:26px}
+  ul.tree ul{position:relative}
+  ul.tree ul::before{content:"";position:absolute;left:9px;top:0;bottom:14px;
+                     border-left:1px solid var(--line)}
+  ul.tree li{position:relative;padding:3px 0 3px 14px;white-space:nowrap}
+  ul.tree ul > li::before{content:"";position:absolute;left:-17px;top:16px;
+                          width:17px;border-top:1px solid var(--line)}
+  .node{display:inline-flex;align-items:center;gap:8px;padding:4px 10px;
+        border:1px solid var(--line);border-radius:8px;background:var(--panel);cursor:pointer}
+  .node:hover{border-color:var(--accent)}
+  .node.lv0{font-size:16px;font-weight:700;padding:8px 16px;border-color:var(--accent);
+            background:linear-gradient(180deg,#1b1430,#151a21)}
+  .node.lv1{font-weight:600}
+  .toggle{color:var(--dim);font-size:11px;width:12px;text-align:center}
+  .meta{color:var(--dim);font-size:12px;margin-left:2px;white-space:normal}
+  li.collapsed > ul{display:none}
+  .st-ok{color:var(--ok)} .st-warn{color:var(--warn)} .st-bad{color:var(--bad)} .st-todo{color:var(--todo)}
+  .note{color:var(--dim);font-size:12.5px;padding:2px 0 2px 14px;white-space:normal;max-width:1100px}
+  footer{color:var(--dim);font-size:12px;padding:0 26px 40px}
+  kbd{background:#222a34;border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:11px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Doubao Seedance 2.0 官方资料 · 思维导图</h1>
+  <div class="sub">2026-11-04 全量重拉 · 15 篇文档（12,363 行）+ 官方 skill <code>sd2-pe</code> ·
+  结论：<b>本地 skill 里的 guide.md 与官方今日《2.0 提示词指南》逐字节相同</b>（sha256 <code>dd7fe63c…</code>）</div>
+  <div class="legend">
+    <span><i class="dot" style="background:var(--ok)"></i><b>已核对一致 / 最新</b></span>
+    <span><i class="dot" style="background:var(--warn)"></i><b>旧副本 / 需注意</b></span>
+    <span><i class="dot" style="background:var(--todo)"></i><b>未读 / 待落地</b></span>
+    <span><i class="dot" style="background:var(--bad)"></i><b>硬约束 / 会报错</b></span>
+  </div>
+</header>
+
+<main>
+<ul class="tree">
+  <li><span class="node lv0" onclick="tog(this)"><span class="toggle">▾</span>Seedance 2.0 官方资料</span>
+  <ul>
+
+    <li><span class="node lv1" onclick="tog(this)"><span class="toggle">▾</span>① 模型与能力</span>
+      <ul>
+        <li><span class="node">models-2-0.md</span><span class="meta">模型卡 · ID <code>doubao-seedance-2-0</code> · 主版本 260128 · 13 行</span></li>
+        <li><span class="node">models-2-0-fast.md</span><span class="meta">快速档 · 260128 · 继承 2.0 核心、生成更快</span></li>
+        <li><span class="node">models-2-0-mini.md</span><span class="meta">性价比档 · 260615 · 三档里唯一卡片标了 ImageToVideo</span></li>
+        <li><span class="node" onclick="tog(this)"><span class="toggle">▾</span>tutorial.md</span><span class="meta">系列教程 · 1,947 行</span>
+          <ul>
+            <li><span class="node">模型能力对照表 :77 / :84</span><span class="meta">三档差在哪；<span class="st-bad">4k 只有标准版有</span>，fast/mini 只到 720p</span></li>
+            <li><span class="node">全模态参考 :142</span><span class="meta">图 / 视频 / 音频一起给</span></li>
+            <li><span class="node">编辑视频 :546</span><span class="meta">复刻换人走这条</span></li>
+            <li><span class="node">延长视频 :873</span></li>
+            <li><span class="node">输出 4k :1234</span><span class="meta">10bit 位深 + H.265/HEVC，部分播放器播不了</span></li>
+            <li><span class="node">联网搜索 :1558</span></li>
+            <li><span class="node">提示词 Skill :1844</span><span class="meta">官方 <code>sd2-pe</code> 安装法（npx skills add）+ <kbd>/sd2-pe</kbd> 用法</span></li>
+            <li><span class="node">提示词规则 :1862</span><span class="meta">必须用「素材类型+序号」引用</span></li>
+            <li><span class="node">使用限制 :1868</span></li>
+            <li><span class="node">常见问题 :1873</span><span class="meta">10bit/HEVC 播放兼容 :1876 · 画面跳变 :1938</span></li>
+            <li><span class="node">限流表 :122–:135</span><span class="meta">个人 180 RPM / 并发 3；4k 个人 15 RPM / 并发 1；离线推理 TPD 一栏全是 <span class="st-bad">-</span></span></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+
+    <li><span class="node lv1" onclick="tog(this)"><span class="toggle">▾</span>② 提示词（写 2.0 的词只看这一份）</span>
+      <ul>
+        <li><span class="node" onclick="tog(this)"><span class="toggle">▾</span>prompt-guide.md</span><span class="meta">官方提示词指南 · 1,007 行</span>
+          <ul>
+            <li><span class="node">基础公式 :12</span><span class="meta">全模态参考 :18 · <b>编辑视频 :31</b>（复刻用这条）· 延长 :44 · 组合 :59</span></li>
+            <li><span class="node">进阶公式 :68</span>
+              <ul>
+                <li><span class="node">1 定义主体 :88</span><span class="meta">多主体必须能指代清楚（2–3 个稳定静态特征）</span></li>
+                <li><span class="node">2 分镜时序 :125</span><span class="meta">用「镜头1 / 镜头2」按事件顺序；<span class="st-bad">精确秒数支持不稳定</span></span></li>
+                <li><span class="node">3 动作描述 :157 · 4 运镜 :189</span></li>
+                <li><span class="node">5 画质/风格/约束词 :198 · 6 实战案例 :215</span></li>
+              </ul>
+            </li>
+            <li><span class="node">其他技巧 :251</span><span class="meta">文字生成 :254 · 延长 vs 拼接 :259 · <b>素材配置策略 :267</b>（建议 4–5 个，<span class="st-warn">是建议不是上限</span>）</span></li>
+            <li><span class="node">注意事项 :282</span><span class="meta">语言规范 :285（台词别中英混用）· 特殊字符 :290</span></li>
+            <li><span class="node" onclick="tog(this)"><span class="toggle">▾</span>常见问题 :302–:537</span><span class="meta">稳定性全看这一节</span>
+              <ul>
+                <li><span class="node">人脸参考不准确 :305</span><span class="meta">换人最常撞的一条</span></li>
+                <li><span class="node">字幕 :331 · Logo/水印 :346</span></li>
+                <li><span class="node">风格漂移 :354 · 延长衔接跳变 :368</span></li>
+                <li><span class="node">双胞胎 :391 · 延长画质劣化 :426</span></li>
+                <li><span class="node">特效不符 :445 · 参考人物过多 :464</span></li>
+                <li><span class="node">结尾噪音 :480 · 中文发音 :503 · 音色参考 :518</span></li>
+              </ul>
+            </li>
+            <li><span class="node">附录：提示词案例 :538 起</span></li>
+          </ul>
+        </li>
+        <li><span class="node">skills/sd2-pe/</span><span class="meta">官方 skill 包 · <span class="st-ok">guide.md 与官方提示词指南逐字节相同</span></span>
+          <ul>
+            <li><span class="node">SKILL.md</span><span class="meta">八要素 + 任务分类 + Step 0–3 工作流 · 225 行</span></li>
+            <li><span class="node">references/guide.md</span><span class="meta">= pull-2026-11-04/prompt-guide.md（sha256 dd7fe63c…，行号一致）</span></li>
+            <li><span class="node">references/trouble.md</span><span class="meta">官方排障手册 · 382 行</span></li>
+            <li><span class="node">references/tips.md · camera-terms.md</span><span class="meta">速查技巧 38 行 · 运镜词表 32 行</span></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+
+    <li><span class="node lv1" onclick="tog(this)"><span class="toggle">▾</span>③ API</span>
+      <ul>
+        <li><span class="node" onclick="tog(this)"><span class="toggle">▾</span>api-create.md</span><span class="meta">创建任务 · 3,104 行</span>
+          <ul>
+            <li><span class="node">Body 参数 :93</span><span class="meta">content 的 8 种组合 :99</span></li>
+            <li><span class="node">resolution :399</span><span class="meta">2.0：480p/720p/1080p/4k · fast、mini 只到 720p</span></li>
+            <li><span class="node">ratio :418 · duration :481</span><span class="meta">2.0 系列 4–15 秒；<code>duration=-1</code> 由模型自选整数秒</span></li>
+            <li><span class="node">frames :518 · generate_audio :538</span><span class="meta">generate_audio 默认 <b>true</b></span></li>
+            <li><span class="node">watermark :554 · seed :582 · camera_fixed :598</span></li>
+            <li><span class="node">return_last_frame :612</span></li>
+            <li><span class="node">draft :621</span><span class="meta"><span class="st-bad">样片模式只支持 2.5</span>，2.0 系列写 true 会报错</span></li>
+            <li><span class="node">service_tier :640</span><span class="meta"><span class="st-bad">离线推理只 1.0 pro / 1.0 pro fast</span>，2.0 系列不支持</span></li>
+            <li><span class="node">代码示例</span><span class="meta">全模态 :753 · 编辑 :1368 · 延长 :1791 · 有声首帧 :2278（Python/Java/Go/cURL 各一套）</span></li>
+          </ul>
+        </li>
+        <li><span class="node">api-get.md</span><span class="meta">查询单个任务 · 454 行</span></li>
+        <li><span class="node">api-list.md</span><span class="meta">查任务列表 · 839 行</span></li>
+        <li><span class="node">api-cancel.md</span><span class="meta">取消/删除 · 174 行</span></li>
+        <li><span class="node">error-codes.md</span><span class="meta">全站错误码 · 265 行 · <span class="st-bad">真人拦截 / 版权 / 任务类型不符</span></span></li>
+      </ul>
+    </li>
+
+    <li><span class="node lv1" onclick="tog(this)"><span class="toggle">▾</span>④ 通用视频生成（全家共用）</span>
+      <ul>
+        <li><span class="node" onclick="tog(this)"><span class="toggle">▾</span>video-generation-tutorial.md</span><span class="meta">2,283 行</span>
+          <ul>
+            <li><span class="node">使用限制 :2111</span></li>
+            <li><span class="node">图片 :2128</span><span class="meta">单张 &lt;30MB · 宽高比 [0.4,2.5] · 边长 [300,6000] · 2.0 全模态参考 <b>1~9 张</b>（:2137）</span></li>
+            <li><span class="node">视频 :2147</span><span class="meta">2.0 系列：单段 [2,15]s，≤3 段，总 ≤15s（:2148）</span></li>
+            <li><span class="node">音频 :2170</span><span class="meta">2.0 系列：单段 [2,15]s，≤3 段，总 ≤15s（:2171）</span></li>
+            <li><span class="node">样片模式 :1844</span><span class="meta"><span class="st-bad">仅 2.5 支持</span></span></li>
+            <li><span class="node">保存时间 / 任务 ID 有效期 :2175 之后</span></li>
+          </ul>
+        </li>
+      </ul>
+    </li>
+
+    <li><span class="node lv1" onclick="tog(this)"><span class="toggle">▾</span>⑤ 合规（真人脸）</span>
+      <ul>
+        <li><span class="node">portrait-asset.md</span><span class="meta">三种合规通道总览 · 720 行 · <span class="st-bad">2.0 系列不收直接上传的真人脸</span></span></li>
+        <li><span class="node">real-person-asset.md</span><span class="meta">本人扫码授权（活体核验）· 168 行</span></li>
+      </ul>
+    </li>
+
+    <li><span class="node lv1" onclick="tog(this)"><span class="toggle">▾</span>⑥ 计费与平台</span>
+      <ul>
+        <li><span class="node">pricing.md</span><span class="meta">模型价格 · 577 行</span></li>
+        <li><span class="node">model-list.md</span><span class="meta">全部模型 ID / 限流 · 786 行</span></li>
+      </ul>
+    </li>
+
+    <li><span class="node lv1" onclick="tog(this)"><span class="toggle">▾</span>⑦ 工程现状（2026-11-04）</span>
+      <ul>
+        <li><span class="node">提示词优化线</span><span class="meta"><span class="st-ok">在用</span> · <code>sd20_skill.py</code> → <code>models/volc20_pe.py</code>（RULES 178 行起）· <code>api/prompt.py:44/580</code></span></li>
+        <li><span class="node">复刻爆款线</span><span class="meta"><span class="st-bad">2.0 已下架（2026-11-03）</span> · <code>volc20.py</code> / <code>volc20_compile.py</code> 归档在 <code>backend/_archive/sd20/</code>；<code>--model volc20</code> 仍 ImportError（尾巴未清）</span></li>
+        <li><span class="node">型号参数</span><span class="meta"><span class="st-ok">保留</span> · <code>model_specs.py</code>（2.0 与 H3 都是 4 人上限）</span></li>
+        <li><span class="node">注释里的旧文件名</span><span class="meta"><code>seedance-20-guide.md:987</code> = <code>skills/sd2-pe/references/guide.md:987</code> = <code>prompt-guide.md:987</code>（≤15 秒那条）</span></li>
+      </ul>
+    </li>
+
+    <li><span class="node lv1" onclick="tog(this)"><span class="toggle">▾</span>⑧ 没抓的（及原因）</span>
+      <ul>
+        <li><span class="node">seedance-model-activation</span><span class="meta">开通/退订说明 · 平台级通用页，2.0 无专属内容</span></li>
+        <li><span class="node">doc-skills</span><span class="meta">Skills 目录页 · skill 已本地落地</span></li>
+        <li><span class="node">usage-and-diagnostics</span><span class="meta">arkcli 用量诊断 · 平台级</span></li>
+        <li><span class="node">两份快照</span><span class="meta"><code>D:/tmp/official/sd20/</code> = 正本（判据只认它）· <code>backend/data/official/sd20/</code> = 工程内镜像 · 根目录 <code>tutorial.md</code>/<code>video-gen-tutorial.md</code> 是旧快照，行号以 <code>pull-2026-11-04/</code> 为准</span></li>
+        <li><span class="node">video-fine-tuning-data-format</span><span class="meta">精调数据格式 · 我们不训练模型</span></li>
+      </ul>
+    </li>
+
+  </ul>
+  </li>
+</ul>
+
+<div class="note">
+  🩸 两条最容易混的：①「总计 4-5 个素材」是<strong>建议配置</strong>（prompt-guide :267），
+  硬上限是<strong>图片 1~9 张 / 视频 3 段总 ≤15s / 音频 3 段总 ≤15s</strong>（video-generation-tutorial :2137/:2148/:2171）；
+  ②<strong>2.0 没有样片模式、没有离线推理、没有 4k 以外的高码流档</strong>，别照 2.5 的参数抄。
+</div>
+</main>
+
+<div class="toolbar">
+  <button onclick="all(true)">全部折叠</button>
+  <button onclick="all(false)">全部展开</button>
+</div>
+
+<footer>
+  路径：<code>backend/data/official/sd20/</code> · 重拉方法见 <code>docs/SD20-SOURCES-MINDMAP.md</code> §八 ·
+  与 2.5 的逐项对照见同文件 §四
+</footer>
+
+<script>
+function tog(el){
+  var li = el.closest('li');
+  if(!li) return;
+  li.classList.toggle('collapsed');
+  var t = el.querySelector('.toggle');
+  if(t) t.textContent = li.classList.contains('collapsed') ? '▸' : '▾';
+}
+function all(collapsed){
+  document.querySelectorAll('main li').forEach(function(li){
+    if(li.querySelector(':scope > ul')){
+      li.classList.toggle('collapsed', collapsed);
+      var t = li.querySelector(':scope > .node .toggle');
+      if(t) t.textContent = collapsed ? '▸' : '▾';
+    }
+  });
+}
+</script>
+</body>
+</html>
