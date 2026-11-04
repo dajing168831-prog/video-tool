@@ -746,16 +746,12 @@ OSS 对象带一年缓存，key 里带毫秒时间戳不会互相覆盖。
 
 全部只跑 ffmpeg 和纯函数，**不发任何网络请求、不产生费用**。上表合计 **666 项**（另 `test_oss_sign.py` 4 项签名核对）。
 
-另有 `scripts/calib_motion.py`：在真实素材上量每镜运动量，给阈值定档。只读、零成本。
+~~`scripts/calib_motion.py`~~ 已随静帧档删除（2026-11-02）：它唯一的用途是给
+`VT_TRIAGE_MOTION_MIN` 定档，而那个阈值连同 still 档一起删掉了。
 
-```bash
-python scripts/calib_motion.py                       # 扫 data/clone 下所有 source.mp4
-python scripts/calib_motion.py a.mp4 b.mp4           # 或指定文件
-```
-
-⚠️ 这个脚本自己踩过一次坑：`detect_shots(path, threshold)` 的第二个位置参数是**阈值**，
-一开始误传了 `duration`（`detect_shots(p, d["duration"])`），等于用 57 当阈值，
-结果每条片子都只切出 1 镜，看起来像"切分算法失效"。**写量具先拿已知多镜头的片子试一次。**
+留个通用教训（换任何量具都适用）：`detect_shots(path, threshold)` 的第二个位置参数是**阈值**，
+曾误传 `duration`（用 57 当阈值），结果每条片子只切出 1 镜，看起来像"切分算法失效"。
+**写量具先拿已知多镜头的片子试一次。**
 
 ## 十一、局域网多人联调（几台电脑同时测）
 

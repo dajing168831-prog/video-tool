@@ -24,6 +24,7 @@ import _model_lock  # noqa: E402
 MODULES = {
     "volc20": "test_edit_spec_sd20",
     "volc25": "test_edit_spec_sd25",
+    # 🔓 2026-11-03 接回机械版：`test_edit_spec_h3` 已搬回 `scripts/`。
     "h3": "test_edit_spec_h3",
 }
 

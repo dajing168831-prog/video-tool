@@ -7,13 +7,22 @@
 
 🩸 为什么需要它（2026-10-25 的教训）：2.5 双人换人那次，白衣服那位从头到尾
 没换成功，而**我看 480p 截图判错了两次**（先说两个都换了）。人眼在小图上不可靠，
-这条是纯计算 —— 每次出片自动跑一遍，当场告诉主人「这张脸换上了没有」。
+这条是纯计算 —— 每次出片自动跑一遍，把「像不像」量成数，不用我肉眼看图。
 
-四类判定（`verdict`），判的是**逐帧相似度的 p90**（不是最高值）：
-  swapped       p90 ≥ 0.363 → 换上了
-  not_swapped   p90 < 0.363 → **换脸可能没成功**
-  no_face       成片里一帧都没检测到脸 → 核对不了
-  no_ref        参考图里认不出人脸（服装图 / 远景 / 侧脸）→ 核对不了
+🩸 **只报数，不下结论**（2026-11-03 主人定，撤掉质量判定）。
+每位被换的人输出三个原始数字 + 一个 `note`：
+
+  best_sim   最像的那一帧的相似度 —— 一张幸运帧就能拉高，**不代表全片**
+  p90        九成帧都不超过这个值 —— 防"一帧幸运"，但 10% 命中也能过
+  share      命中帧（≥0.363）的占比 —— **最接近"全片都换对了"的那个数**
+
+  note=measured   三个数都算出来了（换没换上，主人看 share + 抽帧定）
+  note=no_face    成片里一帧都没检测到脸 → 核对不了
+  note=no_ref     参考图里认不出人脸（服装图 / 远景 / 侧脸）→ 核对不了
+
+⛔ 曾经这里有过 `swapped / partial / not_swapped` 三类判定 + 顶层 `ok`。
+  它是**我自己发明的质量尺子**，两次判错：把「33% 帧命中」（`06386173`）报成
+  成功、又带着我按它去全局改代码。**别再自己加回来。**
 
 🩸 **为什么不用最高值**：一条 16 秒的片子抽 40 多帧，最高值等于让一张幸运帧
 说了算。已知没换上的那条（`2f1f26d8/0c656558`，`OPEN-DEFECTS.md` V25-2 先于本
@@ -32,7 +41,8 @@ from pathlib import Path
 
 log = logging.getLogger("identity")
 
-# OpenCV 官方推荐的同人阈值（余弦）
+# OpenCV 官方推荐的同人阈值（余弦）。只用来算 `share`（多少帧过这条线），
+# 不再用来判「成功 / 失败」。
 THRESHOLD = 0.363
 # 抽样步长与上限：60 秒片子最多 150 帧检测，30 秒片子约 2–3 秒跑完
 STEP = 0.4
@@ -66,7 +76,7 @@ def available() -> bool:
 
 
 def _skip(why: str) -> dict:
-    return {"ok": True, "skipped": why, "people": []}
+    return {"skipped": why, "people": []}
 
 
 def _detector(cv2, w: int, h: int):
@@ -171,8 +181,8 @@ def check(video: Path, refs: dict | None, *, step: float = STEP,
         else:
             targets.append({"slot": slot, "feat": got[0], "ref_faces": got[1]})
     if not any(t["feat"] is not None for t in targets):
-        return {"ok": True, "skipped": "参考图里认不出人脸（服装图/远景/侧脸）",
-                "people": [{"slot": t["slot"], "verdict": "no_ref",
+        return {"skipped": "参考图里认不出人脸（服装图/远景/侧脸）",
+                "people": [{"slot": t["slot"], "note": "no_ref",
                             "ref_faces": t["ref_faces"]} for t in targets]}
 
     try:
@@ -268,17 +278,19 @@ def check(video: Path, refs: dict | None, *, step: float = STEP,
         if t["feat"] is None:
             people.append({"slot": slot, "ref_faces": t["ref_faces"],
                            "best_sim": None, "p90": None, "share": None,
-                           "at": None, "frames": 0, "verdict": "no_ref"})
+                           "at": None, "frames": 0, "note": "no_ref"})
             continue
         if not vals:
             people.append({"slot": slot, "ref_faces": t["ref_faces"],
                            "best_sim": None, "p90": None, "share": None,
-                           "at": None, "frames": 0, "verdict": "no_face"})
+                           "at": None, "frames": 0, "note": "no_face"})
             continue
-        # 🩸 判据用 **p90 而不是最高值**：最高值只看一张幸运帧 —— 已知没换上的
-        # 那条（`2f1f26d8/0c656558`，OPEN-DEFECTS V25-2）最高帧 0.404 > 0.363，
-        # 会报「换上了」；p90 是 0.298，落在阈值下；换成了的那位 p90 0.622。
-        # p90 同时扛得住「这个人只在片子里出现一小段」。
+        # 🩸 这里只**报数**，不判「换上没换上」（2026-11-03 主人定）。
+        #   三个数各有各的用处，别只挑一个当成结论：
+        #   · `best_sim` 最像的那一帧 —— 一张幸运帧就能拉高，不能代表全片
+        #   · `p90`      九成帧都低于它 —— 防"一帧幸运"，但 10% 命中也能过
+        #   · `share`    命中帧占比 —— 最接近"全片都换对了"的那个数
+        #   换成没换成，由主人看 `share` + 抽帧定。
         srt = sorted(vals)
         p90 = srt[min(len(srt) - 1, int(round(0.9 * (len(srt) - 1))))]
         share = sum(1 for v in vals if v >= THRESHOLD) / float(len(vals))
@@ -289,12 +301,13 @@ def check(video: Path, refs: dict | None, *, step: float = STEP,
                        "share": round(share, 3),
                        "at": round(at[slot], 1),
                        "frames": len(vals),
-                       "verdict": "swapped" if p90 >= THRESHOLD else "not_swapped"})
+                       "note": "measured"})
 
-    bad = [p for p in people if p["verdict"] == "not_swapped"]
+    # ⛔ 这里**不再有 `ok`**（2026-11-03 主人定）：换没换上由主人看 share + 抽帧定，
+    #   模块只负责把数算准、别算错。原来 `ok = 全员 swapped` 是一个我自己发明的
+    #   质量判据 —— 它把「33% 帧命中」判成成功、又把「全片一致」的唯一好样本判成
+    #   别的，反过来带着我全局乱改。
     return {
-        # ok=False 表示「发现了问题」：有参考图的人没在成片里出现
-        "ok": not bad,
         "skipped": "",
         "threshold": THRESHOLD,
         "people": people,

@@ -34,7 +34,7 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from app.services import clone_brief as B  # noqa: E402
 from app.services import edit_spec  # noqa: E402
-from app.services import h3_agent as A3  # noqa: E402
+# 🧊 2026-11-03 复刻下架 H3：`h3_agent` 随执行链归档，H3 侧的规格书基线一并撤掉。
 
 GOLDEN = Path(__file__).resolve().parent / "_brief_golden.json"
 
@@ -112,7 +112,8 @@ CASES: list[tuple[str, dict, dict]] = [
 def _plan(raw: dict, extra: dict) -> dict:
     spec = edit_spec.normalize(raw)
     plan = {
-        "ch": "minimax", "model": "MiniMax-H3", "spec": spec,
+        # 🧊 2026-11-03：复刻只剩火山，`ch` 不再走 minimax（H3 分支的写法已无消费者）。
+        "ch": "volc", "model": "doubao-seedance-2-5-260628", "spec": spec,
         "inventory": INV, "slots": list(extra.get("slots") or []),
         "ordered": [f"D:/tmp/case_{i}.jpg" for i in range(len(extra.get("slots") or []))],
         "audio_ref": True, "person_ids": (spec.get("change") or {}).get("person_ids") or [],
@@ -128,7 +129,6 @@ def snapshot() -> dict:
         brief = B.build(plan, REC, SPANS)
         out[name] = {
             "sd25": B.as_text(brief),
-            "h3": A3.brief_text(A3.as_brief(plan, REC, SPANS)),
         }
     return out
 
@@ -141,8 +141,8 @@ def main() -> int:
     now = snapshot()
     if args.update:
         GOLDEN.write_text(json.dumps(now, ensure_ascii=False, indent=1), encoding="utf-8")
-        print(f"✅ 已重存基线：{GOLDEN.name}（{len(now)} 种情况 × 2 家）")
-        print("   🩸 记住规矩：只在这条命令之前确认过 volc25 与 h3 两侧全门都绿。")
+        print(f"✅ 已重存基线：{GOLDEN.name}（{len(now)} 种情况 × 1 家）")
+        print("   🩸 记住规矩：只在这条命令之前确认过 volc25 全门都绿。")
         return 0
 
     if not GOLDEN.is_file():
@@ -157,9 +157,9 @@ def main() -> int:
         red += 1
         print(f"🔴 用例集变了：多 {sorted(set(now) - set(old))}，少 {sorted(set(old) - set(now))}")
 
-    # 2) 逐字比对两家的输出
+    # 2) 逐字比对（🧊 2026-11-03：H3 侧随复刻下架撤掉，只剩 2.5）
     for name in sorted(set(old) & set(now)):
-        for who in ("sd25", "h3"):
+        for who in ("sd25",):
             a = str(old[name].get(who) or "")
             b = str(now[name].get(who) or "")
             if a == b:
@@ -173,12 +173,12 @@ def main() -> int:
                 print("   " + ln)
 
     if red:
-        print(f"\n{len(now)} 种情况 × 2 家，**{red} 处不一致**。")
-        print("🩸 `clone_brief.py` 是两家共用的：确认是有意的改动后，")
-        print("   先跑 check_all --model volc25 和 --model h3，两边都绿了再 --update。")
+        print(f"\n{len(now)} 种情况 × 1 家，**{red} 处不一致**。")
+        print("🩸 `clone_brief.py` 是复刻共用事实层：确认是有意的改动后，")
+        print("   先跑 check_all --model volc25，全绿了再 --update。")
         return 1
 
-    print(f"✅ 规格书与基线逐字一致（{len(now)} 种情况 × 2 家 = {len(now) * 2} 份）")
+    print(f"✅ 规格书与基线逐字一致（{len(now)} 种情况 × 1 家 = {len(now)} 份）")
     return 0
 
 

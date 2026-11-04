@@ -121,7 +121,9 @@
       ],
       "lines": 15185,
       "sha256": "bd775fb2792e16b3b3be449e98a581c57b64087e390843efa3fd28c4cbb6cdef",
-      "origin": "MiniMax 文档站抓取合集（649KB，含视频生成 API 页）"
+      "origin": "MiniMax 文档站抓取合集（649KB，含视频生成 API 页）",
+      "missing": true,
+      "missing_note": "工程内没有这份文件；如引用请改用对应 pull- 版"
     },
     {
       "role": "skill-body",
@@ -178,6 +180,299 @@
       "lines": 297,
       "sha256": "4376d172d145237cfba07b707bd4f69d6ece446584c4c7279ca0770678ba6bc0",
       "origin": "https://vrfi1sk8a0.feishu.cn/wiki/FIWjwgL33ipnkekzk30crmKUnIh（lark-cli docs +fetch --as bot，revision 1327，document_id ZRFZd89oMoGTyrx2JXWcpPq1n7f）→ jarvis/tools/feishu_cli2md.py 渲染"
+    },
+    {
+      "role": "skill-body",
+      "role_zh": "官方 skill `h3-prompt-writing` 的 SKILL.md",
+      "path": "SKILL.md",
+      "lines": 40,
+      "sha256": "a7000443588ca3f145e3b3fd8900f14e0325dc460bd811268fac89a9dc8e56d0",
+      "dup_of": "h3-prompt-writing-SKILL.md"
+    },
+    {
+      "role": "api-doc",
+      "role_zh": "错误码总表（V2 全接口）",
+      "path": "pull-2026-11-02/api_errorcode.md",
+      "lines": 61,
+      "sha256": "8a7e23b3dd040e116eae882a44c698e33af68f2f72c3beba88b16839d5f8f571"
+    },
+    {
+      "role": "api-doc",
+      "role_zh": "创建视频生成任务 V2 全量参数（2026-11-02 重拉版）",
+      "path": "pull-2026-11-02/api_v2-create.md",
+      "lines": 582,
+      "sha256": "9a7276b7418755a8e7c5ff8e3819dd58b498eb7901fbdc5c5bf25df206905914"
+    },
+    {
+      "role": "api-doc",
+      "role_zh": "取消 / 删除任务",
+      "path": "pull-2026-11-02/api_v2-delete.md",
+      "lines": 186,
+      "sha256": "23164f2f8cadcf03ded43723b6f7ac9185e938966ef60d46840fe8a44190a8bd"
+    },
+    {
+      "role": "api-doc",
+      "role_zh": "★ H3-Context-IR 官方改写器：只返回增强提示词，不建任务",
+      "path": "pull-2026-11-02/api_v2-h3-context-ir.md",
+      "lines": 532,
+      "sha256": "1e05aeff6e06762ddd2ad44760108ff399e02550a7b3fb3d6bdc60d1b7ae9897"
+    },
+    {
+      "role": "api-doc",
+      "role_zh": "列任务",
+      "path": "pull-2026-11-02/api_v2-list.md",
+      "lines": 393,
+      "sha256": "003ec658d2122cb8e11f8511631db8a63f1ef638a1c6f5a47444ae8adeebd220"
+    },
+    {
+      "role": "api-doc",
+      "role_zh": "查任务（含 duration / 尾帧）",
+      "path": "pull-2026-11-02/api_v2-query.md",
+      "lines": 435,
+      "sha256": "ba7a03558de9e9cbff113afd5e372f209251976f4dbca9a6e12583040f0d1aea"
+    },
+    {
+      "role": "api-doc",
+      "role_zh": "再生成（768P → 2K）",
+      "path": "pull-2026-11-02/api_v2-regeneration.md",
+      "lines": 517,
+      "sha256": "d94dd5422c89a24214c75db641203b5945010c62170ee9200e554efef0e06ba3"
+    },
+    {
+      "role": "guide-doc",
+      "role_zh": "H3 本地部署（ComfyUI / SGLang）",
+      "path": "pull-2026-11-02/guides_local-deploy-h3.md",
+      "lines": 484,
+      "sha256": "26eb6753c752f48b012aa03b05843fcb0df08979d9f43b40020f639e50d8ee9c"
+    },
+    {
+      "role": "guide-doc",
+      "role_zh": "本地部署总览",
+      "path": "pull-2026-11-02/guides_local-deploy.md",
+      "lines": 57,
+      "sha256": "c29e795f9548d25167e2958fcf6036d53860ec034e68f91dcb5a0ac2313dc1a0"
+    },
+    {
+      "role": "guide-doc",
+      "role_zh": "视频生成：模型规格与输入条件",
+      "path": "pull-2026-11-02/guides_video-generation.md",
+      "lines": 270,
+      "sha256": "bdb903bd990a86993565d7cedbe7032c95e68d5a0edb75359381d94e4b64b215"
+    },
+    {
+      "role": "guide-doc",
+      "role_zh": "H3 亮点功能示例（中文提示词 + 参考素材）",
+      "path": "pull-2026-11-02/guides_video-prompt.md",
+      "lines": 265,
+      "sha256": "991410753f3a4350a7042816d4ffd7a9fd1769aa1182a5578cdfecd980c1fc54",
+      "dup_of": "official/docs/official_video-prompt.md"
+    },
+    {
+      "role": "doc-index",
+      "role_zh": "★ 全站文档索引（穷举页清单的唯一入口）",
+      "path": "pull-2026-11-02/llms.txt",
+      "lines": 158,
+      "sha256": "697bc85d5b68a44dd0a26833f4dcc501ea1e54b7efb904020877029be20ef654"
+    },
+    {
+      "role": "api-schema",
+      "role_zh": "机器可读 schema（模型枚举 / 字段类型）",
+      "path": "pull-2026-11-02/openapi_v2-video-generation.json",
+      "lines": 1640,
+      "sha256": "0a3161c5c806534d93fb7ec42a2e3b6160144ef68e21d2ea7a4217cde488d026"
+    },
+    {
+      "role": "genre-skill-cn",
+      "role_zh": "风格 skill · 3D 动画短片（中文版）",
+      "path": "skills/3d-animation-short-generator/SKILL.cn.md",
+      "lines": 615,
+      "sha256": "54767a6b3c0194390a7c16a176269046c3fea6d20eb787c60789994a07228dda"
+    },
+    {
+      "role": "genre-skill",
+      "role_zh": "风格 skill · 3D 动画短片",
+      "path": "skills/3d-animation-short-generator/SKILL.md",
+      "lines": 249,
+      "sha256": "92f1130ccf456b3e5be2d8aab238a739d26e130ff72061c239e613e4d615f5b4"
+    },
+    {
+      "role": "genre-reference",
+      "role_zh": "风格 skill · 3D 动画短片 · 参考文件",
+      "path": "skills/3d-animation-short-generator/references/fallback-policy.md",
+      "lines": 52,
+      "sha256": "c3dcfd75c1744dfbde0778a2ced5c3a320230e24fd3419a1861853378521b251"
+    },
+    {
+      "role": "genre-reference",
+      "role_zh": "风格 skill · 3D 动画短片 · 参考文件",
+      "path": "skills/3d-animation-short-generator/references/model-selection.md",
+      "lines": 49,
+      "sha256": "fb020acd0a8a42257eff9196d9aa728b62a5cd892c815396a58c5920ca7dff49"
+    },
+    {
+      "role": "genre-reference",
+      "role_zh": "风格 skill · 3D 动画短片 · 参考文件",
+      "path": "skills/3d-animation-short-generator/references/qc-checklist.md",
+      "lines": 99,
+      "sha256": "ffd9b192f09aff8cbeb60be859cf13b616ae8ced6a9324cda7728a47e3ea3d3b"
+    },
+    {
+      "role": "genre-reference",
+      "role_zh": "风格 skill · 3D 动画短片 · 参考文件",
+      "path": "skills/3d-animation-short-generator/references/shot-table-spec.md",
+      "lines": 75,
+      "sha256": "d4770ff3f7c6d1d82770e8a93b91cecad269a0da7a5fd97d5c27862a3e4c805c"
+    },
+    {
+      "role": "genre-reference",
+      "role_zh": "风格 skill · 3D 动画短片 · 参考文件",
+      "path": "skills/3d-animation-short-generator/references/storyboard-guidelines.md",
+      "lines": 185,
+      "sha256": "a1a5aaed9681dd2f66c5ff1f92ea433bf8a04c8a145cd806623e29e8cabfe1f6"
+    },
+    {
+      "role": "genre-index",
+      "role_zh": "官方风格 skill 清单总览",
+      "path": "skills/README.md",
+      "lines": 117,
+      "sha256": "d993939102d1b06299ab0cacd9c6db79b2a6413c7df20104ce89c49d5638fcb6"
+    },
+    {
+      "role": "genre-skill-cn",
+      "role_zh": "风格 skill · 品牌宣传片（中文版）",
+      "path": "skills/brand-promo-video-generator/SKILL.cn.md",
+      "lines": 178,
+      "sha256": "e148ad61fe77114543b03ca68d9e1bc4b343d972d3264f6f2a014eaa27f55243"
+    },
+    {
+      "role": "genre-skill",
+      "role_zh": "风格 skill · 品牌宣传片",
+      "path": "skills/brand-promo-video-generator/SKILL.md",
+      "lines": 189,
+      "sha256": "a50d270e412be4ed5cf88b187665585f4da637701eb24333fbdef95a19442f37"
+    },
+    {
+      "role": "genre-skill-cn",
+      "role_zh": "风格 skill · 双人合作游戏开场（中文版）",
+      "path": "skills/co-op-game-intro-generator/SKILL.cn.md",
+      "lines": 44,
+      "sha256": "42120f68416eb0ba3b6fd1d1755b902438cc25c89c0e3c30d445b0d566c7237a"
+    },
+    {
+      "role": "genre-skill",
+      "role_zh": "风格 skill · 双人合作游戏开场",
+      "path": "skills/co-op-game-intro-generator/SKILL.md",
+      "lines": 54,
+      "sha256": "8b49cf84a70fbbc99c661fdac2235cba7f7dd0bde51b639b6ed9c1679a707f5e"
+    },
+    {
+      "role": "genre-reference",
+      "role_zh": "风格 skill · 双人合作游戏开场 · 参考文件",
+      "path": "skills/co-op-game-intro-generator/references/h3-confirmation-image-template.md",
+      "lines": 388,
+      "sha256": "344325132841a673fb2ccc5e12ada2c95c2cba19dd2b658678467219c9f66bbd"
+    },
+    {
+      "role": "genre-reference",
+      "role_zh": "风格 skill · 双人合作游戏开场 · 参考文件",
+      "path": "skills/co-op-game-intro-generator/references/h3-video-prompt-template.md",
+      "lines": 133,
+      "sha256": "7fac20c236de585d2f76e4fa01f9e74ced0a88a6d76d2b14c75ceac99607b9c2"
+    },
+    {
+      "role": "skill-reference",
+      "role_zh": "官方 skill `h3-prompt-writing` 的 reference 正文（与顶层同名文件同源）",
+      "path": "skills/h3-prompt-writing/SKILL.md",
+      "lines": 40,
+      "sha256": "a7000443588ca3f145e3b3fd8900f14e0325dc460bd811268fac89a9dc8e56d0",
+      "dup_of": "h3-prompt-writing-SKILL.md"
+    },
+    {
+      "role": "skill-reference",
+      "role_zh": "官方 skill `h3-prompt-writing` 的 reference 正文（与顶层同名文件同源）",
+      "path": "skills/h3-prompt-writing/references/base-en.txt",
+      "lines": 222,
+      "sha256": "2cfebc096a6e08370f288d468d90b60f7f9bcb938f94bf090816e910e48e75fc",
+      "dup_of": "base-en.txt"
+    },
+    {
+      "role": "skill-reference",
+      "role_zh": "官方 skill `h3-prompt-writing` 的 reference 正文（与顶层同名文件同源）",
+      "path": "skills/h3-prompt-writing/references/ref-en.txt",
+      "lines": 341,
+      "sha256": "1e574f356716ad55612247ffb7bbccbcdb484ad96599d63c7dca1af186b1fab7",
+      "dup_of": "ref-en.txt"
+    },
+    {
+      "role": "genre-skill-cn",
+      "role_zh": "风格 skill · 手绘实拍融合（中文版）",
+      "path": "skills/handdrawn-live-video-generator/SKILL.cn.md",
+      "lines": 86,
+      "sha256": "ce4a4bcc867def998cd964a15367a9b12cb11534b94a33ed95a4107f49d3de08"
+    },
+    {
+      "role": "genre-skill",
+      "role_zh": "风格 skill · 手绘实拍融合",
+      "path": "skills/handdrawn-live-video-generator/SKILL.md",
+      "lines": 87,
+      "sha256": "5c62175b552f51ed0bfb1e8fcb6fdcfab09530a36570478e58e41c14340b3001"
+    },
+    {
+      "role": "genre-skill-cn",
+      "role_zh": "风格 skill · 极简产品广告（中文版）",
+      "path": "skills/minimalist-product-ad-generator/SKILL.cn.md",
+      "lines": 397,
+      "sha256": "287341821b2104ca0caf61326dfdddc5efff09479bb2be321eeaa7cb8d4d01fa"
+    },
+    {
+      "role": "genre-skill",
+      "role_zh": "风格 skill · 极简产品广告",
+      "path": "skills/minimalist-product-ad-generator/SKILL.md",
+      "lines": 398,
+      "sha256": "1f07c58090141159861fa84762ad09eaaf78c2ceaa4cebb08e0e429a55994196"
+    },
+    {
+      "role": "genre-skill-cn",
+      "role_zh": "风格 skill · 大字幕 MV（中文版）",
+      "path": "skills/music-video-subtitle-generator/SKILL.cn.md",
+      "lines": 213,
+      "sha256": "6a44651945455ba73f8884474027d33afccb7d34485ae6977b454c4c112b6f10"
+    },
+    {
+      "role": "genre-skill",
+      "role_zh": "风格 skill · 大字幕 MV",
+      "path": "skills/music-video-subtitle-generator/SKILL.md",
+      "lines": 205,
+      "sha256": "a2c0904632e8db52d2ffdcbaa21208331efd7447b9f34185e7a63a408ae0c848"
+    },
+    {
+      "role": "genre-skill-cn",
+      "role_zh": "风格 skill · 纸拼贴讲解（中文版）",
+      "path": "skills/paper-collage-explainer-generator/SKILL.cn.md",
+      "lines": 271,
+      "sha256": "ceaecc38dcf78294d12e658c57b690a0f671bc4b9f7292ef5a65a7db178da4aa"
+    },
+    {
+      "role": "genre-skill",
+      "role_zh": "风格 skill · 纸拼贴讲解",
+      "path": "skills/paper-collage-explainer-generator/SKILL.md",
+      "lines": 273,
+      "sha256": "2223d4b4ec6b2842db4252a83f00aa6c31e6daa5e8d020d9518e3a8743c47de0"
+    },
+    {
+      "role": "genre-skill-cn",
+      "role_zh": "风格 skill · 纸艺定格讲解（中文版）",
+      "path": "skills/papercraft-stop-motion-explainer/SKILL.cn.md",
+      "lines": 470,
+      "sha256": "94dfb06a487aef8a3d74c5ec7f645fdbd79648dee06934889d823f2624171237"
+    },
+    {
+      "role": "genre-skill",
+      "role_zh": "风格 skill · 纸艺定格讲解",
+      "path": "skills/papercraft-stop-motion-explainer/SKILL.md",
+      "lines": 471,
+      "sha256": "bf8b8e42acd91a0221335d3414abac6c1ad1fd9d8a452b0f7e08f2a973a4fbce"
     }
-  ]
+  ],
+  "updated": "2026-11-03"
 }

@@ -50,6 +50,8 @@ def _hits(mod, name: str, text: str, people: list, n_pic: int) -> Counter:
             ctx = mod.ctx_for(text, people, "tpl",
                               materials={f"@图片{i + 1}" for i in range(n_pic)})
         elif name == "ruler_h3":
+            # 🧊 2026-11-03 复刻下架 H3：这条尺子随编译器归档，映射里已没有它，
+            #   分支留在这里只为兼容历史调用 —— 真进来会 import 失败，是预期的。
             # 历史请求看不出当时的音轨模式 → 与 `history()` 同口径，不猜
             ctx = mod.ctx_for(text, edit_master=None, audio=None)
         else:
@@ -88,7 +90,14 @@ def main() -> int:
     from _model_lock import guard          # noqa: E402  分模型执行锁
     guard(a.model)
     # 锁的叫法（volc20/volc25）和文件名（ruler_sd20/ruler_sd25）不是一套
-    _MOD = {"volc20": "ruler_sd20", "volc25": "ruler_sd25", "h3": "ruler_h3"}
+    # 🔓 2026-11-03 复刻换体裁：H3 的**历史请求全是 Ref2VA 六段式**，而现在的
+    #   产出是手写入口三段式。拿新尺子量旧体裁 = 尺子量错东西（`spec-must-match-genre`），
+    #   结果没有可比性。所以 h3 这一档**不再提供历史回测** —— 要看历史请去
+    #   `_archive/h3_clone/ruler_h3_ref2va.py` 里跑。
+    _MOD = {"volc20": "ruler_sd20", "volc25": "ruler_sd25"}
+    if a.model not in _MOD:
+        print(f"⛔ {a.model} 没有当前可用的尺子（H3 换体裁后历史请求不可比）")
+        return 2
     mod_name = _MOD[a.model]
     mod = importlib.import_module(mod_name)
 

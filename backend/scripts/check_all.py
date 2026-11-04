@@ -67,7 +67,8 @@ REGISTRY: list[tuple[str, str, tuple[str, ...], bool, bool]] = [
     ("延长·2.5", "test_extend_sd25.py", (), True, False),
     ("参考图顺序·2.5", "test_ref_order_sd25.py", (), True, False),
     ("分段台词·2.5", "test_spans_sd25.py", (), True, False),
-    ("镜头来源·H3", "test_h3_shot_source.py", (), True, False),
+    # 🧊 2026-11-03 复刻下架 H3：`test_h3_shot_source.py` 随执行链归档
+    #   （`backend/_archive/h3_clone/`）。
     # ---------------- 提示词闸 ----------------
     ("提示词逐字检查", "prompt_lint_check.py", (), True, False),
     ("提示词型号标准", "prompt_model_standards_check.py", (), True, False),
@@ -93,6 +94,13 @@ REGISTRY: list[tuple[str, str, tuple[str, ...], bool, bool]] = [
     ("p15 十五项", "p15_check.py", (), True, False),
     ("p16 身份核对", "p16_check.py", (), True, False),
     ("c6 翻译", "c6_check.py", (), True, False),
+    # 形态矩阵 —— 镜数 × 人数 × 改动类型 × 音轨 × 续接，18 种形态各编一遍看输出。
+    # 存在的理由：p10 只验"某一句在不在"，验不出"只换场景时保留清单整段消失"这类
+    # 被改动类型分支盖住的洞（2026-11-04 就是这么发现的）。
+    ("H3 形态矩阵", "h3_matrix_check.py", (), False, False),
+    # 真实盘点矩阵 —— 用 `data/clone/*/inventory` 的**真数据**跑（1/3/5/9 人、
+    # 九宫格方位、同方位撞车都在里面），不是手编样例。
+    ("H3 真实盘点矩阵", "h3_real_matrix_check.py", (), False, False),
     # ---------------- 尺子（按型号只跑自己那把）----------------
     ("尺子·探针自证", "{R}.py", ("--probes",), True, False),
     ("尺子·当前产出", "{R}.py", ("--current",), True, False),
@@ -102,7 +110,11 @@ REGISTRY: list[tuple[str, str, tuple[str, ...], bool, bool]] = [
 ]
 
 #: 型号 → 尺子文件名（锁的叫法和文件名不是一套）
-RULER = {"volc20": "ruler_sd20", "volc25": "ruler_sd25", "h3": "ruler_h3"}
+#: 🔓 2026-11-03 复刻换体裁：主表从 `ruler_h3`（Ref2VA 六段式）换成
+#:   `ruler_h3_handwrite`（手写入口三段式）。原因：官方换人样例 6 条全在手册
+#:   （`h3-manual:207-213` / `:185-192`），六段式里一条都没有 —— 见
+#:   `docs/H3-SOURCES-MINDMAP.md` §6.5。旧尺子随旧编译器一起归档。
+RULER = {"volc20": "ruler_sd20", "volc25": "ruler_sd25", "h3": "ruler_h3_handwrite"}
 
 #: 按型号追加的关卡 —— 同一家模型里有**多个功能**时，每个功能一套自己的尺子。
 #: 🩸 H3 现在有两条完全不同的链路：`ruler_h3`（Ref2VA 六段式，改已有视频）
@@ -125,12 +137,12 @@ EXTRA = {
         # 「先出第 1 段，确认后再出全部」：参数五层透传、部分时不拼接、continue 重建。
         # 零费用：只反射签名和源码结构，不调模型。
         ("复刻·先出一段预览", "p57_check.py", (), True, False),
-        # 🩸 上面那条只验**代码形状**；这条验**行为**：真按段跑一遍，数模型调了
-        #   几次。形状对、行为不对（比如第 1 段缓存键飘了，继续出全部照样重复扣费）
-        #   只有它能抓。零费用：模型桩 + 视觉盘点读缓存 + agent 读落盘。
-        #   脚本自己读源任务，不接 `--model`（`need_model=False`）。
-        ("复刻·先出一段（真跑）", "p58_check.py", (), False, False),
+        # 🧊 2026-11-03：`复刻·先出一段（真跑）`（p58）打的是 H3 路径
+        #   （`minimax.reference_video` + `h3_agent.cached`），随执行链归档。
     ],
+    # 🔓 2026-11-03 接回机械版。H3 有两条方向相反的链，两把尺子都要跑：
+    #   主表 `RULER["h3"] = ruler_h3`（Ref2VA 改片），这里补创作模式 `ruler_h3_base`
+    #   （T2VA/I2VA，提示词优化那条线在用）。
     "h3": [
         ("尺子·创作模式自证", "ruler_h3_base.py", ("--probes",), False, False),
         ("尺子·创作模式校准", "ruler_h3_base.py", ("--calib",), False, False),
@@ -145,9 +157,7 @@ EXTRA = {
         # p18 验的是旧的「一次调用」那条路，这条验新的。
         ("提示词优化·agent 读 skill", "p21_check.py", (), True, False),
         ("p17 JPG采样", "p17_check.py", (), True, False),
-        # 复刻的逐段指令：H3 自己那套（英文六段式）。零费用：全程 `post` 桩。
-        # 和 2.5 的 p30 平级、不共用断言 —— 两套模板不通用。
-        ("复刻·逐段指令·H3", "p46_check.py", (), True, False),
+        # 🧊 2026-11-03：`复刻·逐段指令·H3`（p46）随 `h3_agent` 归档。
     ],
 }
 

@@ -197,6 +197,10 @@ adapter = register(ModelAdapter(
               default_resolution=str(_raw.get("default_resolution") or "720p"),
               asset_id=True, auto_res_from_frame=True,
               align_8n1=True,                # 参考段帧数卡 8n+1（2.5 编辑任务）
+              # 官方《2.5 提示词指南》`:429`「角色对应错误」：多人视频要按人物
+              # **首次出场顺序**上传参考素材并同步编号，否则先出场的人会被别的
+              # 参考角色替换。2.0 / H3 没有这条明文 → 不给它们加（一家一把尺）。
+              order_by_appearance=True,
               boundary_pic=True,             # 边界帧走【时间线继承】模板内定义
               # 2.5 官方全文「大头照」「全身照」各 **0 次**（2026-10-26 grep 实测），
               # 写法是「一人一图、每张写全属性」（`sd25-pe:227`）⇒ 一个人只发一张。

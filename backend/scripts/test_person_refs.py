@@ -132,7 +132,10 @@ def main() -> int:
                                       channel="minimax", model=H3)
         check("H3 只有一个槽位", slots_h3, ["person"])
         ph3s = prompt_for("minimax", slots_h3, model=H3)
-        check_true("H3 只有 <Picture 1>", "<Picture 1>" in ph3s and "<Picture 2>" not in ph3s,
+        # 🔓 2026-11-03 换体裁：H3 复刻从六段式（`<Picture N>`）改成手写入口
+        #   （`@图片N`，与手册 `h3-manual:248` 同一个标法）。判据意图不变：
+        #   **只发一张图、不许派生第二张**。
+        check_true("H3 只有 @图片1", "@图片1" in ph3s and "@图片2" not in ph3s,
                    ph3s)
 
     print("== 静帧重绘（不传型号）：只发原图 ==")

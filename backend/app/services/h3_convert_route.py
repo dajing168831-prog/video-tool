@@ -49,13 +49,18 @@ VARIANTS = {
 }
 
 #: 两种产出格式 → 各自的尺子。**两把尺子互不引用**（`MODEL-SEPARATION.md`）。
+#: 🔓 2026-11-03 复刻换体裁：`ref` 从 Ref2VA 六段式换成**手写入口三段式**
+#: （官方换人样例 6 条全在手册，六段式一条都没有 → `docs/H3-SOURCES-MINDMAP.md` §6.5）。
+#: 六段式编译器与它的尺子一起归档在 `backend/_archive/h3_clone/`。
 GUIDES = {
     "base": {"fields": 3, "ruler": "ruler_h3_base",
              "name": "三字段（integrated_multimodal_description / "
                      "overall_soundscape / non_diegetic_music）"},
-    "ref": {"fields": 6, "ruler": "ruler_h3",
-            "name": "六段式（subject_definitions / summary / retention_analysis / "
-                    "detailed_description / overall_soundscape / non_diegetic_music）"},
+    # `fields` 现在没有消费者（历史上记过六段式的段数），手写入口按 `h3-manual:244`
+    # 是三段公式，但官方不要求写段标题，所以这里只留 0 表示「不按固定段数判」。
+    "ref": {"fields": 0, "ruler": "ruler_h3_handwrite",
+            "name": "手写入口三段式（参考素材说明 + 核心创意 + 画面过程说明，"
+                    "`h3-manual:244`；换人样例见 `:192` / `:213`）"},
 }
 
 #: 官方素材上限（`h3-readme:85`、`mm-docs:8271-8276`、`api-create:232`）。

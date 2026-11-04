@@ -22,22 +22,41 @@ DEFAULT_ID = "MiniMax-H3"
 
 
 def _compile(spec: dict, *, channel: str = "minimax", **kw) -> str:
-    """MiniMax：共用准备 + 本家渲染。**不判断"是哪一家"** —— 那是注册表的事。"""
+    """MiniMax：共用准备 + **手写入口三段式**。**不判断"是哪一家"** —— 那是注册表的事。
+
+    🔓 2026-11-03 主人：「H3 一定有的，所以我叫你删除干净，然后再像 2.5 这样走」。
+
+    🩸 为什么换成手写入口（`h3_handwrite`）而不是原来的六段式（`h3_compile`）：
+    官方换人样例 **6 条全在手册**（`h3-manual:207-213` / `:185-192`），全是自然语言；
+    六段式里**一条换人样例都没有**（唯一那份 `ex-lamb` 是口型重做，不是换人）。
+    照着没有样例的体裁推整段，就是 26 次出不来生产的那条路。
+    体裁对照见 `docs/H3-SOURCES-MINDMAP.md` §6.5。
+    """
     from app.services import edit_spec
     from app.services.models import h3_compile
     c, idx, people = edit_spec.compile_context(
         spec, person_asset=kw.get("person_asset", ""),
         source_person=kw.get("source_person"),
         source_people=kw.get("source_people"), slots=kw.get("slots"))
-    return h3_compile._minimax(
+    return h3_compile.handwrite(
         spec, c, idx, people=people, frame_people=kw.get("frame_people"),
         audio_ref=bool(kw.get("audio_ref")), desc_by_id=kw.get("desc_by_id"),
+        style_video=bool(kw.get("style_video")),
+        # 🩸 分段续接：上一段尾帧按「关键帧」发（`h3-manual:248` 用途表里的
+        #   「关键帧（锁定帧，如果有首帧尾帧需求明确提出）」），不传就丢这句，
+        #   第二段会从原片开头重来（旧 Ref2VA 写法上一版就是这么翻的车）。
         boundary_pic=int(kw.get("boundary_pic") or 0),
+        # 参考图外观描述：官方 `h3-manual:248`「非常想要保持的特征建议明确写出来」。
+        subject_look=kw.get("subject_look"), subject_looks=kw.get("subject_looks"),
+        # 🩸 段内切镜点（相对段起点的秒数）。以前**没接** —— 数据早在
+        #   `task.json` 的 `recipe.shots` 里（`clone_pipeline.py:102` 由
+        #   `scene.detect_shots` 刻好），`_gen_spans` 也一路传到了 `shot_cuts`，
+        #   但 H3 的 `handwrite` 没有这个参数 → 2.5 用了、H3 一直丢。
+        #   后果实测（任务 `de591f35`）：源片 2 镜 → 成片 3 镜，多出来的 4.0s
+        #   那一刀画面来自参考图2 的庭院，模型没有切镜点就自己编了一个。
         shot_cuts=kw.get("shot_cuts"),
-        subject_look=kw.get("subject_look") or {},
-        subject_looks=kw.get("subject_looks") or {},
-        shot_looks=kw.get("shot_looks"), shot_lines=kw.get("shot_lines"),
-        style_video=bool(kw.get("style_video")))
+        # 每一镜的画面内容（盘点 `inventory.shots` 的 en）—— `:251` 要的景别/内容/运镜
+        shot_desc=kw.get("shot_desc"))
 
 
 def _gate(inventory=None, slots=None, person_ids=None, spec=None, **kw) -> None:
@@ -88,20 +107,13 @@ def _ready_error() -> str:
 
 
 def _pre_compile(spec: dict, **kw) -> None:
-    """中文自由文本 → 英文（`ref-en:5` 六段正文必须英文）。
+    """空钩子 —— **手写入口是中文提示词，不需要中译英**。
 
-    🩸 挂在**这里**而不是核心：2.0 / 2.5 是中文原生提示词，一条规则都不许跨过来。
+    🧊 2026-11-03 换体裁后留空。原先这里把中文自由文本翻成英文，因为六段式
+    `ref-en:5` 要求正文全英文。现在正文按 `h3-manual:244` 的三段公式写中文，
+    再翻一遍只会制造中英混排。**别把翻译加回来。**
     """
-    # 🩸 2026-10-28：翻译簇已从共用层 `video_edit` 搬进 H3 自己的编译器。
-    from app.services.models import h3_compile
-    # 🩸 2026-11-02 撤拦路：正式出片的词由官方改写器产出（**中文进、六段英文出**），
-    #   翻译只是给旧六段式编译器/展示用的。翻不出来（接口挂、译文仍带中文）
-    #   不该把出片拦住 —— 改写器本来就认识中文。原来的 `raise` 已去掉。
-    try:
-        h3_compile.h3_english_spec(spec)
-        h3_compile.require_english_extra(spec)
-    except Exception as e:  # noqa: BLE001
-        log.warning("H3 自由文本自动翻译未完成（不改写器路径，不拦出片）：%s", e)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -192,39 +204,28 @@ _H3_IMAGE_LIMITS = {"side": (256, 5760), "ratio": (0.4, 2.5),
 #: 🩸 帧率写成 24.0 会把 23.976 的片子无谓重编码一遍（每重编码一次掉一次画质）。
 _H3_VIDEO_LIMITS = {"min_px": 0, "max_px": 0, "side": (256, 5760),
                     "ratio": (0.4, 2.5), "fps": (23.976, 60.0),
-                    "max_bytes": 50 * 1024 * 1024}
+                    "max_bytes": 50 * 1024 * 1024,
+                    # 🩸 `max_sec` = **送进模型的参考视频**时长上限（不是输出时长）。
+                    #   官方 `h3-manual:31`「输出时长 4-15秒」、`:38`「视频…单段时长
+                    #   [2,15]秒」；2026-11-03 真跑实测（任务 `7ed65dad`，源片 29.582s）：
+                    #   切了 15.5s 的段直接「invalid param: video duration 15500 ms,
+                    #   expected [2000, 15000] ms」。
+                    #   `_gen_spans` 靠这个键决定"能不能往后借 0.5s 尾巴" —— 没有它
+                    #   就会在 15s 的段上借成 15.5s（火山那边同一条洞，见
+                    #   `volc_common.VIDEO_LIMITS` 的 30.2）。
+                    "max_sec": 15.0}
 
 _raw = dict(model_specs.minimax(DEFAULT_ID))
 _raw["prefixes"] = PREFIXES
 
 
-def _agent_module():
-    """本家「逐段指令」agent：H3 的英文六段式（`h3_agent`），**不是** 2.5 那套。
+# 🧊 2026-11-03 主人：「接回机械版」。
+#   原先这里有三个钩子（`_agent_module` / `_prompt_for` / `_prompt_sig`），全都指向
+#   LLM 那一层（`h3_agent` / `h3_ir`）。这次**一律不挂**：
+#   · `Caps.prompt_for = None` ⇒ 出片直接用 `compile()` 的产出（`h3_compile` 六段式）；
+#   · `Caps.agent = None` ⇒ 没有 agent，也没有「先出一段」的预览入口。
+#   理由见 `docs/H3-CHANGE-LEDGER.md` §16/§37：那一层是「改了验不了」的源头。
 
-    🩸 两套模板不通用（中文五段标记 vs 英文六段式），所以各挂各的。
-    🩸 2026-11-02：出片时**不再走它** —— 逐段提示词改由官方改写器产出
-      （`_prompt_for`）。这个模块只留给预览/对照用。
-    """
-    from app.services import h3_agent
-
-    return h3_agent
-
-
-def _prompt_for(cid: str, n: int, **kw) -> str:
-    """逐段提示词：官方改写器 H3-Context-IR（见 `h3_ir` 文件头）。
-
-    挂在适配器上而不是让共用层 import —— 共用层只认 `Caps.prompt_for` 有没有。
-    """
-    from app.services import h3_ir
-
-    return h3_ir.prompt_for(cid, n, **kw)
-
-
-def _prompt_sig(**kw) -> str:
-    """同一套输入的指纹（不调接口）。共用层拿它进段缓存键。"""
-    from app.services import h3_ir
-
-    return h3_ir.prompt_sig(**kw)
 
 adapter = register(ModelAdapter(
     # H3 走六段式，不经过 `edit_spec._clauses` —— 占位即可（真被调到就报错）。
@@ -263,12 +264,10 @@ adapter = register(ModelAdapter(
               # 参考视频 ≤3 段、**单段 [2,15]s、总时长 ≤15s**、单文件 ≤50MB。
               extend_ref_mode="clip",
               extend_ref_max_sec=15.0, extend_ref_max_mb=50.0,
-              # 🩸 2026-11-02：逐段提示词改由**官方改写器**产出（H3-Context-IR）。
-              #   官方「全能参考生成」的示例提示词就是一句自然语言，结构化由
-              #   `POST /v2/h3_context_ir` 生成；我们自己用 DeepSeek 现写六段式，
-              #   等于绕过了官方那一步 —— 同一素材四次跑出三份没换上的词。
-              prompt_for=_prompt_for,
-              prompt_sig=_prompt_sig,
+              # 🧊 2026-11-03 机械版：不挂改写器。`prompt_for=None` ⇒ 出片直接用
+              #   `compile()`（`h3_compile.handwrite` 手写入口三段式）的产出。
+              prompt_for=None,
+              prompt_sig=None,
               raw=_raw),
     specs_for=lambda m: model_specs.minimax(m or DEFAULT_ID),
     pic=lambda n: f"<Picture {n}>",
@@ -279,7 +278,7 @@ adapter = register(ModelAdapter(
     submit=_submit,
     ready=_ready,
     ready_error=_ready_error,
-    agent=_agent_module,
+    agent=None,
     extend_prompt=_extend_prompt,
     extend_submit=_extend_submit,
 ))

@@ -51,7 +51,7 @@ def _release(cid: str) -> None:
 def submit_analyze(cid: str, video: Path, *, url: str = "") -> bool:
     if not _claim(cid, "analyze"):
         return False
-    _POOL.submit(_analyze, cid, video, url)
+    _POOL.submit(_analyze, cid, video, url=url)
     return True
 
 
@@ -65,8 +65,14 @@ def submit_render(cid: str, rid: str, *, script: str | None,
                   force: bool = False) -> bool:
     if not _claim(cid, rid):
         return False
+    # 🩸 一律关键字传参（2026-11-02 事故）：之前是纯位置参数，删 `regen_ratio`
+    #   时误删了相邻的 `regen_prompt` / `regen_shots`，剩下的参数整体错位
+    #   → `edit_spec`（dict）落进 `regen_channel` → 出片 5% 报
+    #   `'dict' object has no attribute 'strip'`。位置参数一旦增删就是连环错。
     _POOL.submit(_render, cid, rid, script, mask_bottom,
-                 regen_mode, regen_channel, edit_spec, max_segments, force)
+                 regen_prompt=regen_prompt, regen_shots=regen_shots,
+                 regen_mode=regen_mode, regen_channel=regen_channel,
+                 edit_spec=edit_spec, max_segments=max_segments, force=force)
     return True
 
 
@@ -80,10 +86,16 @@ def submit_extend(cid: str, rid: str, *, base_render_id: str = "",
                   content_mode: str = "") -> bool:
     if not _claim(cid, rid):
         return False
-    _POOL.submit(_extend, cid, rid, base_render_id, direction, seconds,
-                 content, model, resolution, with_audio,
-                 with_transition, transition_desc, list(ref_images or []),
-                 content_mode)
+    # 同 submit_render：一律关键字传参。注意 `ref_images`（对外）→ `ref_slots`（对内）
+    # 的名字不同，位置传参时看不出来，改关键字后必须写对。
+    _POOL.submit(_extend, cid, rid,
+                 base_render_id=base_render_id, direction=direction,
+                 seconds=seconds, content=content, model=model,
+                 resolution=resolution, with_audio=with_audio,
+                 with_transition=with_transition,
+                 transition_desc=transition_desc,
+                 ref_slots=list(ref_images or []),
+                 content_mode=content_mode)
     return True
 
 
@@ -125,6 +137,7 @@ def _analyze(cid: str, video: Path, url: str) -> None:
 
 
 def _render(cid: str, rid: str, script: str | None, mask_bottom: bool,
+            regen_prompt: str = "",
             regen_shots: list[int] | None = None,
             regen_mode: str = "shots", regen_channel: str = "auto",
             edit_spec: dict | None = None, max_segments: int = 0,
@@ -161,6 +174,7 @@ def _render(cid: str, rid: str, script: str | None, mask_bottom: bool,
             # 方言代码（火山 explicit_dialect）；空 = 标准普通话
             tts_dialect=(item.get("tts_dialect") or "").strip(),
             mask_bottom=mask_bottom, progress=progress,
+            regen_prompt=regen_prompt,
             regen_shots=regen_shots, regen_mode=regen_mode,
             regen_channel=regen_channel, cid=cid,
             regen_model=(item.get("regen_model") or "").strip(),

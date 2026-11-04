@@ -2059,9 +2059,9 @@ def _d9_params() -> list[tuple[str, bool, str]]:
         ("sfx=add（后期）", (ONE, {}),
          ({"person": True, "person_ids": ["P1"], "sfx": "add"}, {}), False,
          "同上"),
-        ("lock_tail（B6 生成链）", (ONE, {}),
-         ({"person": True, "person_ids": ["P1"], "lock_tail": True}, {}), False,
-         "只作用于静帧重绘生成链"),
+        # 🩸 2026-11-02 删掉 `lock_tail` 用例：静帧重绘链路整条删除后，
+        #    edit_spec 里已经没有这个字段（normalize 会直接丢掉），
+        #    留着这条等于测一个不存在的接口，会误导后来人以为还支持。
         ("resolution", (ONE, {}),
          ({"person": True, "person_ids": ["P1"], "resolution": "480p"}, {}),
          False, "请求参数，不进提示词"),

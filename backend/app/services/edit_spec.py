@@ -206,6 +206,10 @@ def defaults() -> dict:
         # 🩸 2026-10-23 主人拍板「也不烧字幕」：`subtitle` 字段整个删除。
         "resolution": "auto",
         "extra": "",
+        # 「一次只改一类」开关（默认关）。打开后，勾了 ≥2 类改动会在出片前拦下。
+        # 出处：官方 2.5 指南「复杂任务效果不稳定」→ 拆成多个简单任务
+        # （`pull-2026-11-03/prompt-guide.md:738`）。
+        "one_change": False,
     }
 
 
@@ -336,7 +340,43 @@ def normalize(raw: dict | None) -> dict:
         out["resolution"] = res
 
     out["extra"] = str(raw.get("extra") or "").strip()
+    # 「一次只改一类」：**默认关**，用户显式打开才在出片前拦。
+    out["one_change"] = bool(raw.get("one_change"))
     return out
+
+
+#: 「一次改一类」里的一类叫什么（给报错文案用，顺序 = 界面顺序）
+CHANGE_LABELS = {
+    "person": "换人物",
+    "product": "换产品",
+    "scene": "换场景",
+    "wardrobe": "换服装",
+    "style": "换风格",
+}
+
+
+def change_categories(spec: dict) -> list[str]:
+    """这次一共动了**几类**东西（人物/产品/场景/服装/风格）。
+
+    出处：官方《Doubao Seedance 2.5 提示词指南》「复杂任务效果不稳定」
+    （`pull-2026-11-03/prompt-guide.md:738`）：
+    「一次生成同时承担多项参考、编辑要求时，整体效果不稳定。**将复杂任务拆解为
+    多个简单任务**，分多次生成或编辑完成，再通过后期剪辑整合。」
+    `extra` 是自由文本，归不到任何一类，不计入。
+    """
+    c = (spec.get("change") or {})
+    cats: list[str] = []
+    if c.get("person"):
+        cats.append("person")
+    if c.get("product"):
+        cats.append("product")
+    if c.get("scene"):
+        cats.append("scene")
+    if c.get("wardrobe") or c.get("wardrobe_ids"):
+        cats.append("wardrobe")
+    if c.get("style") or c.get("style_ref") or c.get("style_video"):
+        cats.append("style")
+    return cats
 
 
 def subject_kind(spec: dict, *, person_asset: str = "") -> str:

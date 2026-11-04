@@ -29,9 +29,16 @@ IMAGE_LIMITS = {"side": (300, 6000), "ratio": (0.4, 2.5),
                 "max_bytes": 30 * 1024 * 1024}
 #: 参考视频官方硬门槛：总像素 [407696, 8295044]、边长 [300,6000]、
 #: 宽高比 [0.4,2.5]、帧率 [24,60]、单文件 ≤200MB
+#: 🩸 `max_sec` = 30.2：**送进去的参考视频**（r2v 的 `content[1]`）时长上限。
+#:   2026-11-03 真跑实测（任务 `116928ec`）：切了 30.433s 的段直接 400 —
+#:   「the parameter video duration (seconds) specified in the request must be
+#:   less than or equal to **30.2** for model doubao-seedance-2-5 in r2v」。
+#:   同一数值也是素材库入库闸（`ark_ingest._video_fits` 的 1.8–30.2，
+#:   2026-10-21 逐档实测），两处是同一条平台限制。
+#:   2.0 的段 ≤15s（`max_sec`），永远碰不到这条。
 VIDEO_LIMITS = {"min_px": 407696, "max_px": 8295044, "side": (300, 6000),
                 "ratio": (0.4, 2.5), "fps": (24.0, 60.0),
-                "max_bytes": 200 * 1024 * 1024}
+                "max_bytes": 200 * 1024 * 1024, "max_sec": 30.2}
 
 #: 火山收的清晰度档位（**小写 p**，官方枚举就是这么写的）
 VOLC_RESOLUTIONS = ("480p", "720p", "1080p", "4k")

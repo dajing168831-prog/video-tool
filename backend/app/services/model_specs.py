@@ -255,10 +255,13 @@ MODELS = {
     "volc": [
         ("doubao-seedance-2-5-260628", "Seedance 2.5"),
     ],
-    # 🔓 2026-11-01 解冻：复刻重新接上 H3（主人跑完 2.5 对照后要求恢复）。
+    # 🔓 2026-11-03 主人：「接回机械版」—— H3 通道恢复，但**只挂机械编译器**。
     #   四档型号 ID 与 `SPECS["h3-*"]` 的键一一对应（`model_specs.minimax()` 按
     #   名字里的 `-max` / `-lite` / `-highspeed` 路由，基础档就是 `MiniMax-H3`）。
-    #   标签直接用 SPECS 里的 `label`，前端照原样显示。
+    #   🩸 这次的 H3 **不接 LLM 改写器**（`h3_ir` / `h3_agent` 仍在
+    #   `backend/_archive/h3_clone/`）：`models/h3.py` 的 `Caps.prompt_for = None`，
+    #   出片直接用 `h3_compile.handwrite` 的**手写入口三段式**（2026-11-03 换体裁：
+    #   官方换人样例 6 条全在手册，六段式里 0 条）。理由见 `H3-CHANGE-LEDGER.md` §37。
     "minimax": [
         ("MiniMax-H3", "MiniMax H3"),
         ("MiniMax-H3-Max", "MiniMax H3-Max"),

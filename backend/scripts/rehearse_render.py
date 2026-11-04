@@ -34,7 +34,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from app.core.config import settings  # noqa: E402
-from app.services import (ark, clone_pipeline, edit_spec, generate, minimax,  # noqa: E402
+# 🧊 2026-11-03 复刻下架 H3：`minimax`（出片客户端 + IR）随执行链归档。
+from app.services import (ark, clone_pipeline, edit_spec, generate,  # noqa: E402
                           triage, video_edit)
 from app.services.media import ffmpeg_path, ffprobe_path  # noqa: E402
 
@@ -154,8 +155,7 @@ def main() -> int:
 
     orig_clone_dir = settings.clone_dir
     object.__setattr__(settings, "clone_dir", tasks_root)
-    real = (ark.edit_video, minimax.reference_video,
-            video_edit._public_url, settings.ark_api_key, settings.minimax_api_key)
+    real = (ark.edit_video, video_edit._public_url, settings.ark_api_key)
     seen: dict = {}
     calls: list[dict] = []
 
@@ -163,13 +163,7 @@ def main() -> int:
     # 缓存键）全在 `_gen_spans` 里 —— 连它一起换掉，等于把要验的代码也假掉了。
     # 只换最底下的模型调用，分段的真实逻辑照跑。
 
-    def fake_ref_video(video_path, *, prompt, out, subject_image=None, ref_images=None,
-                       ref_audio=None, duration=6, resolution="", model="", timeout=0):
-        seen.update(model_prompt=prompt,
-                    model_imgs=[Path(x).name for x in (ref_images or [])])
-        calls.append(dict(seen))
-        return cut(video_path, out, 0.0, min(float(duration) or 6.0, dur_of(video_path)))
-
+    # 🧊 2026-11-03：`fake_ref_video`（MiniMax 出片桩）随 H3 下架删除。
     def fake_edit_video(prompt, *, video_url, out, ref_image=None, ref_images=None,
                         ref_asset="", ref_audio=None, model="", resolution="720p",
                         duration=0.0, **_):
@@ -178,11 +172,10 @@ def main() -> int:
         calls.append(dict(seen))
         return cut(video, out, 0.0, min(float(duration) or 6.0, dur_of(video)))
 
-    minimax.reference_video = fake_ref_video
+    # 🧊 2026-11-03：`fake_context_ir`（H3-Context-IR 桩）随改写器归档删除。
     ark.edit_video = fake_edit_video
     video_edit._public_url = lambda seg, cid: "https://example.test/seg.mp4"
     object.__setattr__(settings, "ark_api_key", "k")
-    object.__setattr__(settings, "minimax_api_key", "k")
 
     src_total = float((rec.get("source") or {}).get("duration") or 0)
     # 文案长度按原片估：0.19 秒/字（和假 TTS 的口径一致，免得被"差太多"拦下）
@@ -206,19 +199,14 @@ def main() -> int:
         if have_person:
             print("== 1. 智能重制 + 换人 + 保留原声 ==")
             r = run("r1", script=None, cid=new_cid, mask_bottom=True, regen_mode="auto",
-                    edit_spec=spec(person=True), refs=refs,
+                    # 🩸 多人画面必须点名换谁（`_prepare` 的多人闸门拦得住），
+                    #    彩排走的是同一条真链路，所以也得给。
+                    edit_spec=spec(person=True, person_ids=["P1"]), refs=refs,
                     subject_image=refs["person"])
-            # 这个样本是**一镜到底的连续运镜**（运动量 1.83 ≥ 阈值 1.2），
-            # 又保留原声 → 分诊该整条判 video。以前这里写死「必须有静帧重绘」，
-            # 分诊一改就假红 6 条。判据应当跟分诊走，不是跟某一次的样本走。
-            spans_txt = [(float(s["start"]), float(s["end"]))
-                         for s in (rec.get("speech") or {}).get("segments") or []
-                         if (s.get("text") or "").strip()]
-            disp = triage.decide(rec.get("shots") or [], None, audio_mode="original",
-                                 speech_spans=spans_txt)
-            check("分诊与实跑一致（静帧只在判 still 时发生）",
-                  seen.get("still") or [], triage.still_shots(disp))
-            check("这个样本整条判 video（连续运镜 + 保留原声）",
+            # 🩸 2026-11-02 分诊只剩 keep / video：`still_shots()` / `audio_mode` /
+            #    `speech_spans` 全部随静帧档删除。判据改成「没勾镜头 = 全部重制」。
+            disp = triage.decide(rec.get("shots") or [], None)
+            check("没勾镜头时整条走视频重制",
                   set(disp.values()), {"video"})
             # 🩸 2026-10-22 真实翻车点：第 2 段开头 3 秒原片人物回灌。
             # 根因是边界帧没进 subject_definitions。这里在真链路上把它钉住。
@@ -265,7 +253,9 @@ def main() -> int:
             check("成片时长没跑偏", abs(dur_of(r["video"]) - src_total) < 1.0, True)
 
             print("== 3. 整片重制 + 换人 ==")
-            sp = edit_spec.normalize({"person": True, "audio": "tts"})
+            # 同 r1：多人画面必须点名换谁，否则被 `_prepare` 的多人闸门拦下
+            sp = edit_spec.normalize({"person": True, "person_ids": ["P1"],
+                                      "audio": "tts"})
             r3 = run("r3", script=script, cid=new_cid, mask_bottom=True,
                      regen_mode="whole", edit_spec=sp, refs=refs,
                      subject_image=refs["person"], tts=FakeTTS(), allow_stretch=True)
@@ -286,7 +276,6 @@ def main() -> int:
                 has_bf3 = any("boundary" in str(x) for x in imgs3)
                 check(f"整片重制第 {n} 段边界帧与接缝一致", has_bf3, not seam_cut)
             check("提示词非空", bool(seen.get("model_prompt")), True)
-            check("提示词指到人物质材", "<Picture 1>" in (seen.get("model_prompt") or ""), True)
             check("整片重制成片有内容", Path(r3["video"]).stat().st_size > 10_000, True)
         else:
             print("（这个任务没传人物图，跳过换人相关彩排）")
@@ -301,10 +290,8 @@ def main() -> int:
         check("不带字幕轨", bool(r4.get("ass")), False)
 
     finally:
-        (ark.edit_video, minimax.reference_video,
-         video_edit._public_url) = real[:3]
-        object.__setattr__(settings, "ark_api_key", real[3])
-        object.__setattr__(settings, "minimax_api_key", real[4])
+        ark.edit_video, video_edit._public_url = real[:2]
+        object.__setattr__(settings, "ark_api_key", real[2])
         object.__setattr__(settings, "clone_dir", orig_clone_dir)
         shutil.rmtree(root, ignore_errors=True)
 

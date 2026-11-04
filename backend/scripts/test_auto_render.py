@@ -191,7 +191,7 @@ def test_auto() -> int:
 
 
 def _run(work: Path) -> int:
-    from app.services import ark, generate, minimax
+    from app.services import ark, generate
 
     video = make_video(work / "src.mp4", 12.0)
     # 6 镜各 2s；运动量直接写死在配方里（分析阶段真实算出来的就是这一列）
@@ -221,13 +221,12 @@ def _run(work: Path) -> int:
             out.append(p)
         return out
 
-    real = (ark.edit_video, minimax.reference_video,
-            video_edit.replace_spans, video_edit._public_url,
-            settings.ark_api_key, settings.minimax_api_key, settings.public_base_url)
+    # 🧊 2026-11-03 复刻下架 H3：`minimax.reference_video` 不再存在，元组去掉一项。
+    real = (ark.edit_video, video_edit.replace_spans, video_edit._public_url,
+            settings.ark_api_key, settings.public_base_url)
     video_edit.replace_spans = fake_spans
     video_edit._public_url = lambda seg, cid: "https://example.test/seg.mp4"
     object.__setattr__(settings, "ark_api_key", "k")
-    object.__setattr__(settings, "minimax_api_key", "k")
     object.__setattr__(settings, "public_base_url", "https://api.test")
 
     spec = edit_spec.normalize({
@@ -384,11 +383,9 @@ def _run(work: Path) -> int:
         check("没有运动量也照常出视频参考", len(seen["spans"] or []), 1)
         check("6 镜都替换", r3["replaced_shots"], 6)
     finally:
-        (ark.edit_video, minimax.reference_video,
-         video_edit.replace_spans, video_edit._public_url) = real[:4]
-        object.__setattr__(settings, "ark_api_key", real[4])
-        object.__setattr__(settings, "minimax_api_key", real[5])
-        object.__setattr__(settings, "public_base_url", real[6])
+        ark.edit_video, video_edit.replace_spans, video_edit._public_url = real[:3]
+        object.__setattr__(settings, "ark_api_key", real[3])
+        object.__setattr__(settings, "public_base_url", real[4])
 
     return 0
 

@@ -110,23 +110,22 @@ def _volc_h3_clauses(ch: str, model: str, n: int, ppl: list[dict],
                                                           "en": p["desc_en"]}
                                                 for p in ppl})
     if ch == "minimax":
-        # 🩸 D31：指认句在 `subject_definitions` 里（`<Subject N> is … replaced by …`），
-        # 以前却去 `detailed_description` 里找「同一行既有 replaced by 又有
-        # The target video is an edited」—— 现行输出里根本没有这种行，所以
-        # 每次都是「抽到 0 句」。改成认定义段，两种写法都收：
-        #   `… in <Video 1>, and is replaced by <Subject 2>.`
-        #   `… in <Video 1> that is replaced by <Subject 2>.`
-        line = [x for x in text.splitlines()
-                if x.strip().startswith("<Subject") and "replaced by <Subject" in x]
-        # 🩸 首句是 `The person…`（大写 T），正则不写 [Tt] 会漏掉第一句 ——
-        # 第二次跑就是这么假绿的（5 人只抽到 4 句）。
-        got = re.findall(r"([Tt]he person\b.*?is replaced by <Subject \d+>)",
-                         "\n".join(line))
-        # 🩸 只换一个人时"句数互异"恒真（本来就只有 1 句），那条判据量不到东西。
-        # 真正该问的是：**这句里有没有定位词**。编译器的两种写法：
-        #   有定位 → `… is the person on the left in <Video 1>, and is replaced by …`
-        #   没定位 → `… is the person in <Video 1> that is replaced by …`
-        has_loc = bool(line) and not any(" that is replaced by" in x for x in line)
+        # 🔓 2026-11-03 换体裁：H3 复刻改成**手写入口**，指认句变成
+        #   `参考视频1做人物替换。@视频1中{谁}替换为@图片N中的人物，{谁}替换为@图片M中的人物。`
+        #   （官方 `h3-manual:192` 的排布、`:248` 的 @图片N 标法）。
+        #   旧版抽的是 `<Subject N> is … replaced by …`，现行输出里一行都没有
+        #   → 不改就是每轮 84 组「抽到 0 句」的红噪声（空集恒真，下不了结论）。
+        # 🩸 切分必须先按 `@视频1中` 断开再按标点分，否则第一段会把「视频1中」
+        #   前缀带进去、第二段没有 → 两段本来一模一样却「互异」（第 13 次同源假绿）。
+        # 🩸 2026-11-04：动词改成官方 `h3-manual:213` 的「换成」。
+        body = "\n".join(x for x in text.splitlines() if "换成@图片" in x)
+        seg = body.split("@视频1中", 1)[-1]
+        parts = [x for x in re.split(r"[，。]", seg) if "换成@图片" in x]
+        got = [x.strip() for x in parts]
+        # 只换一个人时「句数互异」恒真（本来就只有 1 句），真正该问的是
+        # **这句里有没有定位词**。判据按效果写：退到泛称「画面中的人物」
+        # 就是取不出定位词（方位没有、描述也凑不出人物短语），其余都算有。
+        has_loc = bool(got) and all("画面中的人物" not in x for x in got)
         return [_strip_ids(x) for x in got], has_loc
     # 🩸 2026-10-26（修 D41）：这里原来是 `return [_strip_ids(x) for x in got], True`
     # 后面跟着 `idx = …` 两行**永远执行不到的**代码 —— `got` 只在 minimax 分支里赋过值，
@@ -263,7 +262,7 @@ def main() -> int:
     if "h3" in want:
         h3 = [r for r in rows if r[3] == "H3"]
         ok_ext = sum(1 for r in h3 if r[7])
-        print("H3 列：抽取已按 `subject_definitions` 的现行写法校准（D31），"
+        print("H3 列：抽取已按**手写入口**的现行写法校准（`参考视频1做人物替换。` + `@图片N`），"
               f"{ok_ext}/{len(h3)} 组抽到的句数 = 应换人数。")
 
     print(f"{'人数':<6}{'方位':<26}{'描述':<24}{'通道':<10}{'句数':<6}{'互异':<6}{'闸'}")

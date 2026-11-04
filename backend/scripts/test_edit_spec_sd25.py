@@ -324,6 +324,93 @@ def run() -> None:
           models.adapter_for(model="doubao-seedance-2-5-260628").caps.align_8n1, True)
 
     # ------------------------------------------------------------------
+    # 人物槽位按「首次出场顺序」排（2.5 专属能力开关）
+    # 官方《Doubao Seedance 2.5 提示词指南》「角色对应错误」
+    # （`pull-2026-11-03/prompt-guide.md:429`）：
+    #   「多人物视频中，角色与参考图片、音色或出场顺序发生错位……按人物
+    #    **首次出场顺序**上传参考素材，并同步调整提示词中的图片、音频编号」。
+    # 实现在 `video_edit.order_persons_by_appearance`，只有
+    # `caps.order_by_appearance=True` 的型号才走。
+    # ------------------------------------------------------------------
+    print("== 人物按首次出场顺序排（2.5 编辑任务）==")
+    from pathlib import Path as _P  # noqa: E402
+
+    def _inv(p1_start: float, p2_start: float) -> dict:
+        return {"people": [
+            {"id": "P1", "position": "left",
+             "appearances": [{"start": p1_start, "end": 9.0}]},
+            {"id": "P2", "position": "right",
+             "appearances": [{"start": p2_start, "end": 9.0}]},
+        ]}
+
+    _spec = edit_spec.normalize({"person": True, "person_ids": ["P1", "P2"]})
+    _refs = {"person": _P("p1.jpg"), "person2": _P("p2.jpg")}
+
+    # ① 勾选顺序和出场顺序相反 → 必须重排，**图跟着人走**
+    _s2, _r2, _mv = video_edit.order_persons_by_appearance(
+        _spec, _refs, _inv(5.0, 1.0))
+    check("反序 → 重排成出场顺序", _s2["change"]["person_ids"], ["P2", "P1"])
+    check("图跟着人走（P1 的图到第 2 槽）", str(_r2["person2"]), "p1.jpg")
+    check("换位数 = 2", _mv, 2)
+
+    # ② 本来就是对序 → 原样返回，不动
+    _s3, _r3, _mv3 = video_edit.order_persons_by_appearance(
+        _spec, _refs, _inv(1.0, 5.0))
+    check("已是对序 → 不重排", (_mv3, _s3["change"]["person_ids"]), (0, ["P1", "P2"]))
+
+    # ③ 带 asset://（火山真人素材）→ 不重排（ref_plan 只认 person 槽，
+    #    重排会把素材绑到别人身上）
+    _s4, _r4, _mv4 = video_edit.order_persons_by_appearance(
+        _spec, _refs, _inv(5.0, 1.0), subject_asset="asset-123")
+    check("带 asset → 不重排", (_mv4, _s4["change"]["person_ids"]), (0, ["P1", "P2"]))
+
+    # ④ 盘点没有出场时间 → 不猜，保持原顺序
+    _none = {"people": [{"id": "P1"}, {"id": "P2"}]}
+    _s5, _r5, _mv5 = video_edit.order_persons_by_appearance(_spec, _refs, _none)
+    check("没有出场时间 → 不猜", (_mv5, _s5["change"]["person_ids"]), (0, ["P1", "P2"]))
+
+    # ⑤ 成对反证：不重排时 P2 的图仍在第 2 槽 —— 证明「图跟着人走」不是恒真
+    check("反证：不重排时槽位没动",
+          (str(_r5.get("person")), str(_r5.get("person2"))), ("p1.jpg", "p2.jpg"))
+
+    check("2.5 打开 order_by_appearance",
+          models.adapter_for(model="doubao-seedance-2-5-260628")
+          .caps.order_by_appearance, True)
+
+    # ------------------------------------------------------------------
+    # 「一次只改一类」（默认关）—— 官方 2.5 指南「复杂任务效果不稳定」
+    # （`pull-2026-11-03/prompt-guide.md:738`）：一次承担多项参考/编辑要求 =
+    # 效果不稳定，要拆成多个简单任务。**这是用户开关，不是默认行为**。
+    # ------------------------------------------------------------------
+    print("== 一次只改一类（默认关）==")
+    check("默认关", edit_spec.defaults()["one_change"], False)
+    check("normalize 保留开关",
+          edit_spec.normalize({"person": True, "one_change": True})["one_change"], True)
+    check("分类：人物+场景", edit_spec.change_categories(
+        edit_spec.normalize({"person": True, "scene": True})), ["person", "scene"])
+    check("风格参考图也算「风格」", edit_spec.change_categories(
+        edit_spec.normalize({"style_ref": True})), ["style"])
+    # 🩸 `normalize` 只在 `wardrobe=True` 时才保留名单（`edit_spec.py:275`），
+    # 光给 `wardrobe_ids` 会被清空 —— 断言要按前端真正发出来的形状喂。
+    check("换装名单也算「服装」", edit_spec.change_categories(
+        edit_spec.normalize({"wardrobe": True, "wardrobe_ids": ["P1"]})), ["wardrobe"])
+
+    def _raise_kind(raw):
+        """返回 'ok' 或 'EditError'，用来成对验鉴别力。"""
+        try:
+            video_edit.check_one_change(edit_spec.normalize(raw))
+            return "ok"
+        except video_edit.EditError:
+            return "EditError"
+
+    check("开关关 → 同时改两类也放行", _raise_kind(
+        {"person": True, "scene": True}), "ok")
+    check("开关开 + 只改一类 → 放行", _raise_kind(
+        {"person": True, "one_change": True}), "ok")
+    check("开关开 + 改两类 → 拦下", _raise_kind(
+        {"person": True, "scene": True, "one_change": True}), "EditError")
+
+    # ------------------------------------------------------------------
     # 2026-10-28（2.5 轮，当前产出实测抓到）：**只换装不换人**时，
     # 【编辑目标】和【目标素材职责】两条都没有主人称谓 ——
     #   「只把的服装换成@图片1中的服装」（中心词为空 → 病句）

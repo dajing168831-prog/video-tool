@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 MODELS = {
     "volc20": ("ruler_sd20", "火山 Seedance 2.0"),
     "volc25": ("ruler_sd25", "火山 Seedance 2.5"),
+    # 🔓 2026-11-03 接回机械版：改片尺子 `ruler_h3`（Ref2VA 六段式）。
     "h3": ("ruler_h3", "MiniMax H3"),
 }
 

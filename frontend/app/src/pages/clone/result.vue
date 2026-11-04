@@ -142,12 +142,14 @@ export default {
       if (warns.length) return '质检提醒：' + warns[0]
       return ''
     },
-    // 身份核对：**换脸到底换上了没有**。后端本地 OpenCV 算的（SFace 余弦，
-    // ≥0.363 判同人），零成本、每次出片自动跑。写成数出来的值而不是我的观感 ——
-    // 10-25 双人换人那次，我盯着 480p 截图判错了两次（先说两个都换上了）。
+    // 身份核对：后端本地 OpenCV 算的（SFace 余弦，≥0.363 算同人），零成本、
+    // 每次出片自动跑。🩸 **这里只报数，不下「换上没换上」的结论**（2026-11-03
+    // 主人定）—— 那个结论是尺子，判错过两次，撤了。只看三个数 + 抽帧自己定。
+    //   share = 命中帧占比，最接近「全片都换对了」；p90 防一帧幸运；best 只做参考
+    // 标红只用在「明显离谱」上（share 低到 20% 以下），其余一律中性报数。
     idBad() {
       const it = (this.d && this.d.identity) || {}
-      return (it.people || []).some((p) => p.verdict === 'not_swapped')
+      return (it.people || []).some((p) => p.note === 'measured' && (p.share || 0) < 0.2)
     },
     idNote() {
       const it = (this.d && this.d.identity) || {}
@@ -158,22 +160,17 @@ export default {
       const who = (p) => (/^person(\d+)?$/.test(p.slot)
         ? `人物${p.slot === 'person' ? 1 : p.slot.replace('person', '')}`
         : p.slot)
-      const th = it.threshold || 0.363
-      const bad = ps.filter((p) => p.verdict === 'not_swapped')
-      if (bad.length) {
-        const b = bad[0]
-        return `⚠ 换脸可能没成功：${bad.map(who).join('、')}最像的一帧只有 ${b.best_sim}，`
-          + `九成帧不超过 ${b.p90}（同人线 ${th}）`
+      const measured = ps.filter((p) => p.note === 'measured')
+      if (measured.length) {
+        const parts = measured.map((p) => `${who(p)} `
+          + `${Math.round((p.share || 0) * 100)}% 的帧像参考图`
+          + `（九成帧 ≤ ${p.p90}，最像一帧 ${p.best_sim}）`)
+        return `身份核对：${parts.join('；')}`
       }
-      const ok = ps.filter((p) => p.verdict === 'swapped')
-      if (ok.length) {
-        const o = ok[0]
-        return `身份核对：${ok.map(who).join('、')}已换上（最像的一帧在第 ${o.at} 秒，相似度 ${o.best_sim}）`
-      }
-      if (ps.some((p) => p.verdict === 'no_face')) {
+      if (ps.some((p) => p.note === 'no_face')) {
         return '身份核对：片子里没找到人脸，这一版核对不了'
       }
-      if (ps.some((p) => p.verdict === 'no_ref')) {
+      if (ps.some((p) => p.note === 'no_ref')) {
         return '身份核对：参考图里认不出人脸，这一版核对不了'
       }
       return ''

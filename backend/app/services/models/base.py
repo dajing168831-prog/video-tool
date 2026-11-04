@@ -67,6 +67,8 @@ class Caps:
     shot_looks: bool = False
     #: 参考段帧数要不要卡成 8n+1（2.5 的编辑任务）
     align_8n1: bool = False
+    #: 人物槽位要不要按「首次出场顺序」排（2.5 指南「角色对应错误」）
+    order_by_appearance: bool = False
     #: 某一镜里没出现的人，要不要把它的参考图摘掉并重编号（H3 官方要求每张图都有定义）
     drop_absent_people: bool = False
     #: 边界帧是不是走「提示词内定义」（H3 / 2.5）

@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>MiniMax H3 官方资料 · 思维导图（2026-11-02）</title>
+<title>MiniMax H3 官方资料 · 思维导图（2026-11-03 补漏版）</title>
 <style>
   :root{
     --bg:#0f1216; --panel:#151a21; --line:#2a323d; --fg:#e6edf3; --dim:#8b98a5;
@@ -51,7 +51,8 @@
 <body>
 <header>
   <h1>MiniMax H3 官方资料 · 思维导图</h1>
-  <div class="sub">2026-11-02 全源核验 · 结论：<b>没有任何一份官方资料比本工程手里的更新</b>；HuggingFace 的 Prompting Guidance 已拿到，= 我们已有的 ref-en / base-en（逐字节相同）</div>
+  <div class="sub">2026-11-02 全源核验 · 结论：<b>没有任何一份官方资料比本工程手里的更新</b>；HuggingFace 的 Prompting Guidance 已拿到，= 我们已有的 ref-en / base-en（逐字节相同）<br>
+  <b style="color:#f85149">2026-11-03 补漏</b>：官方<b>换人样例 6 条全在飞书手册</b>（④ 节点内），<code>ref-en</code> 六段式里一条都没有 —— 换人只有一个出处 = 手册</div>
   <div class="legend">
     <span><i class="dot" style="background:var(--ok)"></i><b>最新 / 已核对一致</b></span>
     <span><i class="dot" style="background:var(--warn)"></i><b>旧版 / 官方自相矛盾</b></span>
@@ -144,9 +145,28 @@
       <li>
         <div class="node lv1" data-k="飞书">④ 飞书官方《H3 模型 - 使用手册》 <span class="meta">rev 1328（我们是 1327）</span></div>
         <ul>
-          <li><div class="node st-ok">公式：参考素材说明 + 核心创意 + 画面过程说明</div></li>
-          <li><div class="node">素材用途表 <span class="meta">含「视频编辑（对视频某个内容进行增删改）」·「想保持的特征明确写出来」</span></div></li>
-          <li><div class="node">三类模式写法 / 镜头怎么拆 / 6 条踩坑</div></li>
+          <li><div class="node st-ok">公式：参考素材说明 + 核心创意 + 画面过程说明 <span class="meta">:244</span></div></li>
+          <li><div class="node">素材用途表 <span class="meta">:248 · 含「视频编辑（对视频某个内容进行增删改）」·「人物参考（锁定脸/形象）」</span></div></li>
+          <li><div class="node">三类模式写法 <span class="meta">:262-267</span> / 镜头怎么拆 <span class="meta">:253-261</span> / 6 条踩坑 <span class="meta">:269-278</span></div></li>
+          <li><div class="node st-bad">★ 换人样例全在这里 —— <b>6 条，全是自然语言短句</b> <span class="meta">2026-11-03 补：上一轮漏了这一整块</span></div>
+            <ul>
+              <li><div class="node st-ok">§3.1 角色与物体编辑 <span class="meta">:207-213</span></div>
+                <ul>
+                  <li><div class="node">「把视频中的猫换成狗」 <span class="meta">:211</span></div></li>
+                  <li><div class="node">「画面左边增加一个穿着相同团队制服的人，动作与旁人保持一致」 <span class="meta">:212</span></div></li>
+                  <li><div class="node">「视频1中最后面的小孩换成 图1中的金毛狗，视频1中最左边小孩穿的卡其色外套改成图2中的牛仔外套」 <span class="meta">:213 · 多人 + 多图 + 局部换装</span></div></li>
+                </ul>
+              </li>
+              <li><div class="node st-ok">§2.2 角色、动作与镜头参考 <span class="meta">:185-192</span></div>
+                <ul>
+                  <li><div class="node"><b>★ 最贴近复刻的一条</b>：「参考视频1进行动作模仿。固定机位全景镜头，正视频中三个穿西装的男人替换为三只高度写实的水豚。水豚必须严格遵循原视频的运动轨迹…保持原有的固定机位不变。确保水豚的毛发质感和光影与环境融合」 <span class="meta">:192 · 多人替换 + 保住轨迹/机位/光影</span></div></li>
+                  <li><div class="node">「图1的人物动作、表情与表演节奏严格参考输入视频1」 <span class="meta">:189</span></div></li>
+                  <li><div class="node">「人物参考视频1的动作，表演街舞，人物参考图1 图2」 <span class="meta">:190</span></div></li>
+                </ul>
+              </li>
+              <li><div class="node st-warn">能力声明：<b>角色替换</b> / 替换、删除或增加人物与物体 <span class="meta">:201 · :203</span></div></li>
+            </ul>
+          </li>
           <li><div class="node st-ok">1327 → 1328 差异：只有排版，无规则增删</div></li>
         </ul>
       </li>

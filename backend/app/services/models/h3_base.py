@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """H3 创作模式（T2VA / I2VA / FL2VA / L2VA）的**判据本体** —— 22 条规则（B12 已于 2026-10-30 撤回，见 docs/_archive）。
 
-与 `h3_compile.py` 的六段式判据（`ruler_h3.py`）互不引用：同一家模型，两种模式
-规则**方向相反**（风格句 base 写在 `[Shot 1]` 之内 `base-en:78`，ref 写在之前
-`ref-en:230`），合并必然抄错一边。
+与 `h3_compile.py`（手写入口三段式，改片）的判据（`ruler_h3_handwrite.py`）
+互不引用：同一家模型，两种模式规则**方向相反**（风格句 base 写在 `[Shot 1]` 之内
+`base-en:78`，ref 写在之前 `ref-en:230`），合并必然抄错一边。
 
 官方依据：`data/official/h3/base-en.txt`（222 行，与官方 skill 同一份）。
 规则编号 B1–B28 与 `docs/PROMPT-AUDIT-H3-BASE.md` 一一对齐。

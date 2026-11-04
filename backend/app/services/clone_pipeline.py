@@ -937,7 +937,7 @@ def render(
                          if prev_path else 0.0),
             "segments": [],
             "qc": {"ok": True, "skipped": "只出了前几段，没有成片可质检"},
-            "identity": {"ok": True, "skipped": "预览段不核身份"},
+            "identity": {"skipped": "预览段不核身份", "people": []},
             "contract": {"ok": True, "verdict": "skipped",
                          "items": [], "failed": []},
             "replaced_shots": int(_meta["done_segments"]),
@@ -1116,7 +1116,7 @@ def render(
         if any(str(k).startswith("person") for k in (refs or {})):
             id_res = identity.check(out, refs)
         else:
-            id_res = {"ok": True, "skipped": "这次没换人，没有可比的对象", "people": []}
+            id_res = {"skipped": "这次没换人，没有可比的对象", "people": []}
     except Exception as e:  # noqa: BLE001
         id_res = {"ok": True, "skipped": f"核对没跑成：{e}", "people": []}
         log.warning("身份核对没跑成（不影响出片）：%s", e)
@@ -1142,8 +1142,9 @@ def render(
         "segments": segs,
         # 质检结果：ok / issues / warnings / stats（定格、音画时长差、总时长偏离）
         "qc": qc_res,
-        # 身份核对：ok / skipped / people[{slot,best_sim,at,faces_seen,verdict}]
-        # 判 swapped / not_swapped / no_face / no_ref —— 换脸到底换上了没有
+        # 身份核对：skipped / threshold / people[{slot,best_sim,p90,share,at,frames,note}]
+        # 🩸 **只报数，不下"换上没换上"的结论**（2026-11-03 主人定）。
+        #   看 `share`（命中帧占比，最接近"全片都换对了"）+ 抽帧确认。
         "identity": id_res,
         # 成品契约：口型滞后 / 段间身份 / 背景保住 —— 量产品，不量代码。
         # 结构 {ok, verdict: pass|fail|info|skipped, items[], failed[]}

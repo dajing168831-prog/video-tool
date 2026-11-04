@@ -114,8 +114,15 @@ def main() -> int:
         object.__setattr__(settings, "ark_api_key", "k")
         object.__setattr__(settings, "minimax_api_key", "k")
         object.__setattr__(settings, "public_base_url", "https://x.test")
+        # 🩸 2026-11-03 复刻下架 H3：`pick_channel` 的 auto 现在跳过 `Caps.frozen`
+        #   的家族。判据按注册表动态断言，不写死某一态（同 ff78059 的做法）。
+        from app.services import models as _models
+
+        _mm_frozen = "minimax" in _models.frozen_families()
         check("auto 无参考图 → 火山", video_edit.pick_channel("auto", subject_kind="none"), "volc")
-        check("auto 本地人物图 → MiniMax", video_edit.pick_channel("auto", subject_kind="file"), "minimax")
+        check("auto 本地人物图 → " + ("火山（H3 已冻结）" if _mm_frozen else "MiniMax"),
+              video_edit.pick_channel("auto", subject_kind="file"),
+              "volc" if _mm_frozen else "minimax")
         check("auto asset:// 素材 → 火山（官方合规口子）",
               video_edit.pick_channel("auto", subject_kind="asset"), "volc")
 
@@ -356,6 +363,41 @@ def main() -> int:
     check("单人镜头定声纹→人物", (got3[0], got3[1]), ("P1", "P2"))
     check("同框第 1 句靠声纹归对", got3[2], "P2")
     check("同框第 2 句靠声纹归对", got3[3], "P1")
+
+    # 🩸 2026-11-03 第三路证据：盘点的 `people[].speaks`（2.1 看视频时记下谁在动嘴）。
+    #   专治上面那种"三人全程同框、声纹也没锚点"的片子：动嘴的人唯一就能定人。
+    inv_s = {"people": [
+        {"id": "P1", "appearances": [{"start": 0, "end": 12}],
+         "speaks": [{"start": 0.5, "end": 2.0}, {"start": 9.2, "end": 10.4}]},
+        {"id": "P2", "appearances": [{"start": 0, "end": 12}],
+         "speaks": [{"start": 4.5, "end": 6.0}]},
+    ]}
+    rec5 = {"voice_lines": [
+        {"start": 0.5, "end": 2.0, "text": "同框甲", "asr_speaker": "1"},
+        {"start": 4.5, "end": 6.0, "text": "同框乙", "asr_speaker": "2"},
+        {"start": 9.2, "end": 10.4, "text": "同框丙", "asr_speaker": "1"},
+    ]}
+    video_edit._assign_speakers(rec5, inv_s)
+    got5 = [x.get("speaker") or "" for x in rec5["voice_lines"]]
+    check("全程同框时靠「谁在动嘴」定人", got5, ["P1", "P2", "P1"])
+    # 两个人同时在动嘴 → 弃权（和"两人同框不瞎标"同一条原则）
+    inv_two = {"people": [
+        {"id": "P1", "appearances": [{"start": 0, "end": 12}],
+         "speaks": [{"start": 0.5, "end": 2.0}]},
+        {"id": "P2", "appearances": [{"start": 0, "end": 12}],
+         "speaks": [{"start": 0.8, "end": 2.2}]},
+    ]}
+    rec6 = {"voice_lines": [{"start": 0.5, "end": 2.0, "text": "抢话",
+                             "asr_speaker": "1"}]}
+    video_edit._assign_speakers(rec6, inv_two)
+    check("两个人同时在动嘴就不标", rec6["voice_lines"][0].get("speaker", ""), "")
+    # 老盘点没有 `speaks` 字段 → 行为与今天完全一样（不许因为加字段而改变老结果）
+    inv_old = {"people": [{k: v for k, v in p.items() if k != "speaks"}
+                          for p in inv_s["people"]]}
+    rec7 = {"voice_lines": [{"start": 0.5, "end": 2.0, "text": "老盘点",
+                             "asr_speaker": "1"}]}
+    video_edit._assign_speakers(rec7, inv_old)
+    check("老盘点（无 speaks）不标", rec7["voice_lines"][0].get("speaker", ""), "")
 
     # 声纹编号对不上号时（新文案换了人念）不瞎标：画面判不出 → 空
     rec4 = {"voice_lines": [

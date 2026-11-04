@@ -135,51 +135,57 @@ def phase_25() -> None:
 
 
 def phase_h3() -> None:
+    """H3 复刻 = **手写入口三段式**（`h3-manual:244`）。
+
+    🔓 2026-11-03 换体裁：旧断言锁的是 Ref2VA 六段式（`<Subject N> is the person
+    in <Picture N>`）。官方换人样例 6 条**全在手册**、六段式里 0 条 —— 体裁换了，
+    断言必须跟着换（`spec-must-match-genre`），否则守的就是一条不存在的规则。
+    """
     p = prompt(H3)
-    chk("H3 用官方 <Subject N> 结构", "<Subject 1> is the person in <Picture 1>" in p,
-        p[:120])
-    chk("H3 不带火山的 @图片 / @视频 语法",
-        "@图片" not in p and "@视频" not in p)
+    chk("H3 用官方「参考素材说明」段（h3-manual:244）",
+        "【参考素材说明】" in p, p[:120])
+    # 官方 `:248` 的标法就是 @图片N / @视频N / @音频N（手册示例逐字）。
+    chk("H3 用官方 @图片N / @视频N 标法（h3-manual:248）",
+        "@图片1" in p and "@视频1" in p, p[:160])
+    chk("H3 不回流六段式标号（<Picture/<Subject）",
+        "<Picture" not in p and "<Subject" not in p, p[:160])
+    chk("H3 不写六段式字段名",
+        "subject_definitions" not in p and "retention_analysis" not in p, p[:160])
+    # 🩸 2026-11-04：改成 `h3-manual:284` 实际范例的冒号式 `@图片N：用途（…）`。
+    chk("每张图都有用途句（h3-manual:248 + :284 冒号式）",
+        all(f"@图片{i}：" in p for i in range(1, len(PRODUCT) + 1)), p[:200])
+    # 「不是他的就不要串啊」：别家模板句不许混进来
+    for w in ("唯一编辑母版", "其他人物、道具和背景保持原样", "色调和光线方向"):
+        chk(f"H3 不串别家句「{w}」", w not in p, p[:160])
 
 
 def phase_h3_boundary() -> None:
-    """分段续接：上一段尾帧必须按官方「第一帧锚点」写。
+    """分段续接：上一段尾帧必须按官方**「关键帧」**写。
 
-    依据：H3 接口 `first_frame` / `last_frame` 与 `reference_image` / `reference_video`
-    **互斥**（官方创建任务文档），所以这张图只能按 reference_image 发；提示词侧官方
-    允许 `<Picture N>` 当"目标视频的第一帧"（ref-en.txt:62），任务类型写
-    `[video editing + keyframe completion]`（:141），六段全英文（:3-5）。
-    2026-10-22 实测反面：旧写法只有一句中文挂在 `non_diegetic_music` 段后面、
-    `<Picture 5>` 从未定义 → 第 2 段开头 3 秒原片人物整段回灌。
+    依据：`h3-manual:248` 用途表「关键帧（锁定帧，如果有首帧尾帧需求明确提出）」；
+    `:266` 示例「@图片1 是首帧参考图：…」。旧 Ref2VA 写法是
+    `<Picture 5> is the first frame of the target video` —— 那套字段今天已经不存在了。
     """
-    ch = "minimax"
     p = edit_spec.compile_prompt(
-        ch, SPEC, model=H3, source_people=PEOPLE, slots=PRODUCT,
+        "minimax", SPEC, model=H3, source_people=PEOPLE, slots=PRODUCT,
         desc_by_id=DESC, audio_ref=True, boundary_pic=5)
-    head = p.split("summary:")[0]
-    chk("边界帧在 subject_definitions 里被定义",
-        "<Picture 5> is the first frame of the target video" in head)
-    chk("边界帧占到了 <Picture 5> 这个号（正文别处不许再指错）",
-        p.count("<Picture 5>") >= 3, str(p.count("<Picture 5>")))
-    # 官方 ref-en.txt:141：多任务类型用 ` + ` 组合（例如编辑+口型时也照此叠加）
-    chk("summary 的任务类型叠加了 keyframe completion",
-        "+ keyframe completion]" in p.split("retention_analysis:")[0])
-    # 🩸 E4（2026-10-23）：官方 4.1 的关系标记是封闭四值（ref-en.txt:161-168），
-    # `keyframe completion` 是 summary 的任务类型（:134），不能当标记用。
-    # 官方 Picture entry 示例（:179）用的就是 fully_preserved。
-    chk("retention_analysis 用官方关系标记（封闭四值）",
-        "<Picture 5> (the target video's first frame): fully_preserved" in p)
-    chk("detailed_description 先说从哪一帧开始",
-        "The target video begins exactly from <Picture 5>" in p)
-    chk("边界句不再挂在 non_diegetic_music 段之后",
-        "（上一段成片的最后一帧）" not in p)
-    chk("六段全英文（官方 ref-en.txt:3-5）",
-        not any("一" <= c <= "鿿" for c in p))
-    # 反证：没有边界帧时不许凭空出现第一帧锚点
+    chk("边界帧有用途句「关键帧」（h3-manual:248 + :284 冒号式）",
+        "@图片5：关键帧（锁定帧）" in p, p[:300])
+    chk("正文先说从这一帧开始（h3-manual:266 排布）",
+        "画面从@图片5定义的首帧自然开始。" in p, p[:300])
+    # 🩸 2026-11-04：正文拆成 `h3-manual:244` 的三段后，续接句属于
+    #   `【画面过程说明】`（"画面怎么走"从第一帧开始）。判据跟着改成
+    #   「在本段最前、且在两条保持句之前」，不再要求它跑到【核心创意】前面 ——
+    #   那是旧的一段式排布，官方三段公式里没有这个顺序要求。
+    chk("续接句在【画面过程说明】里、且排在本段最前",
+        "【画面过程说明】" in p
+        and p.index("【画面过程说明】")
+        < p.index("画面从@图片5定义的首帧自然开始。")
+        < p.index("替换后的人物必须严格遵循"), p[:300])
+    # 反证：没有边界帧时不许凭空出现关键帧句
     p0 = prompt(H3)
-    chk("没有边界帧就不写第一帧锚点",
-        "is the first frame of the target video" not in p0
-        and "keyframe completion" not in p0)
+    chk("没有边界帧就不写关键帧句",
+        "关键帧" not in p0 and "首帧自然开始" not in p0, p0[:200])
 
 
 def common(tag: str, p: str) -> None:
@@ -249,36 +255,30 @@ def phase_scene_and_defs(sel: str) -> None:
     chk("换场景时强制关掉「保持背景」", s["keep"]["background"] is False)
     p = edit_spec.compile_prompt("minimax", s, model=H3, slots=["scene"])
     chk("换场景后提示词不再说背景照原片",
-        "background environment" not in p, p[:200])
-    chk("换场景后不再写「props and background remain unchanged」",
-        "props and background remain unchanged" not in p, p[:200])
-    chk("换场景后保留句改成「people and props」",
-        "people and props remain unchanged" in p or
-        "people and props in <Video 1> stay" in p, p[:200])
-    chk("场景转移不再声称连灯光一起换（灯光按 keep 开关走）",
-        "materials and lighting of <Picture" not in p, p[:200])
+        "背景保持原样" not in p and "background environment" not in p, p[:200])
+    # 手写入口没有单独的「保留句」，换场景就只写一句换背景
+    # （官方 `h3-manual:221`「视频1窗外的场景改成图1」），不许再补别家的闭环句。
+    chk("换场景句有落点（h3-manual:221）",
+        "背景场景替换为" in p, p[:200])
+    chk("换场景不串别家的范围闭环句",
+        "除以上明确修改对象外" not in p and "people and props remain unchanged" not in p,
+        p[:200])
     s2 = edit_spec.normalize({"change": {"scene": False}})
     chk("不换场景时背景照旧保持", s2["keep"]["background"] is True)
 
-    # 每张参考图都要在 subject_definitions 里点名（官方 ref-en.txt:35），
-    # 图号在**定义句内部**引用（ref-en:37「cite it inside that item's definition
-    # without adding a separate line」）。
-    # 🩸 号不能写死：`<Subject 2>` 是**被替换的原片人物**，服装号在它之后顺延
-    # （实测全换场景是 5）。认定义行的字样，号码从槽位表反查。
+    # 每张参考图都要有用途句（官方 `h3-manual:248`「写清每个素材的用途」）。
+    # 🩸 号不能写死：从槽位表反查（全换时服装是第 4 张）。
     p3 = prompt(H3)
-    _sd3 = p3.split("summary:")[0]
     _want_pic = edit_spec.image_index(PRODUCT)["wardrobe"]
-    _m_cloth = re.search(
-        r"<Subject \d+> is the clothing .*?shown in <Picture (\d+)>", _sd3)
-    chk("服装图在 subject_definitions 里有定义",
-        bool(_m_cloth) and int(_m_cloth.group(1)) == _want_pic, _sd3[:400])
+    chk("服装图有用途句",
+        f"@图片{_want_pic}：物体参考（锁定服装）" in p3, p3[:400])
 
-    # 定位词自带 the，模板再拼一个 → the the
+    # 产品定位词用中文 `product_target`（手写入口是中文正文，不拼英文定位词）
     s4 = edit_spec.normalize({"change": {"product": True,
-                                         "product_target_en": "the blue mug"}})
+                                         "product_target": "蓝色马克杯"}})
     p4 = edit_spec.compile_prompt("minimax", s4, model=H3, slots=["product"])
     chk("产品定位词不会出现 the the", "the the" not in p4, p4[:200])
-    chk("定位词仍然保留", "the blue mug" in p4, p4[:200])
+    chk("定位词仍然保留", "蓝色马克杯" in p4, p4[:200])
 
 
 def phase_positions(sel: str) -> None:
@@ -324,9 +324,10 @@ def phase_positions(sel: str) -> None:
     else:
         ph3 = edit_spec.compile_prompt("minimax", s, model=H3, slots=slots,
                                        source_people=ppl, desc_by_id=d)
-        chk("H3 多人写方位（ref-en:246）",
-            "the person on the left" in ph3 and "the person on the right" in ph3,
-            ph3[:200])
+        # 官方 `h3-manual:248`「如果有多个角色，**需要能指代清楚**」；
+        # `:213` 官方的指代写法就是方位（「最左边小孩」），所以中文正文用「画面左侧」。
+        chk("H3 多人写方位（h3-manual:248 / :213）",
+            "画面左侧的人物" in ph3 and "画面右侧的人物" in ph3, ph3[:200])
     # 🩸 上下分屏：只做 left/center/right 时两个人会一起判成 center
     # （2026-10-23 真实盘点 a47631b0 就是 28.4s 的上下分屏对比片）。
     tb = [{"id": "P1", "present": True, "position": "top",
@@ -352,8 +353,10 @@ def phase_positions(sel: str) -> None:
     elif sel == "h3":
         htb = edit_spec.compile_prompt("minimax", s, model=H3, slots=slots,
                                        source_people=tb, desc_by_id=dtb)
-        chk("上下分屏：H3 写 upper/lower part",
-            "in the upper part" in htb and "in the lower part" in htb, htb[:220])
+        # 官方 `h3-manual:248` 同样要求指代清楚；top/bottom 盘点要落成中文方位
+        # （只做 left/center/right 时两人会一起判成 center，2026-10-23 实测 a47631b0）。
+        chk("上下分屏：H3 写画面上方/下方",
+            "画面上方的人物" in htb and "画面下方的人物" in htb, htb[:220])
 
     if sel == "volc20":
         # 单人画面写方位 = 把人钉死在某一侧 → 不许写
@@ -367,7 +370,9 @@ def phase_positions(sel: str) -> None:
         # 盘点没给方位（老任务 / 识别失败）→ 退回原写法，不许崩
         pn = edit_spec.compile_prompt("minimax", s, model=H3, slots=slots,
                                       source_people=[{"id": "P1", "present": True}])
-        chk("盘点没给方位 → 退回原写法", "on the left" not in pn, pn[:160])
+        chk("盘点没给方位 → 退回外貌/泛称，不硬写方位",
+            "画面左侧" not in pn and "画面右侧" not in pn
+            and "画面上方" not in pn and "画面下方" not in pn, pn[:160])
 
 
 def main() -> int:

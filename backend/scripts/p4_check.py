@@ -65,25 +65,29 @@ def mk_fixture() -> tuple[str, dict, dict, list, Path]:
     src = d / "source.mp4"
     subprocess.run([
         media.ffmpeg_path(), "-y", "-v", "error",
-        "-f", "lavfi", "-i", "testsrc2=size=480x854:rate=30:duration=20",
-        "-f", "lavfi", "-i", "sine=frequency=440:duration=20",
+        "-f", "lavfi", "-i", "testsrc2=size=480x854:rate=30:duration=40",
+        "-f", "lavfi", "-i", "sine=frequency=440:duration=40",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "28",
         "-c:a", "aac", "-shortest", str(src)], check=True)
 
+    # 🩸 素材 40s（2026-11-03 复刻下架 H3 后改）。A1/A5/B1 测的是「多段之间
+    #   各自失效」，要求至少 2 段；段数由**通道的单段上限**决定（火山 30s / H3 15s）。
+    #   20s 素材在火山下只有 1 段，A5 会退化成空转（复用恒为 0，判据没有鉴别力）。
+    #   40s → 火山切 2 段、H3 切 3 段，两种态都测得出「只失效含改动的那段」。
     speech = []
-    for a, b, text in ((0.4, 6.0, "one two three"),
-                       (6.4, 13.0, "four five six"),
-                       (13.4, 19.5, "seven eight nine")):
+    for a, b, text in ((0.4, 12.6, "one two three"),
+                       (13.4, 25.8, "four five six"),
+                       (26.4, 39.5, "seven eight nine")):
         step = (b - a) / 3
         speech.append({"start": a, "end": b, "text": text,
                        "chars": [{"c": w, "s": round(a + step * i, 3),
                                   "e": round(a + step * (i + 1), 3)}
                                  for i, w in enumerate(text.split())]})
-    rec = {"source": {"duration": 20.0, "width": 480, "height": 854,
+    rec = {"source": {"duration": 40.0, "width": 480, "height": 854,
                       "fps": 30.0, "has_audio": True},
-           "shots": [{"i": 0, "start": 0.0, "end": 8.0},
-                     {"i": 1, "start": 8.0, "end": 14.0},
-                     {"i": 2, "start": 14.0, "end": 20.0}],
+           "shots": [{"i": 0, "start": 0.0, "end": 13.3},
+                     {"i": 1, "start": 13.3, "end": 26.6},
+                     {"i": 2, "start": 26.6, "end": 40.0}],
            "speech": {"lang": "en", "segments": speech}}
 
     # 人物参考图：换人物那条路一定带图；**一人一张原图**，prepare 不再派生大头照
@@ -174,7 +178,7 @@ def phase_a(cid: str, intent: dict, spans: list, wdir: Path) -> None:
     r4 = run_plan(cid, i3)
     hit = [x["label"] for x in r4["requests"]]
     chk("A5 只改开头一句 → 只有含改动的那段失效",
-        r4["totals"]["reuse_units"] == 1 and len(hit) == 1
+        r4["totals"]["reuse_units"] == len(spans) - 1 and len(hit) == 1
         and hit[0].startswith(f"{spans[0][0]:.1f}"),
         f'复用 {r4["totals"]["reuse_units"]}，请求 {hit}')
 
@@ -203,12 +207,15 @@ def phase_a(cid: str, intent: dict, spans: list, wdir: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def phase_b(cid: str, intent: dict, manifest: dict, spans: list, wdir: Path) -> None:
-    snap = wdir / "request_002.json"
+    # 🩸 快照不能写死 `request_002`：段数由通道的单段上限决定（H3 15s / 火山 30s），
+    #   20s 素材在 H3 下切 2 段、在火山下只有 1 段。2026-11-03 复刻下架 H3 后
+    #   auto 落到火山，写死 002 就会 `FileNotFoundError`（判据假红，不是功能坏了）。
+    snap = wdir / f"request_{len(spans):03d}.json"
     bak = snap.read_bytes()
     snap.unlink()
     r = run_plan(cid, intent)
     chk("B1 拿掉该段的请求快照 → 该段不再算复用（快照是必要条件）",
-        r["totals"]["reuse_units"] == 1,
+        r["totals"]["reuse_units"] == len(spans) - 1,
         f'{r["totals"]["reuse_units"]}/{r["totals"]["units"]} 复用')
     snap.write_bytes(bak)
 
@@ -302,9 +309,22 @@ def phase_c() -> None:
             f"（TTL 默认 {settings.clone_ttl / 86400:.0f} 天，过期的会被自动删）"
             " —— 跑一次出片后重跑本检查")
         return
-    pick = cands[0]
+    # 🧊 2026-11-03 复刻下架 H3：真跑记录里存的是**当时**的通道名。走已下架
+    #   通道的那条不能拿来回放 —— `pick_channel` 会按「入口已下架」直接拒
+    #   （`models/h3.py` 的墓碑）。跳过它换下一条仍在用的；全都没有就明说跳过。
+    from app.services import models as _models
+    _frozen = _models.frozen_families()
+    live = [c for c in cands
+            if (c["rec"].get("regen_channel") or "volc") not in _frozen]
+    if not live:
+        chk("C0 挑到一条真实出片", None,
+            f"目录里 {len(cands)} 条真跑全部走的是已下架通道"
+            f"（{', '.join(sorted(_frozen))}）—— 跳过，不并进通过数")
+        return
+    pick = live[0]
     cid, task, rec = pick["cid"], pick["task"], pick["rec"]
-    chk("C0 挑到一条真实出片", True, f"{cid[:12]} / {pick['rid'][:8]}（最新那份）")
+    chk("C0 挑到一条真实出片", True,
+        f"{cid[:12]} / {pick['rid'][:8]}（最新那份；跳过 {len(cands) - len(live)} 条已下架通道）")
     meta = rec.get("regen_meta") or {}
     e = rec["edit"]
     flat = {**(e.get("change") or {}), "keep": e.get("keep"),

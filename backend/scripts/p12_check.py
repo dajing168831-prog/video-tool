@@ -74,11 +74,7 @@ P20_IMG = prompt("volc", {"person": True, "style_ref": True},
                  ["person", "style_ref"], model=V20)
 P20_VID = prompt("volc", {"person": True, "style_video": True},
                  ["person"], model=V20, style_video=True)
-H3_PLAIN = prompt("minimax", {"person": True}, ["person"], model=H3)
-H3_IMG = prompt("minimax", {"person": True, "style_ref": True},
-                ["person", "style_ref"], model=H3)
-H3_VID = prompt("minimax", {"person": True, "style_video": True},
-                ["person"], model=H3, style_video=True)
+# 🧊 2026-11-03 复刻下架 H3：H3_PLAIN / H3_IMG / H3_VID 与下面的 S6 段一并撤掉。
 
 
 # ---------------------------------------------------------------------------
@@ -186,26 +182,7 @@ if SEL == "volc20":
         "高清电影质感" in P20_IMG and "不要生成水印" in P20_IMG, P20_IMG)
 
 # ---------------------------------------------------------------------------
-# S6 H3：风格是 Subject，不是 Video
-
-if SEL == "h3":
-    chk("S6 H3 风格图写成 `<Subject N> is the visual style shown in <Picture 2>`"
-        "（`ref-en:46` Styles 归 Subject、`:68` 风格图不单独建 Picture）",
-        re.search(r"<Subject \d+> is the visual style shown in <Picture 2>", H3_IMG) is not None,
-        H3_IMG)
-    chk("S6 H3 风格视频也从 `<Subject N>` 出发（`ref-en:88`）",
-        re.search(r"<Subject \d+> is the visual style shown in <Video 2>", H3_VID) is not None,
-        H3_VID)
-    chk("S6 H3 没有独立的 `<Video 2> is …` 定义行（`ref-en:78-86` Video 只管整片关系）",
-        re.search(r"(?m)^\s*<Video 2>\s+is\b", H3_VID) is None, H3_VID)
-    chk("S6 H3 有 retention_analysis 的 attribute_transfer 一行",
-        re.search(r"<Subject \d+> \(the whole target video\): attribute_transfer", H3_IMG)
-        is not None, H3_IMG)
-    chk("S6 H3 detailed_description 说的是「被替换」不是「保持原风格」",
-        "Its visual style, color grade and lighting are replaced by <Subject 3>" in H3_IMG
-        and "It keeps the visual style" not in H3_IMG, "")
-    chk("S6 H3 没有风格参考时照旧写 keep 原风格",
-        "It keeps the visual style, color grade and lighting of <Video 1>" in H3_PLAIN, "")
+# 🧊 2026-11-03 复刻下架 H3：S6（H3 风格参考的六段式写法）随编译器归档撤掉。
 
 # ---------------------------------------------------------------------------
 # S7 分诊：风格视频 → 整片走 video
@@ -229,9 +206,8 @@ chk("S7 只勾了第 1 镜：第 1 镜 video，其余 keep（用户的选择优�
 
 # 🩸 2026-10-31：2.0 的 15 秒总时长上限随参数表下架删除。旧型号传进来会回落
 #   2.5 那一档 ⇒ 它拿到的预算也是 30 秒，不再有「15 秒装不下」这条退路。
-chk("S8 型号表里有总时长上限，且 2.5=30 / H3=15",
-    (model_specs.volc(V25)["ref_video_total_sec"] == 30
-     and model_specs.minimax(H3)["ref_video_total_sec"] == 15), "")
+chk("S8 型号表里有总时长上限，2.5=30",
+    model_specs.volc(V25)["ref_video_total_sec"] == 30, "")
 chk("S8 已下架的 2.0 型号回落 2.5 → 预算按 30 秒算",
     model_specs.volc(V20)["ref_video_total_sec"] == 30, "")
 
@@ -242,10 +218,7 @@ c27, e27 = video_edit.style_video_budget("volc", V25, [(0.0, 27.0)])
 chk("S8 2.5 + 27 秒母版段 → 放行，且总时长不超 30",
     not e27 and 27.0 + c27 <= 30.0, f"{c27} {e27}")
 
-ch13, eh13 = video_edit.style_video_budget("minimax", H3, [(0.0, 13.0)])
-ch12, eh12 = video_edit.style_video_budget("minimax", H3, [(0.0, 12.0)])
-chk("S8 H3 自己的 15 秒口径：13 秒拦、12 秒放",
-    ch13 == 0.0 and bool(eh13) and not eh12 and ch12 > 0, f"{ch13}/{ch12}")
+# 🧊 2026-11-03：H3 的 15 秒预算断言随下架撤掉。
 
 cmulti, emulti = video_edit.style_video_budget(
     "volc", V25, [(0.0, 5.0), (5.0, 12.5), (12.5, 14.0)])
@@ -334,9 +307,8 @@ import tempfile as _tf
 from unittest import mock as _mock
 
 from app.services import ark as _ark_mod
-from app.services import minimax as _mm_mod
 from app.services import video_edit as _ve_mod
-from app.services.models import h3 as _h3_ad
+# 🧊 2026-11-03 复刻下架 H3：`minimax` 与 `h3` 适配器的 S10 断言一并撤掉。
 # 🩸 2026-10-31：2.0 已从复刻视频下架归档 → 火山侧改用现存 2.5 验接线
 from app.services.models import volc25 as _v25_ad
 
@@ -360,8 +332,6 @@ _ctx = lambda ch, model: {
 
 with _mock.patch.object(_ark_mod, "edit_video",
                         lambda p, **kw: _cap.update(volc=kw)), \
-        _mock.patch.object(_mm_mod, "reference_video",
-                           lambda s, **kw: _cap.update(h3=kw)), \
         _mock.patch.object(_ve_mod, "_public_url",
                            lambda s, c: "https://cdn/style.mp4"), \
         _mock.patch.object(_ve_mod, "_write_request", lambda *a, **k: None), \
@@ -372,29 +342,17 @@ with _mock.patch.object(_ark_mod, "edit_video",
             _v25_ad._submit(_ctx("volc", "doubao-seedance-2-5-260628"))
     except Exception as e:  # noqa: BLE001
         _cap["volc_err"] = repr(e)
-    try:
-        _h3_ad._submit(_ctx("minimax", "MiniMax-H3"))
-    except Exception as e:  # noqa: BLE001
-        _cap["h3_err"] = repr(e)
-
 chk("S10 火山真的把参考视频塞进了请求（公网 URL）",
     _cap.get("volc", {}).get("ref_videos") == ["https://cdn/style.mp4"],
     str(_cap.get("volc_err") or _cap.get("volc", {}).get("ref_videos")))
-chk("S10 H3 真的把参考视频塞进了请求（本地 Path 走上传）",
-    _cap.get("h3", {}).get("ref_videos") == [_style],
-    str(_cap.get("h3_err") or _cap.get("h3", {}).get("ref_videos")))
-chk("S10 两家都真的调到了自己的接口（提交逻辑确实在各自文件里）",
-    "volc" in _cap and "h3" in _cap, str(list(_cap)))
+chk("S10 真的调到了自己的接口（提交逻辑确实在各自文件里）",
+    "volc" in _cap, str(list(_cap)))
 chk("S10 截风格片段走重编码（实测 copy 切 2.0s 出来 2.067s）",
     "exact=True, audio=False" in
     (_ve_mod.__file__ and Path(_ve_mod.__file__).read_text(encoding="utf-8")), "")
 ark = (ROOT / "app" / "services" / "ark.py").read_text(encoding="utf-8")
-mm = (ROOT / "app" / "services" / "minimax.py").read_text(encoding="utf-8")
 chk("S10 ark.edit_body 接受 ref_videos 并按 reference_video 追加",
     "ref_videos: list[str] | None = None" in ark and 'for u in (ref_videos or [])' in ark, "")
-chk("S10 minimax.reference_video 接受 ref_videos",
-    "ref_videos: list[Path] | None = None" in mm
-    and "for extra in (ref_videos or []):" in mm, "")
 
 # ---------------------------------------------------------------------------
 

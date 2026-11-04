@@ -36,25 +36,7 @@ def _prompt_of(row) -> str:
     return max(strs, key=len) if strs else ""
 
 
-def _h3_sweep_prompts():
-    """H3 的 `sweep_cases()` 给的是参数，不是成品 —— 按 `sweep()` 同样的方式编译。"""
-    import ruler_h3 as R
-    from app.services import edit_spec
-
-    out = []
-    for name, chg, n, pos, picks, kw in R.sweep_cases():
-        frame = R._people(n, pos)
-        picked = [dict(frame[i]) for i in picks]
-        slots = ["person" if k == 0 else f"person{k + 1}"
-                 for k in range(len(picks))]
-        slots += list(kw.pop("_slots_extra", []))
-        text = edit_spec.compile_prompt(
-            "minimax", edit_spec.normalize(chg), model=R.H3_MODEL,
-            source_people=picked,
-            desc_by_id={p["id"]: {"zh": p["desc_zh"], "en": p["desc_en"]}
-                        for p in frame}, slots=slots, **kw)
-        out.append((f"sweep/{name}", text))
-    return out
+# 🧊 2026-11-03 复刻下架 H3：`_h3_sweep_prompts()` 随 `ruler_h3` 归档删除。
 
 
 #: 三家都编译一遍的**同一组输入**（只是数据，不含任何一家的规则）。
@@ -98,13 +80,31 @@ _REAL_ID = {"volc20": "doubao-seedance-2-0-mini-260615",
             "h3": "MiniMax-H3"}
 
 
+def _people(n: int, pos: str = "unique") -> list[dict]:
+    """跨型号共用的**纯数据**夹具（造盘点里的人物，不含任何一家的规则）。
+
+    🧊 2026-11-03 复刻下架 H3：原来借用 `ruler_h3._people`，那个脚本随编译器归档，
+    这里按原文搬过来 —— 只搬数据，不搬任何 H3 的判定逻辑。
+    """
+    posmap = {"clash": ["center"] * n,
+              "unique": ["left", "right", "center", "top", "bottom"][:n],
+              "missing": [""] * n}
+    descs = ["a heavier-set man with hair in a topknot",
+             "a young woman with an elaborate updo",
+             "a young man in a grey robe",
+             "an old man in a dark cloak",
+             "a girl in a green dress"]
+    return [{"id": f"P{i + 1}", "present": True, "position": posmap[pos][i],
+             "desc_en": descs[i], "desc_zh": "",
+             "appearances": [{"start": 0.0, "end": 5.0}]} for i in range(n)]
+
+
 def _battery(model: str) -> list[tuple[str, str]]:
-    import ruler_h3 as R          # 只借用它的夹具（造盘点/人物的纯数据）
     from app.services import edit_spec
 
     real = _REAL_ID[model]
     ch = "minimax" if model == "h3" else "volc"
-    frame = R._people(2, "unique")
+    frame = _people(2, "unique")
     picked_all = [dict(frame[0]), dict(frame[1])]
     desc = {p["id"]: {"zh": p["desc_zh"], "en": p["desc_en"]} for p in frame}
     out = []
@@ -134,13 +134,8 @@ def collect(model: str) -> list[tuple[str, str]]:
         groups = [("current", R.current_cases()), ("sweep", R.sweep_cases())]
         return ([(f"{g}/{r[0]}", _prompt_of(r))
                  for g, rows in groups for r in rows] + _battery(model))
-    if model == "h3":
-        import ruler_h3 as R
-        out = [(f"current/{r[0]}", _prompt_of(r)) for r in R.current_cases()]
-        out += _h3_sweep_prompts()
-        out += _battery(model)
-        return out
-    raise SystemExit(f"未知型号：{model}")
+    # 🧊 2026-11-03 复刻下架 H3：`model == "h3"` 那一档随 `ruler_h3` 归档删除。
+    raise SystemExit(f"未知型号：{model}（H3 已于 2026-11-03 从复刻下架）")
 
 
 def fingerprints(model: str) -> dict[str, str]:

@@ -139,6 +139,12 @@ class EditIn(BaseModel):
     # 成片规格
     resolution: str = Field("auto", description="auto / 480p / 720p / 1080p / 768P / 2K")
     extra: str = Field("", description="补充说明，原样拼进提示词")
+    # 「一次只改一类」（2026-11-03）：**默认关**。打开后，同时勾了 ≥2 类改动
+    # （人物/产品/场景/服装/风格）会在出片前被拦下。出处：官方 2.5 指南
+    # 「复杂任务效果不稳定」→「将复杂任务拆解为多个简单任务」
+    # （`data/official/sd25/pull-2026-11-03/prompt-guide.md:738`）。
+    one_change: bool = Field(
+        False, description="开启后每次只能改一类（人物/产品/场景/服装/风格），多类会被拦")
 
 
 class RenderIn(BaseModel):
@@ -1734,7 +1740,7 @@ async def clone_render_detail(cid: str, rid: str):
                 "regen_meta": r.get("regen_meta") or {},
                 # 成片质量门结果：ok / issues / warnings / stats
                 "qc": r.get("qc") or {},
-                # 身份核对：换脸到底换上了没有（swapped / not_swapped / no_face / no_ref）
+                # 身份核对：只报数（share / p90 / best_sim + note），不下结论
                 "identity": r.get("identity") or {},
                 # 成品契约：口型滞后 / 段间身份 / 背景保住（量产品，不量代码）
                 "contract": r.get("contract") or {},

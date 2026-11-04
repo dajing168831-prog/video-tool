@@ -126,15 +126,17 @@ def phase_c() -> None:
     if SEL == "h3":
         h3 = edit_spec.compile_prompt("minimax", s, model="MiniMax-H3",
                                       source_people=people, slots=slots)
-        # 🩸 2026-10-24 更新断言：原片里被换的那个人也拿了编号（官方 `ref-en:88`
-        # 「参考视频里被复用为可见内容的人仍归在 <Subject N> 下」），所以两个换人
-        # 现在占 <Subject 1..4>：目标在第 1/3，原片那位在第 2/4。旧断言还按"一人一个编号"写。
-        chk("C8 H3：两个目标主体各绑自己的参考图",
-            "<Subject 1> is the person in <Picture 1>" in h3
-            and "<Subject 3> is the person in <Picture 2>" in h3)
-        chk("C9 H3：两条替换关系各绑各的主体、各自点名原片里的那个人",
-            "person (the woman in a red dress) in <Video 1>, and is replaced by <Subject 1>" in h3
-            and "person (the man in a blue shirt) in <Video 1>, and is replaced by <Subject 3>" in h3)
+        # 🔓 2026-11-03 换体裁：H3 复刻改成**手写入口**，标法从 `<Subject N>/<Picture N>`
+        #   换成官方 `h3-manual:248` 的 `@图片N`。判据意图不变，只换字面：
+        #   **两张图各有用途句、两条替换关系各绑各的图，不许串**。
+        # 🩸 2026-11-04：改成 `h3-manual:284` 实际范例的冒号式 `@图片N：人物参考（…）`。
+        chk("C8 H3：两张参考图各有用途句",
+            "@图片1：人物参考" in h3 and "@图片2：人物参考" in h3, h3[:200])
+        # 🩸 2026-11-04：换成 `h3-manual:213` 的逐字句式「…换成 图N中的…」
+        #   （官方精准换人样例原词），不再用自造的「替换为」。
+        chk("C9 H3：两条替换关系各绑各的图、各自点名原片里的那个人",
+            "换成@图片1中的人物" in h3 and "换成@图片2中的人物" in h3
+            and "穿红裙的女生" in h3 and "穿蓝衬衫的男生" in h3, h3[:300])
         return
     if SEL != "volc25":
         return

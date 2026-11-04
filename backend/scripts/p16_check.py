@@ -5,15 +5,19 @@
   S1 可用性   —— 模型在就 available()=真；把路径指歪 → 假，且 check 返回 skipped 不抛错
   S2 同人自证 —— 同一张图自比 ≈1.0；**水平翻转**后仍 ≥0.363（尺子没装反）
   S3 异人对照 —— 25 张参考图两两比对，看分布能不能把人和人分开
-  S4 四类判定 —— swapped / not_swapped / no_face / no_ref 各走一遍（桩）
-                 🩸 关键回归：**一张幸运帧高于阈值、但整体都低** 必须仍判 not_swapped
+  S4 三个数      —— best_sim / p90 / share 算得对不对 + note 三种取值（桩）
+                 🩸 关键回归：**一张幸运帧高于阈值、但整体都低** → best 高、p90 低
   S5 抽样上限 —— max_sec / step 真的生效（桩计数，不是「大概」）
-  S6 接线     —— 出片链路返回值有 identity；没换人不跑；预览不跑；结果页四种话都有
+  S6 接线     —— 出片链路返回值有 identity；没换人不跑；预览不跑；结果页三种话都有
+
+🩸 **2026-11-03 主人定：撤掉质量判定**（swapped/partial/not_swapped + 顶层 ok）。
+  这个模块从此**只报数**，换没换上由主人看 share + 抽帧定。S4/S6/S7 的断言
+  已从「标签对不对」改成「数算得对不对」。
 
 🩸 **尺子先自证**：S2 是正样本（定义上同人），S3 是分布（能不能分开）。
 S4 里那条「幸运帧」用的是 2026-10-25 的真实翻车样本
 （`2f1f26d8/0c656558`，`OPEN-DEFECTS.md` V25-2 先于本模块就记为「没换脸」）：
-最高帧 0.475 > 0.363 但 p90 0.332 —— 判据若不改，这个已知坏样本会被报成「换上了」。
+最高帧 0.475 > 0.363 但 p90 0.332 —— 只看最高值的话，这个已知坏样本会被报成「换上了」。
 
 校准样本量：**1 好 + 1 坏**。p16 不宣称「准确率已验证」，只宣称
 「逻辑对、已知坏样本不会假绿」。
@@ -103,8 +107,23 @@ else:
     #   （其余是 `test_subject_look` 造的 24 字节假图），下面取"中位数"时
     #   `pairs` 是**空集** → IndexError，整个 p16 变红。
     #   素材不够就**标跳过并写明**，不许崩、也不许空集当通过。
-    keys = [p.parent.name[:8] for p, _ in usable]
-    feats = [f for _, f in usable]
+    # 🩸 2026-11-03：先**按内容去重**再比。素材库里同一张参考图被多个任务复用
+    #   （22 张里只有 5 张不同，最长的一张重复 13 次），两两比对会被"自己比自己"
+    #   占满 → 中位 1.000，S3 假红。这里要判的是「**不同**素材之间能不能分开」，
+    #   同一张图的副本不算不同素材。
+    import hashlib  # noqa: PLC0415
+
+    _seen: set[str] = set()
+    uniq = []
+    for p, f in usable:
+        h = hashlib.sha1(p.read_bytes()).hexdigest()
+        if h in _seen:
+            continue
+        _seen.add(h)
+        uniq.append((p, f))
+    print(f"  [S3] 可认脸素材 {len(usable)} 张，去重后 {len(uniq)} 张")
+    keys = [p.parent.name[:8] for p, _ in uniq]
+    feats = [f for _, f in uniq]
     pairs = []
     for i in range(len(feats)):
         for j in range(i + 1, len(feats)):
@@ -130,7 +149,7 @@ else:
                   "不属于误判")
 
 # ---------------------------------------------------------------------------
-# S4 四类判定（桩：绕开真实图片，只测判定逻辑）
+# S4 三个数（桩：绕开真实图片，只测算术）
 
 
 class _FakeCap:
@@ -206,34 +225,40 @@ def _set_total(cap, frames):
     return cap
 
 
-# 全是高相似度 → 换上了
+# 🩸 2026-11-03 主人定：**撤掉质量判定**，只留机械检查。
+#   下面这些断言改成核"三个数算得对不对"，不再核 swapped/not_swapped 标签
+#   （那个标签是我自己发明的尺子，判错过两次）。
+#
+# 全是高相似度 → 每一帧都过线和每一个数都要对
 r = run_stub([0.8, 0.7, 0.75, 0.9])
-chk("S4 普遍像参考图 → swapped",
-    r["people"][0]["verdict"] == "swapped", str(r["people"][0]))
+_p = r["people"][0]
+chk("S4 普遍像参考图 → share=1.0 且 p90 过阈值",
+    _p["share"] == 1.0 and _p["p90"] >= identity.THRESHOLD, str(_p))
 
-# 普遍低 → 没换上
+# 普遍低 → 一帧都不该算命中
 r = run_stub([0.1, 0.2, 0.15, 0.25])
-chk("S4 普遍不像 → not_swapped",
-    r["people"][0]["verdict"] == "not_swapped", str(r["people"][0]))
+chk("S4 普遍不像 → share=0 且 p90 低于阈值",
+    r["people"][0]["share"] == 0.0
+    and r["people"][0]["p90"] < identity.THRESHOLD, str(r["people"][0]))
 
 # 🩸 关键回归：一帧幸运高、其余都低（真实翻车样本的形态）
 sims = [0.12] * 36 + [0.475, 0.16, 0.14, 0.18]
 r = run_stub(sims)
 p = r["people"][0]
-chk("S4 只有一帧高于阈值 → 仍判 not_swapped（最高值不能说了算）",
-    p["verdict"] == "not_swapped" and p["best_sim"] >= identity.THRESHOLD,
+chk("S4 只有一帧高于阈值 → best_sim 高但 p90 低（最高值不能说了算）",
+    p["best_sim"] >= identity.THRESHOLD and p["p90"] < identity.THRESHOLD,
     str(p))
-chk("S4 判定用的是 p90（同一份数据 p90 必须低于阈值）",
-    p["p90"] < identity.THRESHOLD, str(p))
+chk("S4 同一份数据 share 只有 0.1（抽 10 帧里 1 帧过线）",
+    abs(p["share"] - 0.1) < 1e-9, str(p["share"]))
 
 # 没脸
 r = run_stub([0.9], faces=False)
-chk("S4 成片里没有脸 → no_face", r["people"][0]["verdict"] == "no_face",
+chk("S4 成片里没有脸 → note=no_face", r["people"][0]["note"] == "no_face",
     str(r["people"][0]))
 
 # 参考图认不出
 r = run_stub([0.9], ref_ok=False)
-chk("S4 参考图认不出脸 → no_ref", r["people"][0]["verdict"] == "no_ref",
+chk("S4 参考图认不出脸 → note=no_ref", r["people"][0]["note"] == "no_ref",
     str(r["people"][0]))
 
 # 🩸 双人：一张脸只能算给一个人（2026-10-25 实测 `3f91496d` 只换成一个）
@@ -276,11 +301,11 @@ def _run_two_targets():
 
 r2 = _run_two_targets()
 _by = {x["slot"]: x for x in r2["people"]}
-chk("S4 双人：换进去的那张脸算给本人（person=0.90）",
-    _by["person"]["verdict"] == "swapped" and _by["person"]["p90"] == 0.9,
+chk("S4 双人：换进去的那张脸算给本人（person p90=0.90、share=1.0）",
+    _by["person"]["p90"] == 0.9 and _by["person"]["share"] == 1.0,
     str(_by.get("person")))
-chk("S4 双人：另一张参考只能拿自己那张脸 → not_swapped（不许串脸假绿）",
-    _by["person2"]["verdict"] == "not_swapped", str(_by.get("person2")))
+chk("S4 双人：另一张参考只能拿自己那张脸 → share=0（不许串脸）",
+    _by["person2"]["share"] == 0.0, str(_by.get("person2")))
 
 # 没换人 → 不跑
 r = identity.check(TMP / "x.mp4", {"wardrobe": TMP / "w.jpg"})
@@ -325,11 +350,13 @@ chk("S6 配方导出不夹带 identity（那是某一次产出的量具，不是
 
 res = (FRONT / "pages" / "clone" / "result.vue").read_text(
     encoding="utf-8", errors="ignore")
-chk("S6 结果页有身份提示这一行", "idNote" in res and "idBad" in res, "")
-chk("S6 结果页四种话都写了（换上 / 没换上 / 没脸 / 参考图认不出）",
-    all(k in res for k in ("已换上", "换脸可能没成功", "没找到人脸", "认不出人脸")), "")
-chk("S6 核对不了的情况不标红（只有 not_swapped 才 warn）",
-    "verdict === 'not_swapped'" in res, "")
+chk("S6 结果页有身份提示这一行", "idNote" in res, "")
+chk("S6 结果页三种话都写了（报数 / 没脸 / 参考图认不出）",
+    all(k in res for k in ("身份核对", "没找到人脸", "认不出人脸")), "")
+chk("S6 结果页只报数不下结论（不出现 swapped / not_swapped 这类标签）",
+    "not_swapped" not in res and "=== 'swapped'" not in res, "")
+chk("S6 结果页把 share 摆出来（最接近「全片都换对了」的那个数）",
+    "p.share" in res or "share" in res, "")
 
 # ---------------------------------------------------------------------------
 # S7 真样本回归（1 好 + 1 坏，都是**先于本模块**就有独立结论的）
@@ -344,10 +371,12 @@ if _vid and (_vid / "out.mp4").exists() and identity.available():
     by = {p["slot"]: p for p in _r["people"]}
     print(f"  [S7] 真样本：person(p90={by.get('person', {}).get('p90')}) "
           f"person2(p90={by.get('person2', {}).get('p90')})")
-    chk("S7 已知没换上的那位 → not_swapped（不能报假绿）",
-        by.get("person", {}).get("verdict") == "not_swapped", str(by.get("person")))
-    chk("S7 已知换成了的那位 → swapped",
-        by.get("person2", {}).get("verdict") == "swapped", str(by.get("person2")))
+    # 只核"数算得对不对"：已知没换上的那位 share 必须低，已知换上的那位 share 必须高。
+    # 不再核 swapped/not_swapped 标签（已撤，见 identity.py 顶部）。
+    chk("S7 已知没换上的那位 → share 低于 0.5（不能报假绿）",
+        (by.get("person", {}).get("share") or 0) < 0.5, str(by.get("person")))
+    chk("S7 已知换成了的那位 → share 高于 0.5",
+        (by.get("person2", {}).get("share") or 0) > 0.5, str(by.get("person2")))
 else:
     skip("S7 真样本回归", "样本成片不在本机")
 
@@ -363,11 +392,11 @@ if _vid2 and (_vid2 / "out.mp4").exists() and identity.available():
     by2 = {p["slot"]: p for p in _r2["people"]}
     print(f"  [S7b] 真样本：person(p90={by2.get('person', {}).get('p90')}) "
           f"person2(p90={by2.get('person2', {}).get('p90')})")
-    chk("S7b 双人只换成一个 → 没换的那位必须 not_swapped（不许串脸假绿）",
-        by2.get("person2", {}).get("verdict") == "not_swapped",
+    chk("S7b 双人只换成一个 → 没换的那位 share 必须低（不许串脸）",
+        (by2.get("person2", {}).get("share") or 0) < 0.5,
         str(by2.get("person2")))
-    chk("S7b 换成了的那位仍判 swapped",
-        by2.get("person", {}).get("verdict") == "swapped", str(by2.get("person")))
+    chk("S7b 换成了的那位 share 仍高",
+        (by2.get("person", {}).get("share") or 0) > 0.5, str(by2.get("person")))
 else:
     skip("S7b 双人真样本回归", "样本成片不在本机")
 

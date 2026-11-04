@@ -79,52 +79,41 @@ def lint(tag: str, p: str, *, model: str, spec: dict, slots: list[str],
                      ("..", "重复点号"), ("、、", "重复顿号")):
         chk(f"[{tag}] 没有{why}「{bad}」", bad not in p)
 
-    # ---- 标号必须先在 subject_definitions 里出现 ----
+    # ---- H3：**手写入口三段式**（`h3-manual:244`）----
+    # 🔓 2026-11-03 换体裁：H3 复刻从 Ref2VA 六段式改成手写入口。旧分支整段删掉，
+    #   改成反过来守「六段式不许回流」—— 体裁判错是 10 月那 26 次出不了片的根因
+    #   （`docs/H3-SOURCES-MINDMAP.md` §6.5：换人样例 6 条全在手册，六段式 0 条）。
     if ch == "minimax":
-        head = p.split("summary:")[0]
-        used = {m.group(0) for m in LABEL_RE.finditer(p)}
-        missing = sorted(x for x in used if x not in head)
-        chk(f"[{tag}] 用到的每个标号都有定义", not missing, f"没定义: {missing}")
-        chk(f"[{tag}] 六段式齐全",
-            all(s + ":" in p for s in ("subject_definitions", "summary", "retention_analysis",
-                                       "detailed_description", "overall_soundscape",
-                                       "non_diegetic_music")))
-        # 官方 ref-en.txt:3-5 要求六段用英文写。**例外**：用户自己填的描述原样带进来
-        # （只写描述、没传图时），那是用户的话，不是我们的模板句。
-        probe = p
-        for d in (c.get(f"{k}_desc") or "" for k in ("product", "scene", "wardrobe",
-                                                    "person")):
-            if d:
-                probe = probe.replace(d, "")
-        chk(f"[{tag}] 模板句全英文（用户描述除外）",
-            not any("一" <= x <= "鿿" for x in probe))
-        chk(f"[{tag}] <Audio 1> 与实际发不发音轨一致",
-            ("<Audio 1>" in p) == audio_ref)
-        chk(f"[{tag}] 边界帧号与实际一致",
-            (f"<Picture {boundary_pic}> is the first frame" in p) == bool(boundary_pic))
-        # 双人画面：尾帧里两个人都在，边界句不能只点名第一个人。
-        # 🩸 号不能写死 `<Subject 2>`：2 号是这个人**在原片里**的身份（被替换的那位），
-        # 边界帧要写的是换上去的那位 —— 两人换人时目标主体是 1 和 3（实测
-        # `D:/tmp/probe_h3_boundary.py`）。从定义行反查目标主体，不认号码。
-        if boundary_pic and n_people > 1:
-            m = re.search(r"showing (.+?)\. The target video must begin", p)
-            seg = m.group(1) if m else ""
-            pics = {pi[s] for s in slots if s.startswith("person")}
-            target = [n for n, pic in re.findall(
-                r"<Subject (\d+)> is the person in <Picture (\d+)>", p)
-                if int(pic) in pics]
-            # 反查不到目标主体 = 尺子失灵，判红（别让 all([]) 白过）
-            chk(f"[{tag}] 边界帧句点名所有在场主体",
-                bool(target) and all(f"<Subject {n}>" in seg for n in target), seg)
-        # 每个发出去的槽位都应该被提示词点到（否则图白传）。
-        # 例外：火山沿用「图号稳定」写法 —— 这一刀没出现的人，图照发、不点名
-        # （点名会把那张脸硬塞进画面）。H3 不走这条路：官方要求每张参考图都有
-        # 定义（ref-en.txt:35），所以 `_gen_spans` 按段把缺席者的图摘掉再重编号。
+        # 官方 `h3-manual:244`：参考素材说明 + 核心创意 + 画面过程说明
+        chk(f"[{tag}] 有【参考素材说明】段（h3-manual:244）", "【参考素材说明】" in p)
+        # 反向守卫：老体裁的任何痕迹都算红（换体裁就是不许它偷偷回来）。
+        for w in ("subject_definitions", "retention_analysis", "detailed_description",
+                  "non_diegetic_music", "<Picture", "<Subject", "<Audio", "<Video "):
+            chk(f"[{tag}] 不回流六段式「{w}」", w not in p)
+
+        # 官方 `h3-manual:248` 的用途表 + `:284` 实际范例的冒号式：`@图片N：用途（…）`。
+        head, _, body = p.partition("【参考素材说明】")
+        duties = body.split("\n\n")[0]
         for slot, n in pi.items():
             if slot in (absent or set()):
                 continue
-            chk(f"[{tag}] 槽位 {slot}（图{n}）在提示词里被点到",
-                f"<Picture {n}>" in p, p[:160])
+            chk(f"[{tag}] 槽位 {slot}（图{n}）有用途句",
+                f"@图片{n}：" in duties, duties[:200])
+        chk(f"[{tag}] @视频1 有用途句（h3-manual:248）", "@视频1：" in duties,
+            duties[:200])
+        chk(f"[{tag}] @音频1 与实际发不发音轨一致",
+            ("@音频1" in p) == audio_ref)
+        # 图号不许指向没发出去的图（边界帧那张是**额外**发的一张，号在 slots 之后）。
+        _lim = max(len(slots), boundary_pic or 0)
+        chk(f"[{tag}] 图号不超出实际张数",
+            all(1 <= int(n) <= _lim for n in re.findall(r"@图片(\d+)", p)),
+            re.findall(r"@图片(\d+)", p))
+
+        # 🩸 「不是他的就不要串啊」（主人 2026-11-03）：2.0/2.5 的模板句
+        #   H3 手册里没有，混进来就是把别家的规则搬过来。
+        for w in ("唯一编辑母版", "其他人物、道具和背景保持原样",
+                  "色调和光线方向", "除以上明确修改对象外", "面部特征和妆造"):
+            chk(f"[{tag}] 不串别家句「{w}」", w not in p)
 
     # ---- 只写描述、没传图：描述必须真的进提示词（接口层允许二选一）----
     for kind in ("product", "scene", "wardrobe"):
@@ -139,14 +128,18 @@ def lint(tag: str, p: str, *, model: str, spec: dict, slots: list[str],
             "background environment" not in p and "props and background remain unchanged" not in p
             and "背景、产品、画面布局" not in p,
             p[:200])
+        # H3 手写入口的换场景句是「把@视频1中的背景场景替换为…」
+        # （`h3-manual:221`「视频1窗外的场景改成图1」），比火山多一个「场景」两字。
         chk(f"[{tag}] 换场景时确实写了换背景",
-            "背景替换为" in p or "background of <Video 1> is replaced" in p
+            "背景替换为" in p or "背景场景替换为" in p
+            or "background of <Video 1> is replaced" in p
             or "background of <Video 1> becomes" in p)
         chk(f"[{tag}] 换场景时 keep.background 被关掉",
             spec["keep"]["background"] is False)
     else:
         chk(f"[{tag}] 不换场景时不写换背景",
-            "背景替换为" not in p and "the background of <Video 1> is replaced" not in p)
+            "背景替换为" not in p and "背景场景替换为" not in p
+            and "the background of <Video 1> is replaced" not in p)
 
     # ---- 范围闭环：官方**只有两种**，逐字，没有第三种（`sd25-pe:556-558`）----
     # 🩸 2026-10-22 这里原本断言「换场景时闭环句不再点名背景 / 换产品时不再点名道具」

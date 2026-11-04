@@ -83,8 +83,11 @@ def compile_for(cid: str) -> str:
 
 
 def subj_line(prompt: str) -> str:
+    """取「@图片1 的用途句」—— H3 手写入口里外观描述挂在这一行
+    （官方 `h3-manual:248`：素材用途 + 「非常想要保持的特征」）。"""
+    # 🩸 2026-11-04：换成 `h3-manual:284` 的冒号式 `@图片1：人物参考（…）`。
     for line in prompt.splitlines():
-        if line.startswith("<Subject 1> is the person in <Picture 1>"):
+        if line.startswith("@图片1：人物参考"):
             return line
     return ""
 
@@ -103,11 +106,14 @@ def main() -> int:
     check("读出来的描述", video_edit._look_for(clone_store.ref_path(cid, "person")),
           {"zh": "黑色短寸，浅蓝夹克", "en": "Black buzz cut, light blue jacket"})
     line = subj_line(compile_for(cid))
-    # 🩸 2026-10-24 22:35 纠正：H3 官方 `ref-en:51` 的骨架就是列具体特征
-    # （`<Subject 1> is the young woman in <Picture 1>, with long dark hair,
-    # a blue cardigan, …`），所以描述对得上就要写进去。
-    check_true("描述对得上就写进提示词", "Black buzz cut" in line, line)
-    check_true("按官方骨架写", line.startswith("<Subject 1> is the person in <Picture 1>, with "), line)
+    # 🔓 2026-11-03 换体裁：H3 复刻改成手写入口，外观描述挂在**素材用途句**的括注里
+    # （官方 `h3-manual:248`「如果素材中有非常想要保持的特征，建议明确写出来」，
+    #  写法照`:264` 的括注）。正文是中文，所以写的是 zh 那一句。
+    check_true("描述对得上就写进提示词", "黑色短寸" in line, line)
+    check_true("按官方范例骨架写（h3-manual:284 冒号式）",
+               line.startswith("@图片1：人物参考（"), line)
+    check_true("特征写进用途句括号里（h3-manual:248「建议明确写出来」）",
+               "黑色短寸，浅蓝夹克" in line, line)
 
     print("== 描述和图对不上（本次修的那条）==")
     other = {"desc_zh": "发髻高挽，黑色立领", "desc_en": "Tight bun, black collared top",
@@ -115,10 +121,12 @@ def main() -> int:
     cid2 = make_task("mismatch", img, other)
     check("读出来是空", video_edit._look_for(clone_store.ref_path(cid2, "person")), {})
     line2 = subj_line(compile_for(cid2))
-    check_true("提示词退回纯图号写法",
-               "with the face, hairstyle, body type and clothing shown there" in line2,
+    # 🩸 2026-11-04：用途句现在恒带「（锁图中人物的脸和形象）」这个括注，
+    #   所以不能再靠「有没有括号」判 —— 判的是**特征句**在不在。
+    check_true("提示词退回纯图号写法（不带特征句）",
+               "图中人物特征" not in line2, line2)
+    check_true("别人的外观没混进来", "发髻高挽" not in line2 and "Tight bun" not in line2,
                line2)
-    check_true("别人的外观没混进来", "Tight bun" not in line2, line2)
 
     print("== 没有指纹 / 描述为空 / 文件缺失 ==")
     cid3 = make_task("nofp", img, {"desc_zh": "x", "desc_en": "y"})
@@ -136,8 +144,8 @@ def main() -> int:
     print("== 一句话都写不出来时，提示词不能断句 ==")
     for name, c in (("对不上", cid2), ("无文件", cid5)):
         line = subj_line(compile_for(c))
-        check_true(f"{name}：不出现「with 。」", "with ." not in line, line)
-        check_true(f"{name}：主体定义以句号收尾", line.endswith("."), line)
+        check_true(f"{name}：不出现空括注「（）」", "（）" not in line, line)
+        check_true(f"{name}：用途句以句号收尾", line.endswith("。"), line)
 
     print("== 发出去了以后，还能不能查清「当时送的是哪张图」==")
     # 🩸 两次换脸复盘都卡在这里：参考图在出片后被换成另一张，磁盘上只剩文件名。

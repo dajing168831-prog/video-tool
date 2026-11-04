@@ -39,6 +39,7 @@ SNAP = BACK / "data" / "prompt_snapshot.json"
 CASE_MODULES = {
     "volc20": "snap_cases_sd20",
     "volc25": "snap_cases_sd25",
+    # 🔓 2026-11-03 接回机械版：`snap_cases_h3` 已搬回 `scripts/`。
     "h3": "snap_cases_h3",
 }
 

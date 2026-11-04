@@ -81,8 +81,9 @@ def main() -> int:
     #   不写死某一态 —— 否则每次冻结/解冻都要回来改一次判据（以前就是这样漏的）。
     from app.services import models as _models
     _h3_frozen = "minimax" in _models.frozen_families()
-    check("冻住 H3 → 界面不提供型号" if _h3_frozen else "复刻界面可选 H3 四档",
-          [m for m, _ in model_specs.MODELS["minimax"]],
+    check("H3 已从复刻永久下架（连 `MODELS` 的键都没有）" if _h3_frozen
+          else "复刻界面可选 H3 四档",
+          [m for m, _ in model_specs.MODELS.get("minimax", [])],
           [] if _h3_frozen else
           ["MiniMax-H3", "MiniMax-H3-Max", "MiniMax-H3-Highspeed", "MiniMax-H3-Lite"])
     check("H3 参数表仍在（冻结 ≠ 删除）",
@@ -191,8 +192,8 @@ def main() -> int:
     check("火山 1 个可选型号（只剩 2.5）", len(model_specs.MODELS["volc"]), 1)
     # 官方 V2「当前可用值」就是这四个（`h3-models`，2026-10-28 抓取）；
     # 冻住时按 0 断言，解冻后自动回到 4。
-    check("MiniMax 候选四档" if not _h3_frozen else "冻住 H3 → MiniMax 候选为空",
-          len(model_specs.MODELS["minimax"]), 0 if _h3_frozen else 4)
+    check("MiniMax 候选四档" if not _h3_frozen else "H3 下架 → MiniMax 候选为空",
+          len(model_specs.MODELS.get("minimax", [])), 0 if _h3_frozen else 4)
     for ch, items in model_specs.MODELS.items():
         # 🩸 空清单必须单独断言：下面那组检查对空列表**恒真**（0 == 0），
         #   不拦住就会把"一条候选都没有"报成"每个型号都有自己那一档"的假绿。

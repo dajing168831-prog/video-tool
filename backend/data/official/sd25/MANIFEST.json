@@ -1,0 +1,217 @@
+{
+  "family": "sd25",
+  "display": "Doubao Seedance 2.5（火山方舟）",
+  "model_prefixes": [
+    "doubao-seedance-2-5-"
+  ],
+  "one_rule": "一个型号一把尺：本目录以外的官方资料，与本家无关，不得引用。",
+  "aliases_note": "裸 `guide` 不是任何一家的缩写；引用一律写 `sd25-guide:` / `sd20-guide:`。",
+  "pulled_at": "2026-11-03",
+  "source_index": "https://ark.volcengine.com/llms.txt",
+  "files": [
+    {
+      "path": "pull-2026-11-03\\activation.md",
+      "role": "开通/使用/退订",
+      "abbr": "volc-activate",
+      "lines": 61,
+      "bytes": 4858,
+      "sha256": "1be63e06b15a4ee10b94264aa2597e3600cd55774f6bca6357fadcec348a12cc"
+    },
+    {
+      "path": "pull-2026-11-03\\api-cancel.md",
+      "role": "参考",
+      "abbr": "",
+      "lines": 175,
+      "bytes": 3954,
+      "sha256": "69aef3ffa27fbac35c9883dfa25b35a6014c5e552901a076e60b3a7d425250b7"
+    },
+    {
+      "path": "pull-2026-11-03\\api-create.md",
+      "role": "创建视频任务 API 全参数",
+      "abbr": "volc-api",
+      "lines": 3105,
+      "bytes": 120823,
+      "sha256": "a779514c668fc18272275f07351034078e5aeec9da98cb1352b11a083751f324"
+    },
+    {
+      "path": "pull-2026-11-03\\api-get.md",
+      "role": "参考",
+      "abbr": "",
+      "lines": 455,
+      "bytes": 11640,
+      "sha256": "cd48faa298cedb98bf09f4146a5495990f1370cff817469d65a316bc1db5f06b"
+    },
+    {
+      "path": "pull-2026-11-03\\api-list.md",
+      "role": "参考",
+      "abbr": "",
+      "lines": 840,
+      "bytes": 23640,
+      "sha256": "d807f91e30a655266ee84b6b0d941c2d442376576c6b696e46b47fb07b974b21"
+    },
+    {
+      "path": "pull-2026-11-03\\avatar-library.md",
+      "role": "虚拟人像库",
+      "abbr": "volc-avatar",
+      "lines": 64,
+      "bytes": 4240,
+      "sha256": "9b16c3ef4ceb24d37b8c40213a52bfb446208fde7c2df4195133665dc4207f52"
+    },
+    {
+      "path": "pull-2026-11-03\\copyright-video.md",
+      "role": "使用版权内容生成视频",
+      "abbr": "volc-copyright",
+      "lines": 148,
+      "bytes": 8233,
+      "sha256": "3b5766817715a2117d61e77257f395355d0592c270b1e87f33344926068c16fd"
+    },
+    {
+      "path": "pull-2026-11-03\\doc-skills.md",
+      "role": "官方文档 Skill 清单",
+      "abbr": "volc-docskill",
+      "lines": 136,
+      "bytes": 4730,
+      "sha256": "3cc4d7fee7f384ead24028f479250fb68f3a8bcea2cf2731bc136529c641ef6e"
+    },
+    {
+      "path": "pull-2026-11-03\\model-list.md",
+      "role": "全部模型 ID 与限流",
+      "abbr": "volc-models",
+      "lines": 787,
+      "bytes": 57554,
+      "sha256": "44b6838ceb0bd8891a6bb2442b1a365fc0af16126fcf5dfbf89c26acd1144e19"
+    },
+    {
+      "path": "pull-2026-11-03\\models.md",
+      "role": "模型卡",
+      "abbr": "sd25-model",
+      "lines": 14,
+      "bytes": 528,
+      "sha256": "8dd92dcbb3289c635ee7657fa736955bbc5a9f6b0a30c35e13b0262f21917889"
+    },
+    {
+      "path": "pull-2026-11-03\\portrait-asset.md",
+      "role": "含肖像视频合规总览（真人三种通道）",
+      "abbr": "volc-portrait",
+      "lines": 721,
+      "bytes": 30199,
+      "sha256": "20c65f3af53f6b1f973026c73b8e104ee3dd5ed38bb59a037165a1a8cd9897c4"
+    },
+    {
+      "path": "pull-2026-11-03\\pricing.md",
+      "role": "模型价格与计费",
+      "abbr": "volc-pricing",
+      "lines": 578,
+      "bytes": 30194,
+      "sha256": "c93a73de8f9db86686a4499065a401c08b04dcd3b972fe51b8ff3f2c43908231"
+    },
+    {
+      "path": "pull-2026-11-03\\prompt-guide.md",
+      "role": "官方提示词指南（含 16 个常见问题）",
+      "abbr": "sd25-guide",
+      "lines": 1357,
+      "bytes": 104381,
+      "sha256": "50e4354aae8670726fa3751166e619748a9c7f81be375b29e65706e4c67d49b1"
+    },
+    {
+      "path": "pull-2026-11-03\\purchase.md",
+      "role": "高级创作权益包",
+      "abbr": "volc-purchase",
+      "lines": 117,
+      "bytes": 7725,
+      "sha256": "4695aa6ce26b24a1e6d5298396a9e8f9efaf0ca853efc2383b77cc3b07d54189"
+    },
+    {
+      "path": "pull-2026-11-03\\real-person-asset.md",
+      "role": "录入真人形象素材（活体授权）",
+      "abbr": "volc-realface",
+      "lines": 169,
+      "bytes": 8537,
+      "sha256": "8c6ac3bda8b432923edb70ee7ce32a9c7969d7928d76302179ff457663c522bc"
+    },
+    {
+      "path": "pull-2026-11-03\\resource-pack.md",
+      "role": "Seedance 资源包规则",
+      "abbr": "volc-pack",
+      "lines": 152,
+      "bytes": 10877,
+      "sha256": "78ecae412692f5f5c52f39e113ba18ff862abe50071e10b2ba4baefb2878fce3"
+    },
+    {
+      "path": "pull-2026-11-03\\seedream-seedance.md",
+      "role": "",
+      "abbr": "",
+      "lines": 162,
+      "bytes": 15374,
+      "sha256": "e3c55f2a170ee60ab5ea74cd9b7338a27adc0c013b55af49cf3da40482a577e9"
+    },
+    {
+      "path": "pull-2026-11-03\\tutorial.md",
+      "role": "教程（主文档，任务类型/示例/样片模式/规格/限流）",
+      "abbr": "sd25-tutorial",
+      "lines": 3117,
+      "bytes": 147659,
+      "sha256": "c978148e9b3a6c954930b0a9d2a9b597efab67b011d764b07ed875d0cd0617ec"
+    },
+    {
+      "path": "pull-2026-11-03\\video-tutorial.md",
+      "role": "视频生成通用教程（多语言 SDK/管理/Webhook）",
+      "abbr": "volc-video-tutorial",
+      "lines": 2284,
+      "bytes": 90699,
+      "sha256": "b6ab65a81477021bafd598d01d9a11ffbe7dd5802de96ccdf006bd8ea6fc64e4"
+    },
+    {
+      "path": "guide.md",
+      "role": "官方提示词指南（2026-10-22 旧副本，与 pull/prompt-guide.md 逐字节相同）",
+      "abbr": "sd25-guide",
+      "lines": 1357,
+      "bytes": 104381,
+      "sha256": "50e4354aae8670726fa3751166e619748a9c7f81be375b29e65706e4c67d49b1"
+    },
+    {
+      "path": "skill-sd25-pe.md",
+      "role": "官方 skill sd25-pe v0.1.1 正文副本",
+      "abbr": "sd25-pe",
+      "lines": 997,
+      "bytes": 69727,
+      "sha256": "ee04557ba9a1c9f5517b574e24fc73d0022b22254373074db4c11f3d0635ea57"
+    },
+    {
+      "path": "api-create-task.md",
+      "role": "创建视频任务 API（2026-10-21 旧副本，参数字段与 pull/api-create.md 一致）",
+      "abbr": "volc-api-legacy",
+      "lines": 856,
+      "bytes": 37383,
+      "sha256": "25f417d67c5f3c40f150d63210baeb5d1f5ce06db2beb29990d80d464274aa55"
+    },
+    {
+      "path": "ark-doc-skill.md",
+      "role": "方舟文档 Skill 说明（旧副本）",
+      "abbr": "volc-doc-skill",
+      "lines": 514,
+      "bytes": 20341,
+      "sha256": "bf917dfcf3069e2dd3ed6c77481ca2d6b1782e38d5ee226aa6fc3b245c8ce8b2"
+    },
+    {
+      "path": "video-gen-tutorial.md",
+      "role": "视频生成通用教程（2026-10-26 旧副本）",
+      "abbr": "volc-video-tutorial-legacy",
+      "lines": 2277,
+      "bytes": 90014,
+      "sha256": "4a6cac97ee25424d30f5d0074e40f0012f5251a98aa03787932c51b8a8c07e7c"
+    },
+    {
+      "path": "skills/sd25-pe/SKILL.md",
+      "role": "官方 skill sd25-pe（v0.1.1，与官方 zip 逐字节相同）",
+      "abbr": "sd25-pe",
+      "lines": 997,
+      "bytes": 69727,
+      "sha256": "ee04557ba9a1c9f5517b574e24fc73d0022b22254373074db4c11f3d0635ea57"
+    }
+  ],
+  "counts": {
+    "files": 25,
+    "lines": 21440
+  }
+}

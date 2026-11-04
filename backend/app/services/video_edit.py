@@ -269,8 +269,14 @@ def pick_channel(requested: str = "auto", *, subject_kind: str = "none") -> str:
         return req
 
     # `auto`：哪条先试由各家自己声明（`Caps.auto_prefer`），核心不写先后。
+    # 🩸 2026-11-03：跳过**当前产品线不接**的家族（`Caps.frozen`）。
+    #   显式通道名由出片接口的 `frozen_families()` 挡住，`auto` 这条以前漏了 ——
+    #   传本地人物图时 minimax 排第一，冻结后照样被选中、照样出片。
+    frozen = models.frozen_families()
     order = sorted(ads, key=lambda f: ads[f].caps.auto_prefer.get(subject_kind, 99))
     for fam in order:
+        if fam in frozen:
+            continue
         if ads[fam].ready():
             return fam
     raise EditError(
@@ -803,6 +809,95 @@ def refine_cuts(video: Path, spans, shots, *, window: float = 1.5,
 # 主流程
 
 
+def check_one_change(spec: dict) -> None:
+    """「一次只改一类」的闸：开关打开且动了 ≥2 类 → 直接拦，不发出片请求。
+
+    出处：官方《Doubao Seedance 2.5 提示词指南》「复杂任务效果不稳定」
+    （`backend/data/official/sd25/pull-2026-11-03/prompt-guide.md:738`）。
+    **默认关**（`spec["one_change"]` 默认 False），用户显式打开才生效。
+    """
+    from app.services import edit_spec
+
+    if not (spec or {}).get("one_change"):
+        return
+    cats = edit_spec.change_categories(spec)
+    if len(cats) <= 1:
+        return
+    words = "、".join(edit_spec.CHANGE_LABELS.get(x, x) for x in cats)
+    raise EditError(
+        f"开了「一次只改一类」，但这次同时改了 {words}（{len(cats)} 类）。"
+        "官方建议拆成多个简单任务分次完成：先只改一类出一版，"
+        "再把这一版当原片改下一类。要一次全改就关掉这个开关。")
+
+
+def _first_seen(person: dict | None) -> float | None:
+    """这个人在原片里第一次出现是第几秒；盘点没给区间就返回 None。"""
+    starts = []
+    for a in ((person or {}).get("appearances") or []):
+        try:
+            starts.append(float(a.get("start") or 0))
+        except (TypeError, ValueError):
+            continue
+    return min(starts) if starts else None
+
+
+def order_persons_by_appearance(
+    spec: dict, refs: dict, inventory: dict | None, *,
+    subject_asset: str = "",
+) -> tuple[dict, dict, int]:
+    """把人物槽位排成**首次出场顺序**，图跟着人走；返回 (spec, refs, 换位数)。
+
+    出处：官方《Doubao Seedance 2.5 提示词指南》「角色对应错误」
+    （`backend/data/official/sd25/pull-2026-11-03/prompt-guide.md:429`）：
+    「多人物视频中，角色与参考图片、音色或出场顺序发生错位，例如先出场的人物
+    被其他参考角色替换……**按人物首次出场顺序上传参考素材，并同步调整提示词中的
+    图片、音频编号**，确保每个角色与参考素材一一对应。」
+
+    我们原来的槽位顺序 = 用户**勾选顺序**（`edit_spec.PERSON_SLOTS` 的注释就是这么
+    写的），与出场顺序无关 —— 多人复刻时这正是「换错人」的已知风险。
+
+    🩸 素材是**整组跟着人搬**的：`person` 槽的图必须跟着它原本那位一起换位置，
+    否则重排之后 @图片N 指到的是另一个人，比不排更糟。
+    🩸 `subject_asset`（火山真人素材 ID）只挂在 `person` 槽、而且 `ref_plan`
+    只认这一个槽 —— 带 asset 的任务**不重排**（宁可保留原顺序，也不把素材绑错人）。
+    这条限制写在 `docs/SD25-OFFICIAL-MAP.md`，要做得先让 ref_plan 支持逐槽 asset。
+    """
+    from app.services import edit_spec
+
+    change = (spec.get("change") or {})
+    ids = [str(x) for x in (change.get("person_ids") or [])]
+    if len(ids) < 2 or (subject_asset or "").strip():
+        return spec, refs, 0
+    by = {str(p.get("id") or ""): p
+          for p in ((inventory or {}).get("people") or [])}
+    if not any(_first_seen(by.get(pid)) is not None for pid in ids):
+        return spec, refs, 0
+
+    # 有出场时间的按时间排；没有的保持原相对顺序、排在后面（不猜）
+    def _key(item):
+        i, pid = item
+        t = _first_seen(by.get(pid))
+        return (0, t, i) if t is not None else (1, 0.0, i)
+
+    order = [pid for _, pid in sorted(enumerate(ids), key=_key)]
+    if order == ids:
+        return spec, refs, 0
+
+    slots = list(edit_spec.PERSON_SLOTS[:len(ids)])
+    material = {pid: refs.get(slots[i]) for i, pid in enumerate(ids)}
+    new_refs = {k: v for k, v in refs.items()
+                if k not in edit_spec.PERSON_SLOTS}
+    for j, pid in enumerate(order):
+        src = material.get(pid)
+        if src is not None:
+            new_refs[edit_spec.PERSON_SLOTS[j]] = src
+    out = json.loads(json.dumps(spec))
+    out["change"]["person_ids"] = order
+    out["change"]["person_id"] = order[0]
+    moved = sum(1 for a, b in zip(ids, order) if a != b)
+    return out, new_refs, moved
+
+
 def ref_plan(spec: dict, refs: dict, *, subject_asset: str = "",
              channel: str = "", model: str = "") -> list[tuple[str, object]]:
     """按 `SLOT_ORDER` 算出这次**真正发出去**的参考素材：[(槽位, Path | "asset:ID")]。
@@ -1025,6 +1120,12 @@ def _prepare(
     if not edit_spec.has_change(spec) and not spec["extra"]:
         raise EditError("换画面必须说明换成什么：至少选一项「换什么」，或写一句补充说明")
 
+    # 「一次只改一类」：**默认关**，用户显式打开才拦。
+    # 出处：官方《Doubao Seedance 2.5 提示词指南》「复杂任务效果不稳定」
+    # （`pull-2026-11-03/prompt-guide.md:738`）——「一次生成同时承担多项参考、
+    # 编辑要求时，整体效果不稳定。将复杂任务拆解为多个简单任务」。
+    check_one_change(spec)
+
     # 勾了槽位却既没素材也没描述：火山会自己编一个「另一个产品」换上去，
     # H3 干脆一个字都不写（花完钱画面没变）。出片前就拦，别让人用钱买一个不变。
     # 风格参考视频（A9）：只在开关打开且文件真的存在时才算"有素材"
@@ -1040,6 +1141,15 @@ def _prepare(
     #   `adapter_for` 永不抛；`channel="auto"` 不传进去，免得刷"通道没登记"的警告。
     _ad = models.adapter_for(model=model,
                              channel="" if channel == "auto" else channel)
+    # 🩸 官方《2.5 提示词指南》`:429`：多人要按**首次出场顺序**排素材 —
+    #   顺序错 = 先出场的人被别的参考角色替换。只有声明了这条能力的型号才排
+    #   （2.0 / H3 官方没这条明文，不替它们做决定）。
+    if _ad.caps.order_by_appearance:
+        _spec2, _refs2, _moved = order_persons_by_appearance(
+            spec, refs, inventory, subject_asset=subject_asset)
+        if _moved:
+            log.info("人物槽位按首次出场顺序重排（%d 位换位）", _moved)
+            spec, refs = _spec2, _refs2
     _lack = edit_spec.missing_material(spec, refs, person_asset=subject_asset,
                                        style_video=style_video is not None,
                                        model=model,
@@ -1687,6 +1797,12 @@ def _span_prompt(plan: dict, targets: list | None, *, drop_person: bool,
         subject_looks=plan.get("looks") or {},
         desc_by_id=desc_by_id(plan.get("inventory")),
         boundary_pic=boundary_pic, shot_cuts=shot_cuts,
+        # 🩸 每一镜的画面内容（景别 / 动作 / 运镜）—— 来自盘点 `inventory.shots`。
+        #   官方 `:251`「每个 shot 内部写好**景别、具体内容、运镜**」，
+        #   `:260`「切镜的时候可明确写出**切镜到什么景别**…有助于跨镜头一致性」。
+        #   没有它，切镜句只说"第 3.33 秒切"，切过去是什么全靠模型猜
+        #   （`de591f35` 实测：猜成了参考图2 的庭院大特写）。
+        shot_desc=(plan.get("inventory") or {}).get("shots") or [],
         shot_looks=shot_looks, shot_lines=shot_lines,
         # 风格参考视频（A9）：这一段真的会发出去才写 @视频2 / <Video 2>
         style_video=bool(plan.get("style_video")))
@@ -1708,6 +1824,12 @@ def _assign_speakers(rec: dict, inventory: dict | None) -> None:
     正反打 / 单人镜头里这条很准；两人同框的句子不投这一票，避免把两个人的
     嗓音混成一个。
 
+    **③ 张嘴（2026-11-03 新，专治同框对白）**：盘点的 `people[].speaks` ——
+    2.1 看视频时顺带记下**谁的嘴在动**。这句的时间里只有一个人在动嘴 → 就是他，
+    同框也能定人。同样只在**唯一**时投票；多个人同时在动嘴就弃权。
+    ⚠️ 这是"看得见的嘴部开合"，不是 2.1 替你判断剧情。老盘点没有这个字段 →
+    空数组 → 自动退回只有 ①② 的老行为。
+
     先投票定「声纹 → 人物」，再用它回填**画面判不出来**的句子（同框对白、
     画外音）。两个证据都没有的句子不标，编译器退回"不指名"的老行为。
 
@@ -1716,7 +1838,9 @@ def _assign_speakers(rec: dict, inventory: dict | None) -> None:
     · 2.5：`_volc_25` → `_sd25_lines`；
     · 2.0：`volc20_compile._sd20_lines` → `_sd20_speaker_label`（2026-10-27 核实，
       以前这里写着"只有 2.5 读"，是过时注释）；
-    · H3：仍走界面手勾的 `speaker_ids`（`edit_spec` 的 H3 分支），**没接**这里的推断。
+    · H3：🩸 2026-11-03 起**接上了** —— `_span_script` 读 `voice_lines[].speaker`
+      翻成中文外观，交给改写器写成「谁：哪句」；界面手勾的 `speaker_ids` 是
+      **整段名单**（谁开口），没有逐句对应，仍然只进 `edit_spec` 那条手拼链路。
 
     🩸 只影响**提示词点名**（谁动嘴），不影响音频：tts/mix 模式下整条新音轨是
     **一个音色**（`clone_pipeline` 的 `voice_id` 全局一个），没有按人分轨。
@@ -1746,11 +1870,34 @@ def _assign_speakers(rec: dict, inventory: dict | None) -> None:
                     break
         return hit[0] if len(hit) == 1 else ""
 
-    # 第 1 轮：声纹 → 人物 投票（只投画面能唯一定人的句子）
+    def who_speaking(ln: dict) -> str:
+        """这句的时间里，盘点标了「嘴在动」的人只有一个 → 返回他；否则空串。"""
+        if not people:
+            return ""
+        s = float(ln.get("start") or 0.0)
+        e = float(ln.get("end") or 0.0)
+        span = e - s
+        if span <= 0.05:
+            return ""
+        hit: list[str] = []
+        for p in people:
+            for ap in p.get("speaks") or []:
+                ov = min(e, float(ap.get("end") or 0.0)) - \
+                    max(s, float(ap.get("start") or 0.0))
+                if ov > 0.4 * span:      # 覆盖这句的四成以上才算"在说这句"
+                    hit.append(str(p["id"]))
+                    break
+        return hit[0] if len(hit) == 1 else ""
+
+    def who(ln: dict) -> str:
+        """这句字面是谁说的：**先看谁在动嘴**（同框也成立），再退回"画面只有一个人"。"""
+        return who_speaking(ln) or who_in_window(ln)
+
+    # 第 1 轮：声纹 → 人物 投票（只投能唯一定人的句子）
     votes: dict[str, dict[str, int]] = {}
     for ln in lines:
         spk = str(ln.get("asr_speaker") or "").strip()
-        pid = who_in_window(ln)
+        pid = who(ln)
         if spk and pid:
             votes.setdefault(spk, {})
             votes[spk][pid] = votes[spk].get(pid, 0) + 1
@@ -1762,10 +1909,10 @@ def _assign_speakers(rec: dict, inventory: dict | None) -> None:
             continue
         mapping[spk] = pid
 
-    # 第 2 轮：逐句定人 —— 画面能定就用画面（直接证据），否则查声纹映射
+    # 第 2 轮：逐句定人 —— 能直接定就用直接证据（动嘴 > 唯一在场），否则查声纹映射
     for ln in lines:
         spk = str(ln.get("asr_speaker") or "").strip()
-        pid = who_in_window(ln) or mapping.get(spk, "")
+        pid = who(ln) or mapping.get(spk, "")
         if pid:
             ln["speaker"] = pid
 
@@ -1843,7 +1990,10 @@ def _span_lines(rec: dict, a: float, b: float,
     return buckets if any(buckets) else None
 
 
-def _span_script(rec: dict, a: float, b: float) -> list[tuple[float, float, str]]:
+def _span_script(rec: dict, a: float, b: float,
+                 people_desc: dict | None = None,
+                 allow_ids: list | None = None
+                 ) -> list[tuple[float, float, str, str]]:
     """这一段**真实说过**的台词，秒数换成「相对本段起点」。喂给 H3 改写器用。
 
     🩸 2026-11-02（H21）：官方 `h3-manual:248`「在音频复刻/部分复刻中，如果对于
@@ -1858,8 +2008,19 @@ def _span_script(rec: dict, a: float, b: float) -> list[tuple[float, float, str]
     · 没有字级时间（老任务 / 没识别出字）就按整句时间**按比例**裁 —— 与
       `_span_lines` 同一套算法，不另立标准。
     · 全部来自原片 ASR，**一个字不编**。
+    · 🩸 2026-11-03：**每句带上是谁说的**（第 4 项）。以前只给秒数和台词，改写器
+      只能靠听音频猜谁开口 —— 两人同框对白尤其猜不准，而它写出来的正文正是靠
+      `(S1)/(S2)` 把台词绑到主体上的。`who` 取自 `_assign_speakers` 落在
+      `voice_lines[].speaker` 的盘点 id（声纹分句 + 画面唯一在场），再翻成中文
+      外观描述（`people_desc`）；查不到就空串，句子退回老格式，不编人。
     """
-    out: list[tuple[float, float, str]] = []
+    out: list[tuple[float, float, str, str]] = []
+    _pd = {str(k): str(v) for k, v in (people_desc or {}).items()}
+    # 🩸 2026-11-03：用户在界面上手勾过「说话的人」（`speaker_ids`）时，**推断不能
+    #   跟它顶**。那句名单的语义是 `clone_brief.py:390`「名单外的人在画面里不开口」，
+    #   是用户拍的板；声纹/画面推断只是猜。猜出名单外的人 → 这一句不署名，
+    #   宁可退回"谁说的不知道"，也不能把台词按到用户说他不开口的人身上。
+    _allow = {str(x) for x in (allow_ids or []) if str(x).strip()}
     # 🩸 台词以 `voice_lines` 为准：原声模式下它就是 ASR 结果；**重新配音（tts/mix）
     #   模式下 `speech` 仍是原片 ASR，而画面要念的是新文案** —— 拿 `speech` 会喂错词。
     #   字级时间只有 ASR 那份有，所以按「文字完全一致」才借用，避免串到原片台词上。
@@ -1877,6 +2038,12 @@ def _span_script(rec: dict, a: float, b: float) -> list[tuple[float, float, str]
             txt = "".join(str(c.get("c") or "") for c in keep).strip()
             s0 = max(float(a), float(keep[0].get("s") or a))
             e0 = min(float(b), float(keep[-1].get("e") or b))
+            # 🩸 2026-11-03：把**字级时间**一起带出去（相对本段起点）。
+            #   台词跨镜头时要按切点把它切成前后两截 —— 数据本来就在 ASR 里
+            #   （`recipe.speech.segments[].chars[]`），不用再调任何模型。
+            _chars = [(str(c.get("c") or ""),
+                       round(float(c.get("s") or 0.0) - a, 3),
+                       round(float(c.get("e") or 0.0) - a, 3)) for c in keep]
         else:
             s0 = float(s.get("start") or 0.0)
             e0 = float(s.get("end") or 0.0)
@@ -1889,8 +2056,11 @@ def _span_script(rec: dict, a: float, b: float) -> list[tuple[float, float, str]
             i1 = max(i0 + 1, min(len(txt), int(round(len(txt) * hi))))
             txt = txt[i0:i1].strip()
             s0, e0 = max(s0, float(a)), min(e0, float(b))
+            _chars = []
         if txt:
-            out.append((round(s0 - a, 2), round(e0 - a, 2), txt))
+            _pid = str(s.get("speaker") or "").strip()
+            _who = _pd.get(_pid, "") if (not _allow or _pid in _allow) else ""
+            out.append((round(s0 - a, 2), round(e0 - a, 2), txt, _who, _chars))
     return out
 
 
@@ -1919,7 +2089,9 @@ def _gen_spans(
     继续出全部时不用另外记状态：缓存键含每段的最终提示词，前 N 段原样
     命中缓存、不重复扣费，只有没生成过的段才真花钱。
     """
-    from app.services import ark, clone_store as store, edit_spec, minimax
+    # 🧊 2026-11-03 复刻下架 H3：这里原来顺手 import 了 `minimax`，但整个函数体
+    #   一次都没用到它（出片由 `adapter.submit` 走各家自己的客户端）。
+    from app.services import ark, clone_store as store, edit_spec
 
     if not spans:
         raise EditError("没有可处理的片段")
@@ -1970,10 +2142,12 @@ def _gen_spans(
     # 风格参考视频（A9）：**开跑前**算清每段放不放得下，放不下一次都别发。
     style_src = plan.get("style_video")
     style_clip: Path | None = None
+    style_clip_sec = 0.0
     if style_src is not None:
         clip_sec, style_err = style_video_budget(ch, plan["model"], spans)
         if style_err:
             raise EditError(style_err)
+        style_clip_sec = float(clip_sec)
         style_clip = work / "style_ref.mp4"
         try:
             # 🩸 exact=True + audio=False：这段要送平台校验（`scene.cut_clip`
@@ -2082,6 +2256,12 @@ def _gen_spans(
     _src_total = float((rec.get("source") or {}).get("duration") or 0.0)
     _EXTRA = 0.5        # 中间段往后多切多少原片（秒）
     _TAIL_TOL = 0.45    # 尾段允许比这一段短多少（秒）
+    # 🩸 送进模型的参考段本身还有**时长上限**（火山 r2v 的 `content[1]` ≤30.2s，
+    #   2026-11-03 任务 `116928ec` 实测 400）。以前只在素材库入库时判这条，
+    #   直传路径没判 → 30s 的段再借 0.5s 尾巴 = 30.433s（8n+1 对齐后）直接被拒。
+    #   借尾巴是**可选**的（模型少给的那 0.3s 用 `_normalize` 冻最后一帧兜底），
+    #   所以这里只在**借完仍不超上限**时才借，绝不为了借而把段撑过上限。
+    _max_in = float((ad.caps.video_limits or {}).get("max_sec") or 0.0)
 
     pieces: list[Path] = []
     # 上一段是"重画过的"还是"直接留原片"：只有重画过的才需要边界帧。
@@ -2099,8 +2279,10 @@ def _gen_spans(
         # 尾段借不到，按 `need` 送，少给多少最后按实际长度收口。
         need = max(0.5, b - a)
         tail_slack = 0.0
-        if _src_total > 0 and b + _EXTRA <= _src_total - 1e-3:
-            tail_slack = _EXTRA
+        if _src_total > 0:
+            _tail_cap = (_src_total if _max_in <= 0 else min(_src_total, _max_in))
+            if b + _EXTRA <= _tail_cap - 1e-3:
+                tail_slack = _EXTRA
         cut_b = b + tail_slack
         dur = max(0.5, cut_b - a)
         seg = seg_dir / f"seg_{n:03d}.mp4"
@@ -2143,6 +2325,9 @@ def _gen_spans(
         #   方位来自盘点（`inventory.people[].position`），不是现编的。
         #   顺序与人物槽位一致 ⇒ 与 `instruction()` 里的 `person_pics` 一一对应。
         ir_ppl: list[dict] = []
+        # 🩸 2026-11-03（主人）：这一段画面里**所有人**（含不换的）也要给改写器。
+        #   只给要换的那几个 + 一句方位，同框两个男人时 IR 只能猜"右边那位"是谁。
+        ir_ppl_all: list[dict] = []
         ir_frame_n = 0
         if plan.get("inventory"):
             _all = _span_people(plan, target)
@@ -2153,15 +2338,49 @@ def _gen_spans(
             #   「替换左边那位」。原片本来就一个人时写方位 = 给一个不存在的区分。
             try:
                 from app.services import vision_plan as _vp
-                ir_frame_n = len(_vp.people_in(plan["inventory"], a, cut_b))
+                ir_ppl_all = list(_vp.people_in(plan["inventory"], a, cut_b))
+                ir_frame_n = len(ir_ppl_all)
             except Exception:  # noqa: BLE001
+                ir_ppl_all = []
                 ir_frame_n = 0
         # 🩸 2026-11-02（H21）：这一段真实说过的台词（相对秒数）也要给改写器。
         #   不给就只能靠它听音频 —— 从半句中间切起时它会把上一句补全写进来，
         #   模型照着又念一遍（`db253cfc` 第 2 段实测）。文字来自原片 ASR。
         #   ⚠️ 用 `b` 不用 `cut_b`：`cut_b` 是参考片多切的 0.5 秒尾巴，成片和
         #   音频都只到 `b`；按 `cut_b` 算会把下一段开头的话算进来。
-        ir_lines = _span_script(rec, a, b)
+        # 盘点 id → 中文外观。**只给换装用**（"谁的哪套"要叫得出那个人）。
+        ir_people_desc = {str(k): str(v.get("zh") or "")
+                          for k, v in desc_by_id(plan.get("inventory")).items()}
+        # 🩸 2026-11-03：台词署名**不能**用上面那份整段外观描述。
+        #   实测发出去长这样：「1.20–3.56 黑色高束马尾，额间有红色痣，佩戴长款白色
+        #   垂坠耳饰，穿印黑白太极图案的白色抹胸，黑色百褶短裙，腰间系红绳挂铜钱配饰，
+        #   脚穿黑色夹脚拖鞋：你们俩学成之后想做什么」—— 三个毛病：
+        #     ① 60 个字，一句话读不成句；
+        #     ② 指代对不上：正文用的是 `<Subject N>` / `图N`，这里突然换成长相描述，
+        #        改写器还得自己猜这段长相对应哪个 Subject；
+        #     ③ **写的是原片那个人的衣服和发型** —— 而他正是要被换掉的人。
+        #        复述原片外观会强化"保留原片那个人"，与 §17 撤回逐镜描述同一类病。
+        #   改成和换人句同一套指代：有参考图的人 → 「图N中的人物」（正文里就是
+        #   `<Subject N>`）；没被换的人（没图）→ 外观描述的第一小段（不带衣服列表）。
+        _pic_label: dict[str, str] = {}
+        _k = 0
+        for _j, _s in enumerate(span_slots):
+            if _s not in edit_spec.PERSON_SLOTS:
+                continue
+            if _k < len(ir_ppl):
+                _pid = str(ir_ppl[_k].get("id") or "")
+                if _pid:
+                    _pic_label[_pid] = f"图{_j + 1}中的人物"   # 图号 = images 里的序号
+            _k += 1
+        ir_speaker_label = {}
+        for _pid, _zh in ir_people_desc.items():
+            ir_speaker_label[_pid] = (_pic_label.get(_pid)
+                                      or _zh.split("，")[0][:12])
+        ir_lines = _span_script(
+            rec, a, b, people_desc=ir_speaker_label,
+            allow_ids=[str(x) for x in
+                       (((plan.get("spec") or {}).get("change") or {})
+                        .get("speaker_ids") or [])])
         bf_mark = ""
         # 🩸 `:mau` = 母版自带原声（A-4 那条修法）。必须进缓存键：提示词/区间/参考图
         #   都没变的情况下，母版从"无声"变成"带音轨"是一次真实输入变化，不换键就会
@@ -2261,6 +2480,30 @@ def _gen_spans(
         #   那张脸（SFace 0.09）。文本来自定妆照自己的描述文件，不是现编的。
         ir_looks = {s: _look_ir((plan.get("looks") or {}).get(s))
                     for s in span_slots}
+        # 🩸 2026-11-03：用户在界面上写的「改成什么」必须交给改写器。
+        #   这些字段以前只进了 `edit_spec.compile_prompt`，而 H3 出片时
+        #   编译版被改写器产出**整段覆盖**（下面 `caps.prompt_for` 那一行）
+        #   → 用户写「换成落地窗办公室」，改写器一个字没收到，成片照原样。
+        #   只填描述、不传图的场景也靠它 —— 那种情况槽位根本不存在。
+        _sc = (plan.get("spec") or {}).get("change") or {}
+        ir_changes = {
+            "product": bool(_sc.get("product")),
+            # 画面里被换的是哪一件（盘点列表里点的那件）：有多件东西时没有它就没有唯一解
+            "product_target": str(_sc.get("product_target") or ""),
+            "product_desc": str(_sc.get("product_desc") or ""),
+            "scene": bool(_sc.get("scene")),
+            "scene_desc": str(_sc.get("scene_desc") or ""),
+            "wardrobe": bool(_sc.get("wardrobe")),
+            # 名单：按人换装只认这些人（取消勾选后残留的描述不能再生效）
+            "wardrobe_ids": [str(x) for x in (_sc.get("wardrobe_ids") or [])],
+            "wardrobe_desc": str(_sc.get("wardrobe_desc") or ""),
+            "wardrobe_desc_by_id": dict(_sc.get("wardrobe_desc_by_id") or {}),
+            # 🩸 这里给的是**中文词**（实拍/动漫/三维渲染…），不是 `_sc` 里那个 id。
+            #   `edit_spec.STYLES` 的键是 `live`/`anime` 这种英文 id，直接交出去
+            #   改写器会收到「画面的风格和色调改为 anime」这种半截英文。
+            "style": str(edit_spec.STYLES.get(str(_sc.get("style") or ""), "") or ""),
+        }
+        # （`ir_people_desc` 见上面台词那段，这里复用同一份）
         ir_sig = ""
         if ad.caps.prompt_sig is not None:
             ir_sig = ad.caps.prompt_sig(
@@ -2272,7 +2515,7 @@ def _gen_spans(
                 # 🩸 2026-11-02（缺口二）：段内切点进改写器输入，也进指纹 ——
                 #   改写器不知道有几刀就按一镜到底写（原片 5 镜 → 产出只有
                 #   `[Shot 1]`）。切点是相对段起点的秒数，与切片同一条时间轴。
-                cuts=cuts,
+                cuts=cuts, span_dur=dur,
                 # 🩸 2026-11-02（缺口三）：音频用途也要进改写器输入、也进指纹。
                 #   没有音轨可传时给空串 —— 提示词里就不该出现「音频1」。
                 # ⚠️ 默认值必须是 `tts`，与 `_audio_track()` 的
@@ -2282,10 +2525,20 @@ def _gen_spans(
                 if audio_track else "",
                 # 🩸 2026-11-02（H19）：方位要进指纹 —— 换了勾选的人，
                 #   词就变，缓存键必须跟着变，否则拿回上一次的旧词。
-                ppl=ir_ppl, frame_n=ir_frame_n,
+                ppl=ir_ppl, ppl_all=ir_ppl_all, frame_n=ir_frame_n,
                 # 🩸 2026-11-02（H21）：台词也进指纹 —— 改了文案/切点导致台词
                 #   分布变了，就必须换键，否则拿回上一版的旧词。
                 lines=ir_lines,
+                # 🩸 2026-11-03：用户手填的改动描述 / 换装按人 / 台词说话人
+                changes=ir_changes, people_desc=ir_people_desc,
+                # 风格参考视频：改写器也要看见它（不然句子会说"风格与视频1一致"）
+                style_src=(str(style_src or "") if style_clip else ""),
+                style_span=((0.0, style_clip_sec) if style_clip else None),
+                # ⛔ 2026-11-03 试过、已撤回：逐镜画面描述**不**进改写器。
+                #   官方手册第 3 章「全能精准编辑与修改」的编辑范例全是一句话
+                #   （3.1「把视频中的猫换成狗」/ 3.2「视频1窗外的场景改成图1」），
+                #   没有一条复述原片画面。逐镜描述写的是原片长相，塞进去可能
+                #   反过来强化"保留原片那张脸"。要重试先看台账 §17 末尾。
                 video_src=str(video), video_span=(a, cut_b),
                 audio_src=(str(audio_track) if audio_track else ""),
                 audio_span=(a, b))
@@ -2365,7 +2618,7 @@ def _gen_spans(
                     #   官方 `base-en:86` 要求每个 `[Shot N]` 以严格递增的切点
                     #   时间开头；不告诉它有几刀，它就按一镜到底写（原片 5 镜
                     #   → 产出只有 `[Shot 1]`）。切点是相对段起点的秒数。
-                    cuts=cuts,
+                    cuts=cuts, span_dur=dur,
                     # 🩸 2026-11-02（缺口三）：音频用途必须写进改写器的输入
                     #   （`h3-manual:248` 的「音频复用」「音色参考」两档）。
                     #   没有音轨可传 → 空串，提示词里不提音频。
@@ -2375,11 +2628,17 @@ def _gen_spans(
                     if seg_audio is not None else "",
                     # 🩸 2026-11-02（H19）：多人换人时写明「哪张图替换哪一位」，
                     #   方位来自盘点，与人物槽位同序。
-                    ppl=ir_ppl, frame_n=ir_frame_n,
+                    ppl=ir_ppl, ppl_all=ir_ppl_all, frame_n=ir_frame_n,
                     # 🩸 2026-11-02（H21）：这一段真实说过的台词（相对秒数）。
                     #   不给就只能靠改写器听音频，从半句中间切起时它会把上一句
                     #   补全当成这一段的第一句（`db253cfc` 第 2 段实测翻车）。
                     lines=ir_lines,
+                    # 🩸 用户手填的改动描述（见上面 `ir_changes` 那段）
+                    changes=ir_changes, people_desc=ir_people_desc,
+                    style_video=style_clip,
+                    style_src=(str(style_src or "") if style_clip else ""),
+                    style_span=((0.0, style_clip_sec) if style_clip else None),
+                    # ⛔ 同上：逐镜画面描述不进改写器（见上面那段的理由）。
                     # 🩸 缓存键要「原片 + 区间」，不是切片文件字节：同一段每次
                     #   重切都会生成新文件，字节差一点指纹就变，预调好、审过的
                     #   那份出片时永远命不中（改写器于是重抽一次）。这里只把

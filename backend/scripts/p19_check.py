@@ -82,8 +82,9 @@ def main() -> int:
            f"mode={r['mode']!r} guide={r['guide']!r}")
 
     r = rt.route([A("image", "reference_image")])
-    expect(r["mode"] == "r2va" and r["guide"] == "ref" and r["ruler"] == "ruler_h3",
-           "A5 人物/风格参考图 → 参考模式，走六段式和 ref 尺子",
+    expect(r["mode"] == "r2va" and r["guide"] == "ref"
+           and r["ruler"] == "ruler_h3_handwrite",
+           "A5 人物/风格参考图 → 参考模式，走手写入口和 ref 尺子",
            f"mode={r['mode']!r} guide={r['guide']!r} ruler={r['ruler']!r}")
 
     r = rt.route([A("video")])                      # 没标角色，靠 normalize 补
@@ -192,21 +193,23 @@ def main() -> int:
 
     # ---------------------------------------------------------------- E 尺子
     sys.path.insert(0, str(ROOT / "scripts"))
-    import ruler_h3  # noqa: E402
     import ruler_h3_base  # noqa: E402
+    import ruler_h3_handwrite  # noqa: E402
 
-    nb, nr = len(ruler_h3_base.RULES), len(ruler_h3.RULES)
+    nb, nr = len(ruler_h3_base.RULES), len(ruler_h3_handwrite.RULES)
     expect(nb > 0 and nr > 0, "E1 两把尺子都能读到",
            f"base={nb} ref={nr}")
+    # 🔓 2026-11-03 复刻换体裁：ref 从六段式换成手写入口三段式。
     expect(rt.GUIDES["base"]["ruler"] == "ruler_h3_base"
-           and rt.GUIDES["ref"]["ruler"] == "ruler_h3",
-           "E2 选尺子只认模块名：三字段→base，六段式→ref",
+           and rt.GUIDES["ref"]["ruler"] == "ruler_h3_handwrite",
+           "E2 选尺子只认模块名：三字段→base，手写入口→ref",
            f"{rt.GUIDES!r}")
     # 🩸 只锁「两把尺子是两把、不互相引用」，不锁条数 —— 条数会随官方复核变，
     #    写死数字只会制造假红（`vacuous-truth-false-green` 的姐妹坑）。
     src_base = (ROOT / "scripts" / "ruler_h3_base.py").read_text(encoding="utf-8")
-    src_ref = (ROOT / "scripts" / "ruler_h3.py").read_text(encoding="utf-8")
-    expect("import ruler_h3\n" not in src_base and "import ruler_h3_base" not in src_ref,
+    src_ref = (ROOT / "scripts" / "ruler_h3_handwrite.py").read_text(encoding="utf-8")
+    expect("import ruler_h3_handwrite" not in src_base
+           and "import ruler_h3_base" not in src_ref,
            "E3 两把尺子互不引用",
            "有互相 import，两把尺子已经混了")
 
@@ -256,7 +259,7 @@ def main() -> int:
         if not good and detail:
             print("       " + detail)
     print(f"\nH3 转换路由验收：通过 {passed} / {len(RESULT)}，红 {len(RESULT) - passed}"
-          f"（base 尺子 {nb} 条 / ref 尺子 {nr} 条，条数现读不写死）")
+          f"（base 尺子 {nb} 条；ref 尺子 {nr} 条，两把都只锁「互不引用」，条数现读不写死）")
     return 0 if passed == len(RESULT) else 1
 
 
