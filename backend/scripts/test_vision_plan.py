@@ -200,31 +200,20 @@ def main() -> int:
     check("摘掉换人后不再有替换句", "替换为" in p_drop, False)
     check("摘掉换人后仍指原片", "@视频1" in p_drop, True)
 
-    # 🩸 夹具补 `slots`：真实链路的 plan 一定带它（`video_edit.prepare` 里
-    # `"slots": list(slots)`）。缺了它 H3 编译器拿不到 <Picture N> 的编号，
-    # 会退化成 `<Subject 1> is the replacement person.` ——
-    # 这是**夹具不像真数据**，不是产品缺陷（2026-10-23 核实）。
-    m_plan = dict(plan, ch="minimax", model="MiniMax-H3", slots=["person"])
-    m_prompt = video_edit._span_prompt(m_plan, [inv["people"][0]], drop_person=False)
-    # 🩸 2026-10-21 起：H3 主体必须锚在参考图 <Picture N>，不能再锚在原片
-    # （锚原片 = 保住原片那张脸，只搬参考图的衣服/发型，实测换不出人）
-    check("H3 主体锚在参考图", "<Subject 1> is the person in <Picture 1>" in m_prompt, True)
-    check("H3 不再锚在原片", "<Subject 1> is the person in <Video 1>" in m_prompt, False)
-    check("H3 写英文外观", "the long-haired woman in a red dress" in m_prompt, True)
-    check("H3 仍是六段式", all(k in m_prompt for k in (
-        "subject_definitions:", "retention_analysis:", "detailed_description:")), True)
-    # 🩸 这两条以前**写反了**（2026-10-23 回官方原文核实后改正）。
-    # `ref-en:167`：`attribute_transfer` =「Referenced characteristics are
-    # **transferred to a different identifiable target subject**」—— 换人正是
-    # 把参考图的五官/发型/体型转移到原片那个主体上，就该用它。
-    # `ref-en:165`：`fully_preserved` =「被引用内容的**既定角色被完整保留**」，
-    # 是边界帧/原样搬过来的素材用的（见 `edit_spec` 里首帧那一行），不是换人。
-    # 代码 2026-10-23 已经改对（`edit_spec` 的 `attribute_transfer` 分支有出处），
-    # 判据没跟着改 —— 漂移的是判据，不是产品。
-    check("H3 换人写 attribute_transfer（ref-en:167）",
-          "attribute_transfer" in m_prompt, True)
-    check("H3 换人不用 fully_preserved（ref-en:165 是另一回事）",
-          "fully_preserved" in m_prompt, False)
+    # 🧊 2026-11-03 复刻下架 H3：这一段原本验 H3 编译器的六段式输出
+    #   （主体锚 <Picture N>、attribute_transfer、fully_preserved 边界）。
+    #   编译器连同 `models/h3.py` 的执行项一起归档到 `backend/_archive/h3_clone/`，
+    #   产品里已经没有这条链路可验 —— 断言随被测对象一起下线，不是丢了判据。
+    #   要恢复请按 `_archive/h3_clone/README.md` 的 6 步接回来，再把这 9 条补回。
+
+    print("== 定妆描述要写的维度 ==")
+    # 🩸 2026-11-04 主人：「完整度要和成功版一样，主要就是怕有鞋子的镜头没换上」。
+    #   实测 35 份 `subject_desc*.json` 只有 3 份写了鞋（其中就有唯一换脸成功那次
+    #   `cb7a6ea1`）—— 不是没写就没事，是模型有时写有时不写。鞋属于 outfit 维度：
+    #   `co-op-game-intro-generator/SKILL.md:34` 的 outfit dimensions 含 brown boots，
+    #   `3d-animation-short-generator/SKILL.md:147` 把 shoes 列进重要标注项。
+    check("描述提问里点名要写鞋", "鞋也要写" in vision_plan._DESC_ASK, True)
+    check("描述版本号已升（老描述作废重算）", vision_plan._DESC_VERSION >= 5, True)
 
     print("== person_id 校验 ==")
     check("P2 保留", edit_spec.normalize({"person": True, "person_id": "P2"})["change"]["person_id"], "P2")

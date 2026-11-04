@@ -117,6 +117,26 @@ _SCHEMA: dict[str, Any] = {
                              "description": "是否是主角（出现时长最长 / 占据画面最大）"},
                     "face_visible": {"type": "boolean",
                                      "description": "是否至少有一段时间正脸朝向镜头"},
+                    # 🩸 2026-11-03：**只报看得见的嘴部开合**，不要求你判断"谁在说话"。
+                    #   用途：ASR 已经按嗓音把句子分好组（`utterances[].additions.speaker`），
+                    #   但"嗓音 1 是谁"一直只靠"这句的时间里画面只有一个人"来锚 ——
+                    #   多人同框时那条路主动弃权，台词就全都没署名。
+                    #   有了这个字段，锚点变成"这段时间谁的嘴在动"，同框也能判。
+                    #   ⚠️ 故意**不放进 required**：老盘点没有它，读的时候当空数组，
+                    #     行为与今天完全一样（`_SCHEMA_VER` 因此不升，见那里的说明）。
+                    "speaks": {
+                        "type": "array",
+                        "description": ("这个人**嘴在动、明显在讲话**的时间段（源片绝对秒）。"
+                                        "只写看得到嘴部开合的时段；没开口就给空数组。"
+                                        "不要凭剧情猜谁在说话。"),
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "required": ["start", "end"],
+                            "properties": {"start": {"type": "number"},
+                                           "end": {"type": "number"}},
+                        },
+                    },
                 },
             },
         },
@@ -195,7 +215,9 @@ _SYSTEM = (
 )
 
 _ASK = ("请盘点这条视频：列出所有出现过的人物（含各自出现的时间段）、"
-        "作为主体展示的产品、场景，以及逐镜的画面描述。")
+        "作为主体展示的产品、场景，以及逐镜的画面描述。"
+        "另外每个人都要给出 `speaks`：**看得见他嘴在动、正在讲话**的时间段"
+        "（多人同框时也照实填，谁开口就填谁）；没开口就给空数组，不要凭剧情猜。")
 
 
 # ---------------------------------------------------------------------------
@@ -223,6 +245,13 @@ def video_sha1(video: Path) -> str:
 # 🩸 输出结构版本。schema 加字段就要 +1：旧缓存里没有新字段，命中它等于
 # 「改了没生效」——用户点"重新识别"也拿不到方位，提示词还是原来那两句。
 _SCHEMA_VER = 4   # v4：盘点顺带产出逐镜画面描述 `shots`
+# 🩸 2026-11-03 加了 `people[].speaks`（谁在动嘴）却**故意不升版本**：
+#   · 它是**非必填**字段，老盘点读出来就是空数组 → `_assign_speakers` 退回
+#     "画面只有一个人"那条老路，**行为和今天完全一样**，不是"改了没生效"；
+#   · 升版本会让老任务下一次 `inventory()`（不带 refresh）**静默重新扣一次费**
+#     —— 那才是真损失；
+#   · 用户点「重新识别」（`refresh=True`）本来就绕过缓存，一定拿到新字段。
+#   哪天需要让老视频自动升级，再升版本。
 
 
 def _cache_key(sha: str, fps: float, model: str) -> str:
@@ -411,6 +440,17 @@ def normalize(data: Any) -> dict:
         if not desc_zh and not desc_en:
             continue
         pid = str(p.get("id") or "").strip() or f"P{i}"
+        # 张嘴说话的时段（2026-11-03 新字段）。老盘点没有 → 空数组，
+        # `_assign_speakers` 自然退回"画面只有一个人"那条老路。
+        speaks: list[dict] = []
+        for a in p.get("speaks") or []:
+            if not isinstance(a, dict):
+                continue
+            s, e = _num(a.get("start")), _num(a.get("end"))
+            s = max(0.0, min(s, dur or s))
+            e = max(s, min(e, dur or e))
+            if e - s > 0.05:
+                speaks.append({"start": round(s, 2), "end": round(e, 2)})
         people.append({
             "id": pid,
             "desc_zh": desc_zh or desc_en,
@@ -420,6 +460,7 @@ def normalize(data: Any) -> dict:
             "appearances": apps,
             "main": bool(p.get("main")),
             "face_visible": bool(p.get("face_visible")),
+            "speaks": speaks,
         })
 
     # 🩸 官方《Seedance 2.5 指南》`:429-435`「角色对应错误」：
@@ -702,6 +743,12 @@ _DESC_ASK = (
     "3. **hairstyle**：发型发色。\n"
     "4. **clothing silhouette（服装轮廓）**：写版型和轮廓（古风长裙 / 短外套 / 宽松 / "
     "贴身 / 高领），**不要**逐个写花纹、纽扣、刺绣、褶皱这些细节。\n"
+    "   **鞋也要写**（款式 + 颜色，如「露趾细高跟凉鞋」）—— 鞋是 outfit 的一维，"
+    "官方 outfit dimensions 里就列着 brown boots"
+    "（`co-op-game-intro-generator/SKILL.md:34`），"
+    "`3d-animation-short-generator/SKILL.md:147` 也把 shoes 列进「重要标注项」。"
+    "露脚的镜头里描述没有鞋，模型就可能留着原片那个人的鞋。"
+    "**看不出来就不写，不要猜。**\n"
     "5. **proportions（身体比例）与体型类别**：高矮胖瘦这一级就够 —— 官方 `:20` 要的是 "
     "body identity。**不要**写任何具体部位。\n"
     "6. **不要写**：背景、场景、光线、画风、画质、写实度、镜头、表情、动作、姿态、"
@@ -738,7 +785,11 @@ _DESC_SCHEMA = {
 #:   SKILL.md:114`：identity / facial aura / hairstyle / clothing silhouette /
 #:   proportions / posture），并明确**不写**原图的背景/光照/画风（`:24`）。
 #:   v3 只补了脸，缺 facial aura 和「不继承原图」两条。
-_DESC_VERSION = 4
+#: v5（2026-11-04）：clothing 那一项补**鞋**。实测 35 份描述里只有 3 份写了鞋
+#:   （其中就有唯一换脸成功那次 `cb7a6ea1`），其余全看模型临场决定写不写。
+#:   露脚的镜头（本单源片就有）描述里没有鞋 → 模型留着原片那个人的鞋。
+#:   升版号 = 老描述作废重算，下次出片每张人物图多一次视觉调用（几厘）。
+_DESC_VERSION = 5
 
 
 def _image_inline(image: Path) -> str:

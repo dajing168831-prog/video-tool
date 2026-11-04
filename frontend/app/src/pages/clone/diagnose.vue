@@ -608,6 +608,12 @@
                       <view class="sub-txt">
                         <view class="sub-k">{{ pp.label }}的参考图{{ hasRefImg(pp.slot) ? '（已上传）' : '（没图就不换这个人）' }}</view>
                         <view class="sub-v">这一个人在画面里出现时，换成他这张脸</view>
+                        <view v-if="!pp.bound" class="sub-v">
+                          分析完在「画面里有谁」里点选，按你点选的顺序排图号
+                        </view>
+                        <view v-if="hasRefImg(pp.slot) && !pp.bound" class="sub-v warn">
+                          这张图还没有对应的人，出片时不会用到
+                        </view>
                       </view>
                       <button
                         class="sub-btn"
@@ -844,6 +850,18 @@
                 auto-height
                 :show-confirm-bar="false"
               />
+              <!-- 「一次只改一类」（2026-11-03）：默认关，用户自己开。
+                   出处：官方《Doubao Seedance 2.5 提示词指南》「复杂任务效果不稳定」——
+                   「一次生成同时承担多项参考、编辑要求时，整体效果不稳定。将复杂任务
+                   拆解为多个简单任务，分多次生成或编辑完成」。 -->
+              <view class="switch-row tight">
+                <text class="switch-label">一次只改一类（同时勾 2 类以上会被拦）</text>
+                <switch
+                  :checked="edit.one_change"
+                  color="#ff5a3c"
+                  @change="onOneChange"
+                />
+              </view>
             </view>
 
             <!-- 成片规格：edit 任务锁死了画幅和时长，这里只展示 -->
@@ -898,6 +916,7 @@
                 >{{ r.t }}</view>
               </view>
 
+              <!-- 🔓 2026-11-03 接回 H3 机械版：通道说明恢复。 -->
               <view v-if="regenChannel === 'minimax'" class="chan-hint">
                 MiniMax H3 走官方 `[video editing]` 任务类型（源片直接修改），也支持续写；
                 但官方没有像素级保留承诺 —— 要 1:1 保原片，优先选「火山」
@@ -1219,6 +1238,9 @@ export default {
         // 🩸 2026-10-23 主人拍板「也不烧字幕」：subtitle 字段删除，成片不带任何字幕
         resolution: 'auto',
         extra: '',
+        // 「一次只改一类」（2026-11-03）：默认关。开了以后同时勾 2 类改动会被后端拦下。
+        // 官方《2.5 提示词指南》「复杂任务效果不稳定」→ 拆成多个简单任务。
+        one_change: false,
       },
       // 换开头只重制前几秒（hypit：换钩子重跑，主体不动）
       openingSec: 3,
@@ -1283,7 +1305,8 @@ export default {
     //   2026-10-31 冻结 H3 = 后端清空 `MODELS["minimax"]`，前端自动跟着消失，
     //   不用再记得改两处。中文名只是显示用，认不出来的通道直接显示原名。
     channels() {
-      const labels = { volc: '火山', minimax: 'MiniMax' }
+      // 🔓 2026-11-03 接回 H3 机械版：minimax 回到后端列表，中文名一起还给它。
+      const labels = { volc: '火山', minimax: 'MiniMax H3' }
       const out = [{ v: 'auto', t: '自动' }]
       for (const m of (this.models || [])) {
         if (m.channel && !out.some((x) => x.v === m.channel)) {
@@ -1376,12 +1399,41 @@ export default {
     pickedIds() {
       return this.edit.person_ids || []
     },
-    /** 第 2 个起的人各占一个槽位：person2 / person3 … 上限跟着型号走 */
+    /** 第 2 个起的人各占一个槽位：person2 / person3 … 上限跟着型号走。
+     *
+     * 🩸 2026-11-04 主人：「你只有出了这个描述才能上传第二张图呀，这里本来就是 BUG，
+     *   上传复刻视频之前人的心里肯定就已经有答案要换谁和谁了」。
+     *   以前这里只从 `pickedIds` 里取 —— 而能点的人 chip 要等识别跑完才有，
+     *   于是「传第 2 张脸」被绑死在「分析出人物」之后。后端 `_save_ref` 对所有
+     *   `PERSON_SLOTS` 一视同仁，从来不要求先分析，纯粹是前端把入口藏了。
+     *   现在改成**按已传的图滚雪球**：传了第 1 张就冒出第 2 格，第 2 格有图就冒出第 3 格；
+     *   已勾选的人更多时也照样显示（保持老行为）。`bound` = 这格有没有绑到具体的人。
+     */
     extraPeople() {
-      return this.pickedIds.slice(1, this.subjectLimit.max).map((id, i) => {
+      const picked = this.pickedIds
+      const cap = this.subjectLimit.max
+      // 最靠后的那个「已有图」的槽位（person → person2 → …）。
+      // 🩸 不 break：删掉第 1 张、只留第 2 张时，第 2 格必须还看得见 ——
+      //   否则那张图在界面上消失，用户既看不到也删不掉。
+      let refs = 0
+      for (let i = 1; i <= cap; i += 1) {
+        const slot = i === 1 ? 'person' : `person${i}`
+        if (this.hasRefImg(slot)) refs = i
+      }
+      // 有图就再往后留一格，方便「先传图、后选人」；勾的人多时以勾的人数为准
+      const want = Math.min(cap, Math.max(picked.length, refs ? refs + 1 : 0))
+      const out = []
+      for (let i = 1; i < want; i += 1) {
+        const id = picked[i] || ''
         const p = (this.inv.people || []).find((x) => x.id === id)
-        return { slot: `person${i + 2}`, id, label: (p && p.desc_zh) || id }
-      })
+        out.push({
+          slot: `person${i + 1}`,
+          id,
+          bound: !!id,
+          label: (p && p.desc_zh) || `第${i + 1}个人`,
+        })
+      }
+      return out
     },
     /** 当前型号能换几个人：稳定线 / 硬上限（来自 /clone/models） */
     subjectLimit() {
@@ -1501,11 +1553,17 @@ export default {
         || e.style_ref || e.style_video)
         || !!(e.extra || '').trim()
     },
-    /** 实际会走哪条通道（「自动」时按有没有本地人物图判，规则同后端 pick_channel） */
+    /** 实际会走哪条通道（「自动」时按有没有本地人物图判，规则同后端 pick_channel）。
+     *  🩸 2026-11-03 复刻下架 H3：自动分支必须**先看这条通道还在不在售**。
+     *    后端 `pick_channel` 会跳过 `Caps.frozen` 的家族；这里若把 minimax 写死，
+     *    冻结后界面仍按「有图 → MiniMax」显示，与后端实际走的（火山）不符。
+     *    判据同上：单一真相源是 `model_specs.MODELS` —— 没在列表里 = 不可选。 */
     effChannel() {
       const ch = this.regenChannel
-      if (ch === 'volc' || ch === 'minimax') return ch
-      return (this.hasRefImg('person') || this.subjectAsset.trim()) ? 'minimax' : 'volc'
+      if (ch && ch !== 'auto') return ch
+      const hasMinimax = (this.models || []).some((m) => m.channel === 'minimax')
+      return (hasMinimax && (this.hasRefImg('person') || this.subjectAsset.trim()))
+        ? 'minimax' : 'volc'
     },
     /** 可点的盘点人物。
      *  🩸 2026-10-27：视觉盘点偶尔把**一群人**识别成一个"人"（真实样本
@@ -1587,7 +1645,7 @@ export default {
     // 出片按钮上方那行：不管你折叠没折叠，这次到底用哪家、哪款、几档，一眼看见
     modelLine() {
       if (this.openingOn) return '逐镜抽帧重画，不走通道 / 型号'
-      const ch = { auto: '自动选通道', volc: '火山', minimax: 'MiniMax' }[this.regenChannel]
+      const ch = { auto: '自动选通道', volc: '火山' }[this.regenChannel]
         || '自动选通道'
       const m = this.modelOpts.find((x) => x.id === this.regenModel)
       const name = m && m.id ? m.label : '默认型号'
@@ -2128,6 +2186,11 @@ export default {
     },
     onStretchChange(e) {
       this.allowStretch = !!(e.detail && e.detail.value)
+    },
+    // 「一次只改一类」：纯开关，拦截在后端 `video_edit._prepare`（单一真相源）。
+    // 这里只负责把值带进 payload —— 载荷是 `{...this.edit}`，不用另外拼。
+    onOneChange(e) {
+      this.edit.one_change = !!(e.detail && e.detail.value)
     },
     async refresh() {
       try {
@@ -2962,8 +3025,10 @@ export default {
         return
       }
       // 选了多个人：每个人都要有自己的图 —— 没图就不知道换成谁，别让后端静默跳过
+      // 🩸 只查**已绑到具体的人**的格子：`extraPeople` 现在还会多留一格"先传图后选人"的
+      //    空位，拿它当必填会把只换一个人的任务拦下来。
       if (wantRegen && this.edit.person && this.extraPeople.length) {
-        const miss = this.extraPeople.find((pp) => !this.hasRefImg(pp.slot))
+        const miss = this.extraPeople.find((pp) => pp.bound && !this.hasRefImg(pp.slot))
         if (miss) {
           uni.showToast({ title: `${miss.label} 还没传图`, icon: 'none' })
           return
@@ -3562,6 +3627,10 @@ export default {
   margin-top: 6rpx;
   font-size: 21rpx;
   color: #9aa0a6;
+}
+/* 传了图却没有对应的人 —— 静默忽略最坑，得说清"这张不会用" */
+.sub-v.warn {
+  color: #d93025;
 }
 .sub-btn {
   flex-shrink: 0;

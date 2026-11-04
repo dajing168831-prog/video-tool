@@ -86,24 +86,26 @@ def phase_a() -> None:
             and "穿红裙的女生的服装替换为@图片2中的服装" in p, p[:200])
 
     if SEL == "h3":
-        m = h3(s, ["wardrobe", "wardrobe2"])
-        ml = m.lower()
-        chk("A5 H3：逐人一句、各绑各的图，脸/发型/体型不动",
-            "the clothing of the man in a blue shirt is replaced by the clothing shown "
-            "in <picture 1>" in ml
-            and "the clothing of the woman in a red dress is replaced by the clothing "
-                "shown in <picture 2>" in ml
-            and "face, hairstyle and body type stay unchanged" in ml, m[:300])
-        chk("A5b 逐条拼接不产生重复标点（unchanged.. / unchanged.;）",
-            ".." not in m and ".;" not in m,
-            [x for x in m.split(".") if x.endswith(";")][:2])
+        # 🔓 2026-11-03 换体裁：改成手写入口。逐人换装句按官方 `h3-manual:213`
+        #   「最左边小孩穿的卡其色外套改成图2中的牛仔外套」的形状写。
+        # 🩸 必须喂 `source_people`：手写入口要靠盘点把「谁」说清楚
+        #   （生产里 `work.py` 一直传盘点；不传就等于盘点失败，那种情况由
+        #   G5/G6 两道闸拦住，不该在这里假装成功）。
+        ppl_a = [dict(INV["people"][0], present=True),
+                 dict(INV["people"][1], present=True)]
+        m = h3(s, ["wardrobe", "wardrobe2"], source_people=ppl_a)
+        chk("A5 H3：逐人一句、各绑各的图",
+            "穿蓝衬衫的男生的服装改为@图片1中的服装。" in m
+            and "穿红裙的女生的服装改为@图片2中的服装。" in m, m[:300])
+        chk("A5b 逐条拼接不产生重复标点（。。 / ，，）",
+            "。。" not in m and "，。" not in m, m[:200])
 
-        # 正在被换人的那位：用 <Subject N> 指认最准（同一次里既有换人又有换装）
+        # 同一次里既有换人又有换装：换装句必须还指认同一个人
         both = spec_of(person=True, person_ids=["P1"], wardrobe=True, wardrobe_ids=["P1"])
-        m2 = h3(both, ["person", "wardrobe"])
-        chk("A6 H3：换装目标正在被换人时用 <Subject 1> 指认",
-            "the clothing of <Subject 1> is replaced by the clothing shown in <Picture 2>" in m2,
-            m2[:300])
+        m2 = h3(both, ["person", "wardrobe"], source_people=ppl_a)
+        chk("A6 H3：换装句与换人句指同一个原片人物",
+            "穿红裙的女生的服装改为@图片2中的服装。" in m2
+            and "穿红裙的女生换成@图片1中的人物，" in m2, m2[:400])
 
     if SEL == "volc25":
         # 选了人却没给那张图：不能默默跳过（用户明确要求换他）。
@@ -149,9 +151,14 @@ def phase_b() -> None:
             "只把产品替换为@图片1中的产品" in p2, p2[:160])
 
     if SEL == "h3":
+        # 官方 `h3-manual:234`「将视频开头出现的易拉罐饮料替换为可口可乐」——
+        # 定位词在前、目标在后。用户填的定位词自带「画面里那只」时不再叠
+        # 「@视频1中的」，否则指代打两遍（「@视频1中的画面里那只…」）。
         m = h3(s, ["product"])
-        chk("B5 H3：主体定义/替换句都点名原片里那件",
-            "the blue mug in <video 1> is replaced by <subject 1>" in m.lower(), m[:400])
+        chk("B5 H3：点名原片里哪一件（h3-manual:234）",
+            "把画面里那只蓝色马克杯替换为白色陶瓷杯。" in m, m[:400])
+        chk("B5b 定位词自带「画面」时不再叠 @视频1中的",
+            "@视频1中的画面" not in m, m[:300])
 
 
 
@@ -170,57 +177,94 @@ def phase_c() -> None:
     chk("C2 说话人不要求在换人名单里（官方 base-en:127）",
         w["change"]["speaker_ids"] == ["P2"], str(w["change"]["speaker_ids"]))
 
-    # C3 起全部是 H3 的六段式断言：只在 H3 轮跑。
+    # C3 起全部是 H3 的断言：只在 H3 轮跑。
     if SEL != "h3":
         return
     ppl = [dict(INV["people"][0], present=True), dict(INV["people"][1], present=True)]
     m = h3(s, ["person", "person2"], audio_ref=True, source_people=ppl)
 
-    # 判据按**效果**写：说话号 (Sx) 必须落在对应的**人物图**上，不锁具体 Subject 编号 ——
-    # 换人一次会同时定义「图里的人」和「原片里被替换的人」两个主体，编号随张数变，
-    # 锁死编号会让编号方案的正常调整变成假红（2026-10-25 就撞到过）。
-    def _pic_of(m: str) -> dict:
-        return dict(re.findall(r"<Subject (\d+)> is the person in <Picture (\d+)>", m))
+    # 🔓 2026-11-03 换体裁 + 主人拍板「**让模型沿用原声**」：
+    # H3 复刻的音频走官方 `h3-manual:248` 的「音频复用（生成视频的音频直接复用
+    # 参考音频素材）」—— 没有「把某一副音色绑到某个主体」这套写法。
+    # 旧 C3–C9 验的是六段式 `<Audio 1> … for <Subject N> (Sx)`，手写入口手册里
+    # 没有对应句式（`base-en:127` 的 (Sx) 只属于**三字段创作模式**，那是提示词优化
+    # 那条线，`h3_base.py B17` 还在守）。所以这一组改成守「复用原声」+ 不许回流。
+    # 🩸 2026-11-04 改断言：括号里改回 `:248` 用途表**原词**
+    #   「音频复用（生成视频的音频直接复用**参考音频素材**）」。
+    #   旧断言写的是「直接复用@音频1」—— 那是把官方原词里的"参考音频素材"
+    #   换成了图号引用，`@音频1` 在整行开头已经出现过，等于同一处指代写两遍。
+    chk("C3 有音频复用用途句（h3-manual:248 原词）",
+        "@音频1：音频复用素材（生成视频的音频直接复用参考音频素材）" in m, m[:600])
+    chk("C4 不写 (Sx) 说话人编号（手写入口没有这套）",
+        "(S1)" not in m and "(S2)" not in m, m[:400])
+    chk("C5 不写六段式 <Audio N> 标号", "<Audio 1>" not in m, m[:300])
 
-    def _spk_pairs(text: str, pic: dict) -> dict:
-        return {s: pic[n] for n, s in re.findall(r"<Subject (\d+)> \(S(\d+)\)", text)
-                if n in pic}
+    # 没传音轨（保留原声但不复用音频素材）：不许出现 @音频1
+    m2 = h3(s, ["person", "person2"], audio_ref=False, source_people=ppl)
+    chk("C6 没传音轨就不写 @音频1", "@音频1" not in m2, m2[:300])
 
-    _pic = _pic_of(m)
-    _want = {"1": "2", "2": "1"}          # S1 = 图2（P2），S2 = 图1（P1）
-    chk("C3 说话号按说话顺序落在对应人物图上（S1→图2/P2，S2→图1/P1）",
-        _spk_pairs(m, _pic) == _want, m[:600])
-    # 🩸 T1（2026-10-23）：绑定句已按官方 ref-en 2.4 改成
-    # `<Audio 1> is the voice-timbre and dialogue reference for <Subject N> (Sx).`，
-    # 原断言锁的是旧措辞 `the final voice track of`。
-    _bind = next((ln for ln in m.splitlines()
-                  if "voice-timbre and dialogue reference" in ln), "")
-    chk("C4 <Audio 1> 绑定到真实主体（ref-en:258 的 <Subject N> (Sx) 形式）",
-        _spk_pairs(_bind, _pic) == _want, _bind)
-    _lip = next((ln for ln in m.splitlines() if "line is delivered by" in ln), "")
-    chk("C5 口型那句也点名同一个说话人", _spk_pairs(_lip, _pic) == _want, _lip)
+    # 两个人各一张图、各有用途句（图号不串）
+    chk("C7 两个人都换了 → 两张图各有用途句",
+        m.count("：人物参考") == 2, m[:400])
 
-    # 没点说话人 = 老语义：画面主体自己说
-    m2 = h3(spec_of(person=True, person_ids=["P1"]), ["person"],
-            audio_ref=True, source_people=[dict(INV["people"][0], present=True)])
-    chk("C6 不指定说话人 → 退回 <Subject 1> (S1)",
-        "voice-timbre and dialogue reference for <Subject 1> (S1)" in m2, m2[:400])
-
-    # 说话人不是被换的人：官方要求用稳定声音描述 + (Sx)，不能瞎编号
-    m3 = h3(w, ["wardrobe"], audio_ref=True)
-    chk("C7 说话人不是主体时用声音描述 + (S1)",
-        "the man in a blue shirt (S1)" in m3, m3[:400])
-
-    # 没喂音轨（保留原声 / 通道不吃音频）：不许出现 <Audio 1> 和 (Sx)
-    m4 = h3(s, ["person", "person2"], audio_ref=False, source_people=ppl)
+    # 没传音轨时也不许冒出 (Sx) 编号
+    m4 = m2
     chk("C8 没传音轨就不写 <Audio 1> / (Sx)",
         "<Audio 1>" not in m4 and "(S1)" not in m4, m4[:300])
 
-    chk("C9 两个人各一个号，不往后瞎编（没有 (S3)）",
-        m.count("(S1)") == 2 and m.count("(S2)") == 2 and "(S3)" not in m,
-        f"S1={m.count('(S1)')} S2={m.count('(S2)')}")
+    chk("C9 不往后瞎编说话人号（没有 (S3)）",
+        "(S3)" not in m, m[:400])
 
+    # ---------------------------------------------------------------- 镜头结构
+    # 🩸 2026-11-04：官方 `:251`「按时间轴或故事线分段写…**以切镜 shot 作为时间戳
+    #   的分段**」+ `:250`「**默认会切镜**」（不写切点模型自己编）+ `:266`「不要切镜」。
+    #   实测 `de591f35`：源片 2 镜 → 成片 3 镜，多出来的 4.0s 切到了参考图的庭院。
+    #   三种输入必须产出三种结果，缺一种就等于"不知道"被当成"一镜到底"。
+    m5 = h3(s, ["person", "person2"], shot_cuts=[3.33], source_people=ppl)
+    # 🩸 v7 `67285c2f` 是本任务目前最接近成功的一版（衣服/发型全换、背景全程留在
+    #   厨房、脸部分帧换）→ 下面这些按 v7 的实际行为锁。v8 把用途句描述砍到只剩脸
+    #   = **完全不换**，所以"少写"这条路已被证否。
+    _one_shot = [{"start": 0.0, "end": 5.3, "en": "Medium full shot, two women dance."}]
+    m5 = h3(s, ["person", "person2"], shot_cuts=[3.33], shot_desc=_one_shot,
+            source_people=ppl)
+    chk("C10 有切镜点 → 时间轴写景别 + 全片规则挂 ▍镜头（h3-manual:251）",
+        "0-5.3 秒：Medium full shot。" in m5 and "▍镜头（贯穿全片）" in m5
+        and "镜头节奏" in m5, m5[-300:])
+    m6 = h3(s, ["person", "person2"], shot_cuts=[], source_people=ppl)
+    chk("C11 确定一镜到底 → 写「不要切镜」（h3-manual:266）",
+        "不要切镜" in m6, m6[-300:])
+    m7 = h3(s, ["person", "person2"], shot_cuts=None, source_people=ppl)
+    chk("C12 不知道有没有切镜 → 一个字不写（不许瞎猜）",
+        "切镜" not in m7, m7[-300:])
 
+    _one = [{"start": 0.0, "end": 5.3,
+             "en": "Medium full shot, two aproned women dance, camera slowly pulls back."}]
+    m8 = h3(s, ["person", "person2"], shot_cuts=[3.33], shot_desc=_one, source_people=ppl)
+    # 只取景别：整句搬会带 `two aproned women` —— 那是原片的人，和「换成@图片N中的人物」
+    # 正面打架（`74d65218` 实测整片照抄原片）。运镜也不取（样本里会误认内容）。
+    chk("C13 单镜盘点 → 只写景别，不带人物也不带运镜",
+        "0-5.3 秒：Medium full shot。" in m8
+        and "aproned" not in m8 and "pulls back" not in m8, m8[-400:])
+    _two = [{"start": 0.0, "end": 2.8, "en": "Medium shot, a man walks."},
+            {"start": 2.8, "end": 5.4, "en": "Close-up, a woman smiles."}]
+    m9 = h3(s, ["person", "person2"], shot_cuts=[2.8], shot_desc=_two, source_people=ppl)
+    chk("C14 多镜盘点 → 按它自己的时间戳逐段写景别（h3-manual:260）",
+        "0-2.8 秒：Medium shot。" in m9
+        and "2.8-5.4 秒：切镜到Close-up，主体仍是@图片1、@图片2中的人物。" in m9
+        and "a man walks" not in m9, m9[-500:])
+    m10 = h3(s, ["person", "person2"], shot_cuts=[2.8], shot_desc=[], source_people=ppl)
+    chk("C15 盘点没有镜头内容 → 不写空壳",
+        "原片画面" not in m10 and "秒：" not in m10, m10[-300:])
+    _one_cut = [{"start": 0.0, "end": 5.3, "en": "Medium full shot, two women dance."}]
+    m11 = h3(s, ["person", "person2"], shot_cuts=[3.33], shot_desc=_one_cut,
+             source_people=ppl)
+    chk("C16 盘点只有 1 个 shot → 不补切点、不编第二镜景别",
+        "0-5.3 秒：Medium full shot。" in m11
+        and "切镜" not in m11, m11[-400:])
+    # :284/:285 的分组写法：全片规则单列 `▍组名（贯穿全片）`，不混进时间轴。
+    chk("C17 跨全片的规则单列【整体要求补充】+ ▍分组（h3-manual:284/:285）",
+        "【整体要求补充】" in m11 and "▍" in m11 and "（贯穿全片）" in m11,
+        m11[-500:])
 # ---------------------------------------------------------------------------
 # E. 界面契约
 # ---------------------------------------------------------------------------
