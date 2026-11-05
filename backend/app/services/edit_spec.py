@@ -189,6 +189,19 @@ def defaults() -> dict:
             # 的 `<新特征>`）。多人换装时一个字符串说不清谁换哪套，所以按人分开。
             # 前端 `diagnose.vue` 每个人一个输入框；空/缺键回落到 `wardrobe_desc`。
             "wardrobe_desc_by_id": {},
+            # 🩸 2026-11-05 主人拍板「有排斥就拆槽位」：换发型从「服装」里拆出来。
+            #   和换装**同一条官方模板** `sd20-guide:39`
+            #   「将其中的<原特征>修改为<新特征>」，只是把 `<原特征>` 从「服装」
+            #   换成「发型」—— 官方 `:95` 把「发型」列为可选核心特征之一，
+            #   所以这是**填官方模板的槽**，不是新造句式。
+            #   拆的理由：程序无法从自由文本判断用户换的是衣服还是发型，
+            #   以前一律写「服装修改为低马尾」= 语义错位。
+            #   没有发型参考图槽 —— 官方文件里没有任何"用图换发型"的句式。
+            "hair": False,
+            # 换发型名单（按人写，语义同 `wardrobe_ids`）；空 = 全体一起换。
+            "hair_ids": [],
+            "hair_desc": "",
+            "hair_desc_by_id": {},
             "style": "",
             # 风格参考（A9）：图和视频**互斥**，同一时间只有一个来源。
             # 图走 `style_ref` 槽（进 SLOT_ORDER，占一个 @图片N）；
@@ -224,7 +237,7 @@ def normalize(raw: dict | None) -> dict:
 
     change = raw.get("change") if isinstance(raw.get("change"), dict) else raw
     c = out["change"]
-    for k in ("person", "product", "scene", "wardrobe"):
+    for k in ("person", "product", "scene", "wardrobe", "hair"):
         if k in change:
             c[k] = bool(change[k])
         if f"{k}_desc" in change:
@@ -291,6 +304,25 @@ def normalize(raw: dict | None) -> dict:
         c["wardrobe_desc_by_id"] = {}
     for i, slot in enumerate(WARDROBE_SLOTS[1:], 1):
         c[slot] = i < len(wid)
+
+    # ---- 换发型名单（2026-11-05 拆槽位）----
+    # 和换装同一套形状；发型**没有图片槽位**（官方没有用图换发型的句式），
+    # 所以只需要名单 + 描述，不打开 `hair2/hair3` 这类槽。
+    hid = _id_list(change.get("hair_ids"), MAX_PERSONS)
+    if not c["hair"]:
+        hid = []
+    c["hair_ids"] = hid
+    _hdbi = change.get("hair_desc_by_id")
+    if isinstance(_hdbi, dict) and c["hair"]:
+        _hgot: dict[str, str] = {}
+        for _k, _v in _hdbi.items():
+            _ks = str(_k or "").strip()
+            _vt = str(_v or "").strip()[:40]
+            if _vt and re.fullmatch(r"[A-Za-z]{0,3}\d{1,3}", _ks):
+                _hgot[_ks] = _vt
+        c["hair_desc_by_id"] = _hgot
+    else:
+        c["hair_desc_by_id"] = {}
 
     # ---- 谁在说话（说了才给 (Sx) 号；不说话的人不给号）----
     # 🩸 不要求说话人在 `person_ids` 里：只换衣服/道具时也可能要指定谁在说话，
@@ -372,7 +404,9 @@ def change_categories(spec: dict) -> list[str]:
         cats.append("product")
     if c.get("scene"):
         cats.append("scene")
-    if c.get("wardrobe") or c.get("wardrobe_ids"):
+    # 发型算「造型」这一类（换衣 + 换发型是同一个视觉维度，见 `defaults()` 注释）
+    if (c.get("wardrobe") or c.get("wardrobe_ids")
+            or c.get("hair") or c.get("hair_ids")):
         cats.append("wardrobe")
     if c.get("style") or c.get("style_ref") or c.get("style_video"):
         cats.append("style")
@@ -515,7 +549,11 @@ def sig_change(change: dict | None) -> dict:
               #   它是**会改变成片**的字段（换哪套衣服全看它），不参与签名就会
               #   把"两人换了不同衣服"判成和上次一样 → 直接复用旧片、白改一场。
               #   P10 的 F1 就是拿老记录（没有这个键）比出来的。
-              "wardrobe_desc_by_id"):
+              "wardrobe_desc_by_id",
+              # 🩸 2026-11-05 拆槽位：发型是**新增字段**，老出片记录里没有它们。
+              #   空着还进哈希 = 历史出片全部失配（P10 F1 当场变红）。
+              #   但非空时必须参与 —— 换哪个发型会改变成片。
+              "hair", "hair_ids", "hair_desc", "hair_desc_by_id"):
         if not out.get(k):
             out.pop(k, None)
     return out
@@ -663,6 +701,27 @@ def _head_noun(s: str) -> str:
 # （2026-10-24 三版实测 + 2026-10-26 18:21 那条，都是衣服换了、脸没换）。
 _CLOTH_HEAD = ("身穿", "身着", "穿", "内搭", "搭配", "腰系", "腰挂", "脚穿",
                "披着", "围着", "颈围", "头戴")
+
+
+def _single_feat(desc: str) -> str:
+    """单人换人句的 `<原特征>` —— 「戴圆框眼镜的金发女子」这种主语短语。
+
+    出处：`sd2-pe/SKILL.md:24` 的「改」类句式
+    「`严格编辑 @视频N，将其中的<原特征>修改为<新特征>`」—— `<原特征>` 位
+    要写特征，「人物」是类别不是特征（`docs/SD20-CLONE-MATRIX.md` §3.1）。
+
+    三条硬条件，缺一返回空（由调用方退回「人物」）：
+      ① 取第一个逗号前的主语短语（`_head_noun`，整段带衣服的描述不进宾语）；
+      ② 必须以人称名词收尾（`_PERSON_HEAD`），否则「将其中的棕色盘发替换为…」是病句；
+      ③ **不含服装分句**（2026-10-22 实测：写外观 → 只换衣服不换脸）。
+    """
+    s = _head_noun(desc)
+    if not s or not _PERSON_HEAD.search(s):
+        return ""
+    for seg in re.split(r"[、，,；;]", s):
+        if seg.strip().startswith(_CLOTH_HEAD):
+            return ""
+    return s
 
 
 def _feat_phrase(desc: str, cloth: bool = True, sd20: bool = False) -> str:
@@ -901,6 +960,7 @@ def _clauses(channel: str, c: dict, idx: dict[str, int], *,
              dialect,
              people: list[dict] | None = None,
              frame_people: list[dict] | None = None,
+             frame_others: list[dict] | None = None,
              desc_by_id: dict[str, str] | None = None,
              keep: dict | None = None,
              style_anchor: bool = False, style_video: bool = False,
@@ -1067,6 +1127,11 @@ def _clauses(channel: str, c: dict, idx: dict[str, int], *,
                 obj = _feat_obj
             elif pos:
                 obj = f"{pos}的人物"
+            elif frame_others and not multi and src and _single_feat(src):
+                # 🩸 2026-11-05（矩阵 §3.1）：画面里除了人还有别的主体（龙/宠物/机器人）时，
+                #   裸「人物」没有唯一解 —— 官方 `skill:24` 的「改」句式本来就要 `<原特征>`。
+                #   单人画面才走这里；多人由上面两条分支先接管。
+                obj = _single_feat(src)
             elif src and multi and _head_noun(src):
                 # 没方位只能靠描述认人（这段描述本身就带"的女生/的男生"这类中心词，
                 # 句法上是人不是衣服）。
@@ -1164,9 +1229,17 @@ def _clauses(channel: str, c: dict, idx: dict[str, int], *,
             # 原句就是「面部特征参考 @图片1（大头照），妆造参考 @图片2（全身照）」。
             # 「换人后跟一句职责」只有 2.0 有（2.5 把它放进【目标素材职责】逐张说）。
             # 两家各写各的，见 `volc20_compile._CL20.person_duty()`。
-            _in_wardrobe = bool(c.get("wardrobe")) and str(
-                per.get("id") if per else "") in {
+            # 🩸 2026-11-05 拆槽位：**换发型和换装对职责句的影响完全一样** ——
+            #   「妆造参考@图片1」说的是造型来源，而这个人的造型正被改，
+            #   同句语义冲突（官方 `sd20-guide:121`，见 `person_duty` 注释）。
+            _pid_now = str(per.get("id") if per else "")
+            _in_wardrobe = (
+                bool(c.get("wardrobe")) and _pid_now in {
                     str(x) for x in (c.get("wardrobe_ids") or [])}
+            ) or (
+                bool(c.get("hair")) and _pid_now in {
+                    str(x) for x in (c.get("hair_ids") or [])}
+            )
             _duty = dialect.person_duty(pic=pic, rtag=_rtag,
                                         in_wardrobe=_in_wardrobe)
             out.append(s)
@@ -1237,7 +1310,7 @@ def _clauses(channel: str, c: dict, idx: dict[str, int], *,
         # 再说「背景保持不变」就是同一段提示词里自相矛盾（`sd20-guide:121`「避免语义冲突」）。
         # LAS 的 `general` 示例换的是杯子，背景不属于被换对象，所以它能写。
         _keep_s = ["物体"]
-        if not (c.get("person") or c.get("wardrobe")):
+        if not (c.get("person") or c.get("wardrobe") or c.get("hair")):
             _keep_s.insert(0, "人物")
         s += dialect.keep_others(_keep_s)
         out.append(s)
@@ -1335,6 +1408,40 @@ def _clauses(channel: str, c: dict, idx: dict[str, int], *,
             if s:
                 out.append(s)
 
+    if c.get("hair"):
+        # 🩸 2026-11-05 拆槽位：换发型走**和换装同一条官方模板**
+        #   `sd20-guide:39`「将其中的<原特征>修改为<新特征>」，`<原特征>` = 「发型」
+        #   （官方 `:95` 把「发型」列为可选核心特征之一）。
+        #   动词、宾语指代全部复用换装那套方言（`wardrobe_verb_text` /
+        #   `wardrobe_subject`），只是把类别词换成「发型」——
+        #   **不新造句式，只填官方模板的槽**（主人 2026-11-05「有排斥就拆槽位」）。
+        hid = [x for x in (c.get("hair_ids") or []) if str(x).strip()]
+        hdesc = (c.get("hair_desc") or "").strip()
+        _hdesc_by_pid = c.get("hair_desc_by_id") or {}
+        _hwrote = 0
+        for _i, pid in enumerate(hid):
+            who = _who(desc_by_id, pid, "zh")
+            _obj_h, _bare_h = dialect.wardrobe_subject({
+                "pid": pid, "i": _i, "people": people,
+                "frame_people": frame_people, "desc_by_id": desc_by_id,
+                "who": who, "c": c, "channel": channel,
+                "orig_tags": orig_tags, "ref_tag": ref_tag,
+                "noun": "发型",
+            })
+            _hd = str(_hdesc_by_pid.get(str(pid))
+                      or _hdesc_by_pid.get(pid) or "").strip()
+            if not _hd and _i == 0:
+                _hd = hdesc
+            if _hd:
+                _ht = dialect.wardrobe_verb_text()
+                s = (f"{_obj_h}{_ht}{_hd}" if _bare_h
+                     else f"{_subj(_obj_h)}{_ht}{_hd}")
+                out.append(s)
+                _hwrote += 1
+        if not _hwrote and hdesc:
+            # 没点名具体谁 = 一句话换全体（同换装的老语义）
+            out.append(f"{_subj('发型')}{dialect.wardrobe_verb_text()}{hdesc}")
+
     # 风格参考（A9）：图 / 视频 二选一；**风格词在 2.0 与它们叠加**。
     # 🩸 2026-10-27（真实矩阵 + 前端文案对账）：以前这里是「图 > 视频 > 词」
     # 三选一，结果用户既选了「2D日漫风格」又传了风格图时，风格词**整句丢掉**。
@@ -1429,9 +1536,9 @@ def _others_unchanged(names: list[str]) -> str:
 # 槽位 → 它在规格里的描述字段。人物的描述字段不在表里：换人只认图/资产 ID
 # （见 `missing_material` 的说明）。
 _DESC_OF = {"product": "product_desc", "scene": "scene_desc",
-            "wardrobe": "wardrobe_desc"}
+            "wardrobe": "wardrobe_desc", "hair": "hair_desc"}
 _SLOT_CN = {"person": "人物", "product": "产品", "scene": "场景",
-            "wardrobe": "服装造型"}
+            "wardrobe": "服装造型", "hair": "发型"}
 
 
 def missing_material(spec: dict, refs=None, *, person_asset: str = "",
@@ -1468,6 +1575,27 @@ def missing_material(spec: dict, refs=None, *, person_asset: str = "",
         #   —— 共用层出现型号名，分离门数成厂商耦合（基线 0，被这条顶到 2）。
         #   现在由调用方传 `wardrobe_per_person`（取自 `adapter.caps`），
         #   核心只认标记，**不认识有几家模型**。
+        # 🩸 2026-11-05 拆槽位：发型**没有图片槽位**（官方没有用图换发型的句式），
+        #   所以这里只查文字：没人点名就查 `hair_desc`，点了名就逐人查
+        #   `hair_desc_by_id`（同一套"每人一句"的语义，见 `wardrobe` 分支）。
+        if slot == "hair":
+            _hids = [x for x in (c.get("hair_ids") or []) if str(x).strip()]
+            _hby = c.get("hair_desc_by_id") or {}
+            _hgd = (c.get("hair_desc") or "").strip()
+            if not _hids:
+                if not _hgd:
+                    lack.append(_SLOT_CN["hair"])
+            else:
+                _hmiss = 0
+                for _i, _pid in enumerate(_hids):
+                    _d = str(_hby.get(str(_pid)) or _hby.get(_pid) or "").strip()
+                    if not _d and _i == 0:
+                        _d = _hgd
+                    if not _d:
+                        _hmiss += 1
+                if _hmiss:
+                    lack.append(_SLOT_CN["hair"])
+            continue
         if slot == "wardrobe" and wardrobe_per_person:
             # ⚠️ **只有开了这个能力位的型号才逐个查**（2026-10-27 主人：「现在让你调试
             # 2.0 模型，其他模型还没轮到」）。2.5 / H3 先保持老行为（只查 `wardrobe`
@@ -1500,8 +1628,13 @@ def missing_material(spec: dict, refs=None, *, person_asset: str = "",
             continue
         lack.append(_SLOT_CN[slot])
     if lack:
-        return (f"勾了「{'、'.join(lack)}」却没给素材："
+        _msg = (f"勾了「{'、'.join(lack)}」却没给素材："
                 "传一张图，或写一句换成什么。两者都没有，这一段出了也不会变。")
+        # 🩸 2026-11-05 拆槽位：发型**没有图片入口**，上面那句「传一张图」
+        #   对发型是假的（用户照做也找不到上传按钮）。
+        if _SLOT_CN["hair"] in lack:
+            _msg += "（发型只收文字描述，没有参考图入口。）"
+        return _msg
     # 风格参考（A9）：只开了开关没传素材，提示词会**静默忽略**它，用户花完钱
     # 才发现风格没变。风格没有"写一句话代替"的退路 —— 它就是要素材本身。
     if c.get("style_ref") and "style_ref" not in refs:

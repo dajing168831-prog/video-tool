@@ -313,7 +313,32 @@ def prepare_video(path: Path, cid: str, url: str = "",
         return ""
 
 
-def prepare_image(path: Path, cid: str) -> str:
+# 官方单张图片素材规格（`sd-shared/pull-2026-11-05/private-virtual-avatar-guide.md`
+# §素材资产库结构说明「单张图片文件格式要求」）：
+#   格式 jpeg/png/webp/tiff/gif/heic；宽高比 (0.4, 2.5)；宽高 (300, 6000)px；< 30MB。
+# 🩸 **只记日志、不拦**（同 `_video_fits` 的纪律）：我们没实测过超规时火山是真拒
+#   还是照收，凭一条没验过的规则把正常素材挡在门外，比漏报更糟。
+#   本条的价值在**排查**：入库失败退回 base64 后会被火山按「真人脸直传」拦，
+#   用户看到的原因和真实原因对不上，日志里得有真原因。
+_IMG_FORMATS = {".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".gif", ".heic", ".heif"}
+
+
+def _image_fits(path: Path) -> tuple[bool, str]:
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return False, "读不到文件"
+    why: list[str] = []
+    if size > 30 * 1024 * 1024:
+        why.append(f"{size / 1048576:.1f}MB 超 30MB")
+    if path.suffix.lower() not in _IMG_FORMATS:
+        why.append(f"格式 {path.suffix or '(无后缀)'} 不在 jpeg/png/webp/tiff/gif/heic")
+    # 宽高比与像素范围要读图才拿得到，这里不做 —— 常见竖版/横版图都在 (0.4, 2.5) 内，
+    # 真踩到火山会自己报错，届时按实测再补。
+    return (not why), "；".join(why)
+
+
+def prepare_image(path: Path, cid: str, *, report: dict | None = None) -> str:
     """参考图：检出脸才入库；没脸返回 ""（调用方直接传 base64，不占额度）。"""
     if not available():
         return ""
@@ -324,8 +349,17 @@ def prepare_image(path: Path, cid: str) -> str:
             return ""
     except Exception as e:  # noqa: BLE001
         log.warning("人脸判断失败，按有脸处理：%s", e)
+    ok, why = _image_fits(Path(path))
+    if not ok:
+        # 不拦，只留证：万一入库失败，日志和 report 里能直接看到规格原因
+        log.info("图片规格存疑（%s）：%s —— 仍然送入库，让火山判定", path.name, why)
+        if report is not None:
+            report["image_spec"] = f"{path.name}: {why}"
     try:
-        return _ingest(Path(path), cid, "image")
+        return _ingest(Path(path), cid, "image", report=report)
     except Exception as e:  # noqa: BLE001
         log.warning("图片入库异常，退回 base64：%s", e)
+        if report is not None:
+            # 用独立键：与视频的 `failed` 分开，免得一张图失败把视频的状态盖掉
+            report["image_failed"] = f"{path.name}: {e}"
         return ""

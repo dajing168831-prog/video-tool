@@ -173,6 +173,8 @@ def _render(cid: str, rid: str, script: str | None, mask_bottom: bool,
             dub_voices=item.get("dub_voices") or None,
             # 方言代码（火山 explicit_dialect）；空 = 标准普通话
             tts_dialect=(item.get("tts_dialect") or "").strip(),
+            # 口音还原（火山 tone_fidelity）；只对复刻音色生效
+            tts_fidelity=bool(item.get("tts_fidelity")),
             mask_bottom=mask_bottom, progress=progress,
             regen_prompt=regen_prompt,
             regen_shots=regen_shots, regen_mode=regen_mode,

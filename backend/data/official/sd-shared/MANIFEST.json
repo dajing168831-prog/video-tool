@@ -1,0 +1,30 @@
+{
+  "family": "sd-shared",
+  "display": "Seedance 2.0 / 2.5 共用官方资料（素材库 · 版权 IP · 人像）",
+  "applies_to": ["sd20", "sd25"],
+  "one_rule": "本目录只放**两代共用的视频生成资料**；型号专属规则仍回 sd20/ 与 sd25/。",
+  "pulled_at": "2026-11-05",
+  "source": {
+    "doc_library": "https://docs.volcengine.com/docs/ark （库 82379）",
+    "index_note": "ark.volcengine.com/llms.txt 只有 591 条，**不是全量**；库 82379 的 DOCLIST.txt 是 863 篇，以 DOCLIST 为准。",
+    "md_rule": "任一文档页地址后加 .md 即得 Markdown"
+  },
+  "why_pulled": "2026-11-05 主人指出「关于复刻的查全资料」。核对后发现此前只按 llms.txt 前段抓了 15 篇，索引外的『私域人像素材库』『生成版权 IP 视频』整族未入库。",
+  "files": [
+    {"path": "DOCLIST.txt", "role": "方舟库 82379 全量目录（863 篇）", "lines": 866},
+    {"path": "pull-2026-11-05/private-real-person-avatar-guide.md", "role": "私域真人人像素材库：H5 活体认证 → Asset Group → 入库 → Asset URI 生成", "code": "guide-preview", "bytes": 35799},
+    {"path": "pull-2026-11-05/private-virtual-avatar-guide.md", "role": "私域虚拟人像素材库：同上但无需真人认证；含人像素材最佳实践（全身正面图/人脸特写图）", "code": "private-virtual-avatar-library-guide-preview", "bytes": 35493},
+    {"path": "pull-2026-11-05/asset-dashboard.md", "role": "素材库数据看板与告警设置", "code": "asset-dashboard", "bytes": 2885},
+    {"path": "pull-2026-11-05/copyright-video-api.md", "role": "版权 IP 视频 API（平台版权素材）", "code": "copyright-video-api", "bytes": 21880},
+    {"path": "pull-2026-11-05/real-person-ip-video-api.md", "role": "真人 IP 视频 API（ClaimCommercialIPs 领用后生成）", "code": "real-person-ip-video-api", "bytes": 21961},
+    {"path": "pull-2026-11-05/copyright-clearance-usageuide.md", "role": "自有版权申请加白与使用指南", "code": "copyright-clearance-usageuide", "bytes": 22635},
+    {"path": "pull-2026-11-05/right-auth-letter-application-guide.md", "role": "真人 IP 版权视频授权书申请 API（生成后给艺人的合规文件）", "code": "right-auth-letter-application-guide", "bytes": 25653},
+    {"path": "pull-2026-11-05/upload-copyright.md", "role": "版权方上传商业化版权（我方不是版权方，仅备案）", "code": "upload-copyright", "bytes": 4670},
+    {"path": "pull-2026-11-05/copyright-and-portrait-material-usage-rules.md", "role": "版权和人像素材使用规则（合规边界）", "code": "copyright-and-portrait-material-usage-rules", "bytes": 8457}
+  ],
+  "relevance_to_clone": {
+    "直接用": ["private-real-person-avatar-guide", "private-virtual-avatar-guide", "asset-dashboard"],
+    "合规备查": ["copyright-and-portrait-material-usage-rules", "right-auth-letter-application-guide"],
+    "当前业务不涉及": ["copyright-video-api", "real-person-ip-video-api", "copyright-clearance-usageuide", "upload-copyright"]
+  }
+}

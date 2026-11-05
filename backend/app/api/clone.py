@@ -118,6 +118,16 @@ class EditIn(BaseModel):
         default_factory=dict, description="逐人换装描述：{人的 id: 描述}")
     # 换装名单：第 i 个人 → wardrobe / wardrobe2 …；空 = 老语义（全体一起换）
     wardrobe_ids: list[str] = Field(default_factory=list, description="要换装的人，按槽位顺序")
+    # 🩸 2026-11-05 拆槽位（主人：「有排斥就拆槽位」）：换发型独立于换装。
+    #   以前一律写成「…的服装修改为低马尾」—— `<原特征>` 用错词。
+    #   官方 `sd20-guide:39`「将其中的<原特征>修改为<新特征>」的 `<原特征>`
+    #   本来就是自由槽，`:95` 明确把「发型」列为可选核心特征之一。
+    #   没有发型图片槽位：官方文件里没有任何"用图换发型"的句式。
+    hair: bool = False
+    hair_ids: list[str] = Field(default_factory=list, description="要换发型的人，按槽位顺序")
+    hair_desc: str = ""
+    hair_desc_by_id: dict[str, str] = Field(
+        default_factory=dict, description="逐人发型描述：{人的 id: 描述}")
     # 谁在说话（MiniMax H3 用）：只有名单里的人拿 (Sx) 号
     speaker_ids: list[str] = Field(default_factory=list, description="说话人，按槽位顺序")
     style: str = Field("", description="live / anime / 3d / film / sketch，空=不改")
@@ -171,6 +181,10 @@ class RenderIn(BaseModel):
     # （beijing/dongbei/henan/shaanxi/shanghai/sichuan/tianjin/yue）。
     # 只有音色表里带 `dialects` 的 2.0 音色（Vivi/小何/云舟/小天）才吃这个参数。
     tts_dialect: str = Field("", description="方言代码，空=标准普通话")
+    # 🩸 口音还原（2026-11-05）：火山 `tone_fidelity`，只对**复刻音色**（S_ 开头）生效。
+    # 官方原文见 `providers/tts.py` synth() 里的注释（还原音色+情感+韵律+口音）。
+    # 默认关 = 不改老客户端/老任务的出片效果；前端复刻面板里默认勾上。
+    tts_fidelity: bool = Field(False, description="还原原片口音/韵律（仅复刻音色）")
     # 🩸 用户在试听里手调过的语速。不传 = 用估算自动算（老行为）。
     # 传了就必须用他的 —— 试听调好、出片又变回自动值，那功能就是假的。
     speech_rate: int | None = Field(
@@ -1073,6 +1087,9 @@ class VoicePreviewIn(BaseModel):
     voice: str = Field("", description="音色 id；空 = 该语种默认")
     rate: int = Field(0, description="语速 -30~30，正数=更快")
     lang: str = Field("", description="语种；空 = 从音色 id 前缀推")
+    # 口音还原（火山 tone_fidelity）：只对复刻音色生效。
+    # 试听必须能听到它 —— 否则用户开了开关，要等整条片出完才知道像不像。
+    fidelity: bool = Field(False, description="还原原片口音/韵律（仅复刻音色）")
 
 
 @router.post("/clone/{cid}/voice-preview")
@@ -1096,14 +1113,20 @@ async def clone_voice_preview(cid: str, body: VoicePreviewIn):
     rate = max(-speech_est.MAX_RATE, min(speech_est.MAX_RATE, int(body.rate or 0)))
     tts = get_tts()
 
-    key = hashlib.sha1(f"{voice}|{rate}|{text}".encode("utf-8")).hexdigest()[:16]
+    # 🩸 缓存键必须带还原开关：开了 fidelity 的声音和没开是两段不同的音频，
+    # 共用键会让用户点开关后听到上一版的旧缓存，以为功能没生效。
+    # 还原模式只对复刻音色生效，且官方不支持跨语种 —— 翻译过的台词不打开
+    fid = (bool(body.fidelity) and voice.startswith("S_")
+           and (not lang or lang.startswith("zh")))
+    key = hashlib.sha1(
+        f"{voice}|{rate}|{'f' if fid else ''}|{text}".encode("utf-8")).hexdigest()[:16]
     d = store.task_dir(cid) / "voice_preview"
     d.mkdir(parents=True, exist_ok=True)
     p = d / f"{key}{getattr(tts, 'ext', '.wav')}"
     cached = p.exists() and p.stat().st_size > 0
     if not cached:
         try:
-            tts.synth(text, p, voice=voice, rate=rate)
+            tts.synth(text, p, voice=voice, rate=rate, fidelity=fid)
         except Exception as e:  # noqa: BLE001
             log.warning("文案试听合成失败 cid=%s：%s", cid, e)
             p.unlink(missing_ok=True)
@@ -1548,6 +1571,8 @@ async def clone_render(cid: str, body: RenderIn):
                         if str(v).strip()} if body.dub_voices else {}),
         # 方言代码（火山 explicit_dialect）；空 = 标准普通话
         "tts_dialect": (body.tts_dialect or "").strip().lower(),
+        # 口音还原（火山 tone_fidelity）；只对复刻音色生效
+        "tts_fidelity": bool(body.tts_fidelity),
         "error": "",
         "duration": None,
         "regen_prompt": regen_prompt,

@@ -56,7 +56,11 @@ def _compile(spec: dict, *, channel: str = "minimax", **kw) -> str:
         #   那一刀画面来自参考图2 的庭院，模型没有切镜点就自己编了一个。
         shot_cuts=kw.get("shot_cuts"),
         # 每一镜的画面内容（盘点 `inventory.shots` 的 en）—— `:251` 要的景别/内容/运镜
-        shot_desc=kw.get("shot_desc"))
+        shot_desc=kw.get("shot_desc"),
+        # 🩸 2026-11-05：逐镜台词。官方 `:251`/`:250`/`:700`（「很多口型问题
+        #   会来自于这个」）。以前手写入口没接 —— 原声复用只给音频不给字，
+        #   模型不知道谁在说什么，嘴型自由发挥（实拍复现）。
+        shot_lines=kw.get("shot_lines"))
 
 
 def _gate(inventory=None, slots=None, person_ids=None, spec=None, **kw) -> None:

@@ -34,7 +34,34 @@ H3 手册里没有，一律不写。
 """
 from __future__ import annotations
 
+import re
+
 from app.services.edit_spec import PERSON_SLOTS, STYLES
+
+#: 景别词表 —— `shots[].en` 的**首段**偶尔把景别和主体揉在一起
+#: （真实样本 `60f82aab` 11 镜里 2 镜：`Close-up of a blonde woman's face
+#: with round glasses`、`Close-up of dragon's face`）。
+#: 直接取「第一个逗号前」会把**原片人物外观**搬进提示词，和「换成@图片1中的人物」
+#: 正面打架 —— 同 `_scales` 上方 §⑧ 已经写过的实证（`two aproned women`）。
+#: 长词在前：`medium close-up` 不能被 `close-up` 抢先吃掉。
+_SCALE_RE = re.compile(
+    r"\b(extreme\s+close[- ]?up|medium\s+close[- ]?up|close[- ]?up"
+    r"|medium\s+(?:full\s+)?shot|cowboy\s+shot"
+    r"|(?:extreme\s+)?(?:long|wide|full|establishing)\s+shot"
+    r"|over[- ]the[- ]shoulder(?:\s+shot)?|two[- ]shot|point[- ]of[- ]view)\b",
+    re.IGNORECASE)
+
+
+def _scale_of(en: str) -> str:
+    """`shots[].en` → 景别短语（保持原文大小写）；认不出就返回空。
+
+    只认公认的景别词，**不取首段其余部分** —— 那里面是主体描述（人/龙/道具），
+    复刻里写进来就是拿原片的主体去顶替参考图的主体。宁可不写景别，
+    也不要搬一句会打架的话（官方 `:251` 要景别，但没说必须每镜都写）。
+    """
+    head = str(en or "").split(",")[0].strip()
+    m = _SCALE_RE.search(head)
+    return m.group(1) if m else ""
 
 #: 方位 → 中文指代。`position` 来自视觉盘点（`inventory.people[*].position`）。
 _POS_ZH = {
@@ -178,6 +205,13 @@ def handwrite(spec: dict, c: dict, idx: dict[str, int],
               subject_looks: dict | None = None,
               shot_cuts: list[float] | None = None,
               shot_desc: list[dict] | None = None,
+              # 🩸 2026-11-05：逐镜台词。官方 `:251`「每个 shot 内部写好…
+              #   人物台词」+ `:250`「如有台词，必须明确具体内容」；
+              #   `:700`「台词的长短尽量和镜头长短对齐（这个得强调下，**很多口型
+              #   问题会来自于这个**）」。原声复用时只给 @音频1 不给字 —— 模型
+              #   不知道谁在什么时候说了什么，嘴型只能自由发挥（实拍复现）。
+              #   数据早就有（`_span_lines`），只是手写入口没接。
+              shot_lines: list[list[dict]] | None = None,
               **kw) -> str:
     """编出手写入口版提示词。**只处理换人**（`change.person`）。
 
@@ -309,12 +343,73 @@ def handwrite(spec: dict, c: dict, idx: dict[str, int],
     #     「景别与构图 → 主体 → 动作 → 环境与光线 → 运镜」，13/13 样本全中。
     _scales: list[tuple[float, float, str]] = []
     for s in (shot_desc or []):
-        sc = str(s.get("en") or "").strip().split(",")[0].strip()
-        if sc:
-            _scales.append((float(s.get("start") or 0), float(s.get("end") or 0), sc))
+        # 🩸 只取**景别词**，不取「第一个逗号前」：首段可能把主体揉进来
+        #   （`Close-up of a blonde woman's face…`），那会把原片人物的外观写进
+        #   提示词，和「换成@图片N中的人物」正面打架。抽不到景别就留空，
+        #   **镜头本身照留**（丢镜头会让时间轴少一段）。
+        if not str(s.get("en") or "").strip():
+            continue
+        _scales.append((float(s.get("start") or 0), float(s.get("end") or 0),
+                        _scale_of(s.get("en"))))
     _cuts: list[float] = []
     if shot_cuts is not None:
         _cuts = sorted({round(float(x), 2) for x in shot_cuts if float(x) > 0})
+
+    # ⑩½ 台词 —— 出处见入参注释（`:251` / `:250` / `:700`）。
+    #   说话人怎么指代：` :260`「切镜的时候可明确写出…具体主体是之前的哪个角色」，
+    #   换过的人一律用**图号**（`@图片N中的人物`）—— 外貌描述说的是原片那个人，
+    #   写进来会和「换成@图片N」打架（§50 踩过，同 `_swapped_n` 的理由）。
+    _spk: dict[str, str] = {}
+    for _i, _p in enumerate(people):
+        _pid = str((_p or {}).get("id") or "")
+        _slot = PERSON_SLOTS[_i] if _i < len(PERSON_SLOTS) else ""
+        _n = idx.get(_slot) if _slot else None
+        _d = str((_p or {}).get("desc_zh") or "").split("，")[0][:12].strip()
+        _spk[_pid] = (f"@图片{_n}中的人物" if _n else _d) or ""
+
+    # 跨切点的台词：`_span_lines` 把一句拆成 `part=start` / `part=end` 两半，
+    # **先拼回一句**，挂到后半那一镜，并写「接着上一镜继续说」——
+    # 官方 `:700`「如果一句台词跨shot，可以用接着上个shot继续说这样的描述」。
+    _flat: list[tuple[int, dict]] = []
+    _pend: tuple[int, dict] | None = None
+    for _i, _grp in enumerate(shot_lines or []):
+        for _x in (_grp or []):
+            _pt = str((_x or {}).get("part") or "")
+            if _pt == "start":
+                _pend = (_i, _x)
+                continue
+            if _pt == "end" and _pend is not None:
+                _pi, _pre = _pend
+                _pend = None
+                _flat.append((_i, {**_x,
+                                   "text": str(_pre.get("text") or "")
+                                           + str(_x.get("text") or ""),
+                                   "cont": True}))
+                continue
+            if _pend is not None:      # 前半没有后半：放回它自己那一镜，别吞
+                _pi, _pre = _pend
+                _pend = None
+                _flat.append((_pi, _pre))
+            _flat.append((_i, _x))
+    if _pend is not None:
+        _flat.append(_pend)
+    _buckets: list[list[dict]] = [[] for _ in range(max(len(shot_lines or []), 1))]
+    for _i, _x in _flat:
+        _buckets[min(_i, len(_buckets) - 1)].append(_x)
+
+    def _say(grp: list[dict] | None) -> str:
+        """一镜里的台词 → 「某某说：“…”」（官方 `:250` 的写法）。"""
+        out: list[str] = []
+        for x in (grp or []):
+            t = str((x or {}).get("text") or "").strip()
+            if not t:
+                continue
+            w = _spk.get(str((x or {}).get("speaker") or ""), "")
+            head = "接着上一镜继续说，" if (x or {}).get("cont") else ""
+            out.append(f"{head}{w}说：“{t}”" if w else f"{head}台词：“{t}”")
+        return "，".join(out)
+
+    _said: set[int] = set()
 
     swapped = False
     # 被换掉的图号 —— `:260`「具体主体是之前的哪个角色」要用它指代。
@@ -325,6 +420,21 @@ def handwrite(spec: dict, c: dict, idx: dict[str, int],
     _wd_ids = {str(x) for x in (c.get("wardrobe_ids") or [])}
     _wd_all = (not _wd_ids) and (
         bool(str(c.get("wardrobe_desc") or "").strip()) or bool(idx.get("wardrobe")))
+    # 🩸 2026-11-05 换发型拆槽位：覆盖判定与换装同口径（有 ids 按 ids，否则全员）。
+    #   被换发型覆盖的人，维度里不能再要求「发型与参考图一致」—— 两句会打架
+    #   （同 `_wd_ids` 对「服装设计」的处理）。
+    _hr_ids = {str(x) for x in (c.get("hair_ids") or [])}
+    _hr_all = (not _hr_ids) and bool(str(c.get("hair_desc") or "").strip())
+
+    def _dims_of(pid: str) -> str:
+        """`people[i]` 的维度清单 —— 官方 `:279`「脸、发型、体型比例、服装设计、
+        材质细节」。被换装/换发型覆盖的那一项由对应编辑句决定，这里要摘掉。"""
+        keep = ["脸", "体型比例", "材质细节"]
+        if not (_wd_all or pid in _wd_ids):
+            keep.insert(2, "服装设计")
+        if not (_hr_all or pid in _hr_ids):
+            keep.insert(1, "发型")
+        return "、".join(keep[:-1]) + "和" + keep[-1]
     if people:
         # ① 替换句 —— 逐字照 `:213`「视频1中最后面的小孩换成 图1中的金毛狗，
         #    视频1中最左边小孩穿的卡其色外套改成图2中的牛仔外套」：**每个分句都重带
@@ -342,9 +452,7 @@ def handwrite(spec: dict, c: dict, idx: dict[str, int],
             n = idx.get(slot) if slot else None
             if not n:
                 continue
-            _dims = ("脸、发型、体型比例和材质细节"
-                     if (_wd_all or str(p.get("id") or "") in _wd_ids)
-                     else "脸、发型、体型比例、服装设计和材质细节")
+            _dims = _dims_of(str(p.get("id") or ""))
             parts.append(f"@视频1中{_who(p, unambiguous=_pos_of(p) not in dup)}"
                          f"换成@图片{n}中的人物，替换后该人物的{_dims}"
                          f"与@图片{n}保持一致")
@@ -363,8 +471,7 @@ def handwrite(spec: dict, c: dict, idx: dict[str, int],
             # 有图、没盘点：必须用图号点名（`:213`），否则「把人物换掉」没有唯一解。
             idea.append(f"@视频1中的人物换成@图片{n}中的人物。")
             _swapped_n.append(n)
-            _dims = ("脸、发型、体型比例和材质细节" if _wd_all
-                     else "脸、发型、体型比例、服装设计和材质细节")
+            _dims = _dims_of("")
             idea.append(f"替换后的人物在{_dims}上与@图片{n}保持一致。")
             swapped = True
 
@@ -373,22 +480,48 @@ def handwrite(spec: dict, c: dict, idx: dict[str, int],
     #   标签用官方格式 `0-3 秒：全景`（`:251` 示例 / `:285` 完整案例），
     #   **不是**自造的「原片画面：」。
     _pics = "、".join(f"@图片{n}" for n in _swapped_n)
+
+    def _tail(i: int) -> str:
+        """这一镜的台词，接在景别后面（官方 `:251` 的一句话结构）。"""
+        _said.add(i)
+        _s = _say(_buckets[i] if i < len(_buckets) else None)
+        return f"，{_s}" if _s else ""
+
+    def _lead(a: float, b: float, sc: str, first: bool) -> str:
+        """`0-3 秒：全景` / `3-8 秒：切镜到中景`。
+
+        景别认不出时只写时间戳（后续镜写「切镜」）—— 宁可少说一样，
+        也不把主体描述搬进来（见 `_scale_of` 的注释）。
+        """
+        if sc:
+            return f"{a:g}-{b:g} 秒：{sc}" if first else f"{a:g}-{b:g} 秒：切镜到{sc}"
+        return f"{a:g}-{b:g} 秒" if first else f"{a:g}-{b:g} 秒：切镜"
+
     if len(_scales) >= 2:
         for i, (a, b, sc) in enumerate(_scales[:12]):
             if i == 0:
-                process.append(f"{a:g}-{b:g} 秒：{sc}。")
+                process.append(f"{_lead(a, b, sc, True)}{_tail(i)}。")
             else:
                 _subj = f"，主体仍是{_pics}中的人物" if _pics else ""
-                process.append(f"{a:g}-{b:g} 秒：切镜到{sc}{_subj}。")
+                process.append(f"{_lead(a, b, sc, False)}{_subj}{_tail(i)}。")
     elif len(_scales) == 1:
         a, b, sc = _scales[0]
-        process.append(f"{a:g}-{b:g} 秒：{sc}。")
+        process.append(f"{_lead(a, b, sc, True)}{_tail(0)}。")
         # 🩸 盘点只有 1 个 shot 时**不补切点句**（§58）。`de591f35` 的 3.33s 是切片器
         #   被舞蹈动作骗出来的，主人确认源片是一个镜头；写了"切镜"模型就会编新镜头
         #   → `93dbec8f`/`c8455a93` 第二镜整段搬来 @图片2 的庭院。
     elif _cuts:
         _where = "、".join(f"第 {c:g} 秒" for c in _cuts)
         process.append(f"在@视频1{_where}的切镜点切镜。")
+
+    # 没落进任何时间轴分段的台词也要写出来（没有景别 / 镜头数和盘点对不上）——
+    # 官方 `:250`「如有台词，必须明确具体内容」，一条都不能吞。
+    for _i in range(len(_buckets)):
+        if _i in _said:
+            continue
+        _s = _say(_buckets[_i])
+        if _s:
+            process.append(f"{_s}。")
 
     if shot_cuts is not None:
         if not _cuts:
@@ -443,6 +576,14 @@ def handwrite(spec: dict, c: dict, idx: dict[str, int],
     # ④ 换装 —— `:213`「视频1中最左边小孩穿的卡其色外套改成图2中的牛仔外套」
     if c.get("wardrobe"):
         idea.extend(_wardrobe_pairs(c, people, idx))
+
+    # ④-b 换发型 —— 与换装同一条官方模板 `:608`「视频1中最左边小孩穿的卡其色外套
+    #   改成图2中的牛仔外套」：**主体 + 属性 + 改为 + 目标**。`发型` 是官方
+    #   `:279` 自己列举的人物属性（「脸、发型、体型比例、服装设计、材质细节」），
+    #   `:635`「去掉人物佩戴的墨镜」也证明局部属性可以直接改。
+    #   发型只有文字描述、没有图片槽（H3 官方没有"用图换发型"的句式）。
+    if c.get("hair"):
+        idea.extend(_hair_pairs(c, people))
 
     # ⑤ 换产品 —— `:234`「将视频开头出现的易拉罐饮料替换为可口可乐」
     if c.get("product"):
@@ -556,6 +697,36 @@ def handwrite(spec: dict, c: dict, idx: dict[str, int],
         blocks.append("【整体要求补充】\n" + "\n".join(lines))
 
     return "\n\n".join(blocks)
+
+
+def _hair_pairs(c: dict, people: list[dict]) -> list[str]:
+    """换发型句 —— 与 `_wardrobe_pairs()` 同构，只是没有图片槽。
+
+    官方依据：
+      · `h3-manual:608`「视频1中最左边小孩穿的卡其色外套改成图2中的牛仔外套」
+        ——「主体 + 属性 + 改为 + 目标」就是 H3 的局部替换模板；
+      · `h3-manual:279`「脸、发型、体型比例、服装设计、材质细节」——
+        「发型」是官方自己列出的人物属性，不是我们造的类别词；
+      · `h3-manual:635`「去掉人物佩戴的墨镜」—— 局部属性可以单独改。
+    """
+    by_id = {str(p.get("id") or ""): p for p in people}
+    ids = [str(x) for x in (c.get("hair_ids") or []) if str(x).strip()]
+    per = c.get("hair_desc_by_id") or {}
+    fallback = str(c.get("hair_desc") or "").strip()
+    out: list[str] = []
+    if ids:
+        for pid in ids:
+            p = by_id.get(pid)
+            if not p:
+                continue
+            desc = str(per.get(pid) or fallback).strip()
+            if not desc:
+                continue
+            out.append(f"{_who(p, unambiguous=True)}的发型改为{desc}。")
+    elif fallback:
+        # 没点名具体谁 = 一句话换全体（与换装老语义一致）
+        out.append(f"@视频1中人物的发型改为{fallback}。")
+    return out
 
 
 def _wardrobe_pairs(c: dict, people: list[dict], idx: dict[str, int]) -> list[str]:

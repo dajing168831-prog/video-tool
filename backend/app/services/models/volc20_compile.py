@@ -383,15 +383,18 @@ class _CL20(Dialect):
         #   `<主体1>的面部特征和妆造参考@图片1`（353 字）—— **未出片、未验证**，
         #   已回滚。要再改这条，必须单独出片验，不许拿"语法更顺"当理由直接换。
         #   没标签时保持 2026-10-26 真机跑过的旧写法，不动。
-        # ✅ 2026-11-04 主人拍板「不要回滚，用最新的」→ 采用补主语这版。
-        #   ⚠️ 如实记：20:58 出片通过（`ef232fc6`）的是**上一版**
-        #   （`参考@图片1的面部特征和妆造`，343 字），本版 353 字**尚未出片**。
-        #   两版只差这一句的主语位置，其余逐字相同。
-        _who = rtag or "人物"
+        # 🩸🩸 2026-11-05 实测定案：**回滚到无主语版**。
+        #   `20e6b5d0`（7.583s 预览）用「参考@图片1中人物的面部特征和妆造」出片：
+        #   人换上了，但脸既不像原片也不像定妆照 —— 模型把「图片1中的人物」
+        #   当成一个**泛指身份**（"图里那种人"），不是"这张脸的像素"。
+        #   官方组合任务句式（`:59-65`）是「**参考<图片N>的[参考维度]**」，
+        #   参考维度取 `:317` 的「面部特征」「妆造」—— 原句里没有"中人物的"。
+        #   而且这一版从改出来到 20e6b5d0 之前**一次都没出过片**（见上面的记录），
+        #   唯一通过过的就是「参考@图片1的面部特征和妆造」（`ef232fc6`，343 字）。
         _tail = "" if in_wardrobe else "和妆造"
         if rtag:
             return f"{rtag}的面部特征{_tail}参考{pic}"
-        return f"参考{pic}中{_who}的面部特征{_tail}"
+        return f"参考{pic}的面部特征{_tail}"
 
     def keep_others(self, names: list[str]) -> str:
         # 🧹 2026-11-04 清理：原来引 **LAS `las_cn.md:385`**（`general` 模板）——
@@ -425,6 +428,10 @@ class _CL20(Dialect):
         who = ctx.get("who") or ""
         orig_tags = ctx.get("orig_tags") or {}
         ref_tag = ctx.get("ref_tag")
+        # 🩸 2026-11-05 拆槽位：类别词由调用方给（默认「服装」）。
+        #   换发型走**同一条模板**，只把 `<原特征>` 换成「发型」
+        #   （`sd20-guide:39` + `:95` 把「发型」列为可选核心特征）。
+        _noun = str(ctx.get("noun") or "服装")
 
         def _tag_of(i: int, per: dict | None) -> str:
             _pid = str((per or {}).get("id") or "")
@@ -443,18 +450,18 @@ class _CL20(Dialect):
                 _img_tag = _rtag_of(_i)
                 break
         if _img_tag:
-            return f"{_img_tag}的服装", True
+            return f"{_img_tag}的{_noun}", True
         if _wt:
-            return f"{_wt}的服装", False
+            return f"{_wt}的{_noun}", False
         _pool = frame_people or people
         _per_i = next((k for k, x in enumerate(_pool)
                        if str((x or {}).get("id") or "") == str(pid)), None)
         _loc = (_orig_feat_20(_pool, _per_i, pool=_pool, cloth=False)
                 if _per_i is not None else "")
         if _loc:
-            return f"{_loc}的服装", False
+            return f"{_loc}的{_noun}", False
         _hn = _head_noun(who) if who else ""
-        return (f"{_hn}的服装" if _hn else "服装"), False
+        return (f"{_hn}的{_noun}" if _hn else _noun), False
 
     def style_ref(self, pic: str) -> str:
         # 官方 `sd20-guide:59-65` 组合任务：「参考<素材N>的[参考维度]，严格编辑…」
@@ -613,6 +620,17 @@ def _ref_side_tags_20(idx: dict[str, int], channel: str,
         if not str(((looks.get(slot) or {}).get("zh") or "")).strip():
             return [], {}
         targets.append((i, slot))
+    # 🩸🩸 2026-11-05 撤回（当天真机反证）：
+    #   上午曾把门槛从「< 2」放宽到「0」，让**单人换人也发 `<主体N>` 定义句**。
+    #   真机任务 `60f82aab` 出片后主人报「一点也没有改变」—— SFace 对成片
+    #   实测 best 0.357 / p90 0.255 / **share 0.0**（一帧都没达到同人阈值 0.363）。
+    #   这与 `_person_tags_20` 里 **2026-10-30 的三次真机实测**完全一致：
+    #   定义句会把「这个人有哪些特征」喂给模型，替换时模型反而把这些特征**保留**
+    #   在原片上（衣服换、脸不换）。当时的结论就是「一换一不发任何 `<主体N>`」。
+    #   上午改动的依据只是矩阵的代码推断（18/87 格），没有真机证据 —— 撤回。
+    #   恢复门槛后单人回到官方 `:126` 的「@图片N中的人物」写法。
+    #   ⚠️ 2.0 换人「换不上」的根因**未解决**（无标签版历史 share 也仅 4–9%），
+    #      另行排查；这一条只保证不再引入已被真机否定的写法。
     if len(targets) < 2:
         return [], {}
     texts = {i: str((looks.get(slot) or {}).get("zh") or "") for i, slot in targets}
@@ -887,8 +905,22 @@ def _volc20_boilerplate(c: dict) -> str:
     # 官方「单点编辑」示例的实际落笔是：
     #   「…动作和运镜不变。画面稳定无变形，不要生成水印，不要生成 Logo。」
     # ⇒ 内容一个不少，改成折叠短句。
+    # 🩸 2026-11-05：画质包必挂（`sd2-pe:219`「强制兜底：最终输出必须包含
+    #   画质包 + 稳定包 + 水印 / Logo 兜底」），但「高清电影质感」是**写实**词。
+    #   选了动漫 / 3D / 手绘时，它和前面的「整体风格为2D日漫风格」直接打架 ——
+    #   官方 `prompt-guide.md:354`（风格漂移）要求用明确的风格约束词压住写实漂移，
+    #   同一句里再给一个写实质感词等于把约束抵消掉。
+    #   ⇒ 非写实风格下，画质项换成该风格的官方锚点词（`edit_spec._STYLE_ANCHOR_20`，
+    #     `anime`/`3d`/`sketch` 三个都取自官方 `:354` 与 `sd2-pe:163` 的原词）。
+    #     画质包仍在、约束不丢、语义不冲突。`live`（实拍）保持「高清电影质感」。
+    from app.services.edit_spec import _STYLE_ANCHOR_20, STYLES
+
+    _st = str((c or {}).get("style") or "").strip()
+    _quality = "高清电影质感"
+    if _st and _st != "live":
+        _quality = _STYLE_ANCHOR_20.get(_st) or STYLES.get(_st) or _quality
     parts = [
-        "高清电影质感",
+        _quality,
         "画面稳定无变形",
         "保持无字幕，避免生成任何文字或字幕",
         "不要生成水印",
@@ -1232,6 +1264,7 @@ def _keep_point_edit(spec: dict) -> str:
 def _volc(spec: dict, c: dict, idx: dict[str, int], *, model: str = "",
           people: list[dict] | None = None,
           frame_people: list[dict] | None = None,
+          frame_others: list[dict] | None = None,
           audio_ref: bool = False,
           desc_by_id: dict[str, str] | None = None,
           shot_cuts: list[float] | None = None,
@@ -1274,6 +1307,10 @@ def _volc(spec: dict, c: dict, idx: dict[str, int], *, model: str = "",
     parts = _clauses("volc", c, idx, dialect=CL20,
                      people=people, desc_by_id=desc_by_id,
                      frame_people=frame_people,
+                     # 🩸 矩阵 §3.1：画面里的**非人主体**（龙/宠物/机器人）。
+                     # 有它的时候单人换人句的源宾语必须点名（`skill:24` 的 `<原特征>`），
+                     # 裸「人物」在"人 + 龙"的画面里没有唯一解。
+                     frame_others=frame_others,
                      keep=spec["keep"],
                      style_anchor=not ms.get("edit_task_param"),
                      style_video=style_video,
@@ -1490,7 +1527,10 @@ def _volc(spec: dict, c: dict, idx: dict[str, int], *, model: str = "",
         (head, 0), (master, 0), (shot_clause, 0), (scope, 0),
         (audio_clause, 0), (lines_clause, 0), (extra, 2),
         (tail, 0), *[(g, 0) for g in guards]) if x]
-    out = bind
+    # 🩸 2026-11-05：`bind` 自带句号，下面每段拼接又补一个「。」→ 出「。。」。
+    #   先把 bind 尾句号去掉，交由拼接统一收尾（官方对提示词的标点没有专门规定，
+    #   但重复句号属于书写错误，`prompt-guide.md` 全文没有「。。」这种写法）。
+    out = bind.rstrip("。")
     for _x, _k in _segs:
         _x = _x.rstrip("。")
         if not out:

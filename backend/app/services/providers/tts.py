@@ -98,7 +98,10 @@ class VolcTTS:
     返回是 NDJSON：每行 {"code","message","data"}，data 是 base64 音频分片，
     最后一行 code=20000000 表示结束。把分片按序拼接就是完整音频。
 
-    speech_rate 取值范围 -50~100，我们对外只暴露 -50~50 的整数百分点。
+    speech_rate 官方取值 -50~100（100 = 2.0 倍速）。
+    出处：`data/official/voice/pull-2026-11-05/docs/2528925.md:172`（现行 HTTP 接口）。
+    这里按官方的**接口上限**钳，不做产品层限制 —— 「超过 ±30 人声就假了」
+    是产品判断，落在 `speech_est.MAX_RATE`，不归 provider 管。
     """
 
     name = "volc"
@@ -115,7 +118,7 @@ class VolcTTS:
         self.uid = settings.volc_uid
 
     def synth(self, text: str, out: Path, *, voice: str = "",
-              rate: int = 0, dialect: str = "") -> Path:
+              rate: int = 0, dialect: str = "", fidelity: bool = False) -> Path:
         text = (text or "").strip()
         if not text:
             raise TTSError("要合成的文本是空的")
@@ -129,7 +132,7 @@ class VolcTTS:
             "audio_params": {
                 "format": "mp3",
                 "sample_rate": 24000,
-                "speech_rate": max(-50, min(50, int(rate))),
+                "speech_rate": max(-50, min(100, int(rate))),
             },
         }
         # 🩸 方言（2026-10-27）：官方《语音合成 HTTP 接口》`explicit_dialect` 原文
@@ -141,6 +144,18 @@ class VolcTTS:
         # 传了不支持的组合火山会直接报参数错误，所以前端只在有方言的音色上给这个选项。
         if (dialect or "").strip():
             params["explicit_dialect"] = dialect.strip().lower()
+
+        # 🩸 口音还原（2026-11-05）：官方《语音合成 HTTP 接口》`tone_fidelity` 原文
+        # `data/official/voice/pull-2026-11-05/docs/2528925.md:16-21`：
+        # ① 「开启还原模式，开启后模型将尽可能还原送入的上传的 prompt 音频音色和
+        #     说话风格（情感、韵律、口音等）」—— 这是 8 种 explicit_dialect 之外的
+        #     地方口音（广西、潮汕…）唯一能走的路，因为口音跟着上传原声走。
+        # ② 「仅适用于豆包声音复刻大模型2.0音色」—— 预设音色传了会被拒，
+        #     所以这里加 `S_` 判断，宁可不传也不让整条合成失败。
+        # ③ 「仅支持合成和上传音频同语种的文本，不支持跨语种合成」—— 跨语种的
+        #     拦截在调用方（clone_pipeline）做，provider 这层不知道上传音频是什么语种。
+        if fidelity and (voice or self.speaker).startswith("S_"):
+            params["tone_fidelity"] = True
 
         body = {"user": {"uid": self.uid}, "req_params": params}
         used = voice or self.speaker

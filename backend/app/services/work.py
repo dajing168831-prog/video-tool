@@ -202,7 +202,11 @@ def _video_prompts(plan: dict, spans: list, shots: list | None = None,
             out.append(video_edit._span_prompt(
                 plan, target, drop_person=(act == "text"),
                 audio_ref=audio_ref, boundary_pic=bf_pic, shot_cuts=cuts,
-                shot_lines=seg_lines, frame_people=frame_ppl))
+                shot_lines=seg_lines, frame_people=frame_ppl,
+                # 🩸 2026-11-05：只传**这一段**的镜头表（时间轴从 0 起）。
+                #   以前传整片的，H3 的【画面过程说明】在第 1 段（0–7.083s）里
+                #   写「0-1 秒…25-30 秒」，模型收到 7 秒素材却被告知 30 秒的戏。
+                shot_desc=video_edit._span_shots(plan.get("inventory"), a, b)))
         except Exception:  # noqa: BLE001
             out.append("")
     return out

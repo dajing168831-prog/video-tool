@@ -214,6 +214,8 @@ function cloneRenderBody(script, opts = {}) {
     dubVoices = null,
     // 方言代码（火山 explicit_dialect）。空 = 标准普通话
     ttsDialect = '',
+    // 口音还原（火山 tone_fidelity）。只对复刻音色生效；默认关=老请求体不变
+    ttsFidelity = false,
     // 配音和画面差太多时，是否允许强行对齐（会冻帧/截断）
     allowStretch = false,
     // 语速 -30~30（正数=更快）。null/不传 = 按估算自动定
@@ -250,6 +252,8 @@ function cloneRenderBody(script, opts = {}) {
       ? { dub_voices: dubVoices } : {}),
     // 方言：不选就不传，走标准普通话
     ...(ttsDialect ? { tts_dialect: ttsDialect } : {}),
+    // 口音还原：只在显式打开时传
+    ...(ttsFidelity ? { tts_fidelity: true } : {}),
     ...(allowStretch ? { allow_stretch: true } : {}),
     ...(speechRate === null || speechRate === undefined
       ? {} : { speech_rate: speechRate }),
@@ -270,10 +274,10 @@ export function cloneVoiceDemo(id, voice) {
 
 /** 文案试听：按 文案+音色+语速 缓存；返回的 seconds 是**实测**时长 */
 export function cloneVoicePreview(id, text, opts = {}) {
-  const { voice = '', rate = 0, lang = '' } = opts
+  const { voice = '', rate = 0, lang = '', fidelity = false } = opts
   return request(`/api/clone/${id}/voice-preview`, {
     method: 'POST',
-    data: { text, voice, rate, lang },
+    data: { text, voice, rate, lang, fidelity },
   })
 }
 

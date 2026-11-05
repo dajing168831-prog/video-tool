@@ -64,9 +64,11 @@ class _FakeTTS:
         self.workdir = Path(workdir)
 
     def synth(self, text: str, out: Path, *, voice: str = "",
-              rate: int = 0, dialect: str = "") -> None:
-        # 签名要和真实供应商一致（voice/rate/dialect 是流水线会传的），
+              rate: int = 0, dialect: str = "",
+              fidelity: bool = False) -> None:
+        # 签名要和真实供应商一致（voice/rate/dialect/fidelity 是流水线会传的），
         # 否则改流水线时这里会先炸，掩盖真正的回归
+        # 🩸 2026-11-05：`fidelity`（口音还原）同 dialect，流水线现在恒传。
         # 🩸 2026-10-28：`dialect` 是配音方言那期加的（`providers/tts.py:40/117`
         #   两个真供应商都收了），假夹具没跟上 → 整脚本 TypeError。同 2026-10-26
         #   `fake_regen` 少 `lock_tail` 那次，属于签名漂移，不是产品回归。

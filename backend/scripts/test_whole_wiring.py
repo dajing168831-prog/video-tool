@@ -377,7 +377,7 @@ def _run(work: Path) -> int:
             ing_calls.append(("video", str(path)))
             return "asset://asset-v1"
 
-        def fake_prep_image(path, cid):
+        def fake_prep_image(path, cid, *, report=None):
             ing_calls.append(("image", str(path)))
             # 人像入库，产品图没脸 → 返回空，调用方保持原样（base64）
             return "asset://asset-i1" if "person" in str(path) else ""

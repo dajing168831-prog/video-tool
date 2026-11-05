@@ -428,6 +428,18 @@
             <view class="sec-note">
               10–30 秒干净人声；每次训练消耗一次复刻额度（官方：每个资源最多 15 次）。
             </view>
+            <!-- 🩸 口音还原（火山 tone_fidelity）：原片带方言口音（广西、潮汕、长沙…）
+                 时，8 种 explicit_dialect 覆盖不到，只有这个开关能把口音跟着原声带过来 -->
+            <view class="variant-row">
+              <view class="chip" :class="{ on: fidelity }" @click="fidelity = !fidelity">
+                {{ fidelity ? '还原原片口音：开' : '还原原片口音' }}
+              </view>
+            </view>
+            <view class="sec-note">
+              {{ fidelity
+                ? '口音、语感、情绪都会跟着原片的人走（含地方口音）。翻译成外语时不生效。'
+                : '关：用标准普通话念，只保留这个人的音色。' }}
+            </view>
             <audio v-if="vcDemo" :src="vcDemo" controls />
           </block>
         </view>
@@ -606,22 +618,35 @@
                         mode="aspectFill"
                       />
                       <view class="sub-txt">
-                        <view class="sub-k">{{ pp.label }}的参考图{{ hasRefImg(pp.slot) ? '（已上传）' : '（没图就不换这个人）' }}</view>
-                        <view class="sub-v">这一个人在画面里出现时，换成他这张脸</view>
+                        <view class="sub-k">{{ pp.label }}的参考图{{ hasRefImg(pp.slot) ? '（已上传）' : '（没图就不换这个）' }}</view>
+                        <view class="sub-v">这{{ pp.kind ? '个主体' : '个人' }}在画面里出现时，换成{{ pp.kind ? '这张图里的样子' : '他这张脸' }}</view>
                         <view v-if="!pp.bound" class="sub-v">
                           分析完在「画面里有谁」里点选，按你点选的顺序排图号
                         </view>
                         <view v-if="hasRefImg(pp.slot) && !pp.bound" class="sub-v warn">
-                          这张图还没有对应的人，出片时不会用到
+                          这张图还没有对应的人或主体，出片时不会用到
                         </view>
                       </view>
-                      <button
-                        class="sub-btn"
-                        size="mini"
-                        :loading="slotLoading === pp.slot"
-                        :disabled="slotLoading === pp.slot"
-                        @click="chooseRef(pp.slot, pp.label)"
-                      >{{ hasRefImg(pp.slot) ? '换一张' : '上传' }}</button>
+                      <!-- 🩸 2026-11-05（主人：「上传以后想删除也没有删除按键」）：
+                           以前这格只有「换一张 / 上传」，传错了只能干瞪眼 ——
+                           多传的第 2 张图在界面上删不掉，还一直挂着"不会用到"的提示。 -->
+                      <view class="sub-btns">
+                        <button
+                          class="sub-btn"
+                          size="mini"
+                          :loading="slotLoading === pp.slot"
+                          :disabled="slotLoading === pp.slot"
+                          @click="chooseRef(pp.slot, pp.label)"
+                        >{{ hasRefImg(pp.slot) ? '换一张' : '上传' }}</button>
+                        <button
+                          v-if="hasRefImg(pp.slot) || pp.bound"
+                          class="sub-btn del"
+                          size="mini"
+                          :loading="slotLoading === pp.slot"
+                          :disabled="slotLoading === pp.slot"
+                          @click="removeExtraPerson(pp)"
+                        >删除</button>
+                      </view>
                     </view>
                   </view>
 
@@ -736,12 +761,69 @@
                     </view>
                   </view>
 
+                  <!-- 换发型（2026-11-05 拆槽位）：和换装走**同一条官方模板**
+                       `guide:39`「将其中的<原特征>修改为<新特征>」，`<原特征>` = 发型
+                       （官方 `:95` 把发型列为可选核心特征）。
+                       没有图片入口 —— 官方没有"用图换发型"的句式。 -->
+                  <view v-if="s.k === 'hair'" class="inv-box">
+                    <view class="inv-head">
+                      <text class="inv-title">换谁的发型</text>
+                      <text v-if="invLoading" class="inv-note">识别中…</text>
+                      <text v-else-if="inv.ready" class="inv-note">
+                        {{ hairRows.length ? '换 ' + hairRows.length + ' 个人' : '不选 = 画面里全体一起换' }}
+                      </text>
+                      <text v-else class="inv-note">{{ invReason || '还没识别' }}</text>
+                      <text class="inv-refresh" @click.stop="loadInventory(true)">
+                        {{ invLoading ? '' : (inv.ready ? '重新识别' : '识别') }}
+                      </text>
+                    </view>
+                    <view v-if="invPeople.length" class="chip-row">
+                      <view
+                        v-for="p in invPeople"
+                        :key="p.id"
+                        class="person-chip"
+                        :class="{ on: edit.hair_ids.indexOf(p.id) >= 0 }"
+                        @click="pickHair(p.id)"
+                      >
+                        <view class="pc-name">{{ p.desc_zh }}</view>
+                        <view class="pc-time">{{ fmtSpan(p.appearances) }}</view>
+                      </view>
+                    </view>
+                    <view v-else class="inv-empty">点「识别」先看清原片里有谁，再选换谁的发型</view>
+                    <view v-if="!hairRows.length" class="wd-row">
+                      <input
+                        class="wd-input"
+                        :value="edit.hair_desc || ''"
+                        :maxlength="40"
+                        placeholder="写清换成什么发型，例「低马尾」「高马尾」「短发」"
+                        @input="onHairDesc('', $event)"
+                      />
+                    </view>
+                    <view v-for="h in hairRows" :key="h.id" class="wd-block">
+                      <view class="sub-row">
+                        <view class="sub-txt">
+                          <view class="sub-k">{{ h.label }}的发型</view>
+                          <view class="sub-v">只换这个人的发型，衣服和脸不动</view>
+                        </view>
+                      </view>
+                      <view class="wd-row">
+                        <input
+                          class="wd-input"
+                          :value="edit.hair_desc_by_id[h.id] || ''"
+                          :maxlength="40"
+                          placeholder="写清换成什么发型，例「低马尾」"
+                          @input="onHairDesc(h.id, $event)"
+                        />
+                      </view>
+                    </view>
+                  </view>
+
                   <!-- 视觉盘点：原片里有谁、各在第几秒。多人画面里"换人"必须落到具体某一个 -->
                   <view v-if="s.k === 'person'" class="inv-box">
                     <view class="inv-head">
                       <text class="inv-title">画面里有谁</text>
                       <text v-if="invLoading" class="inv-note">识别中…</text>
-                      <text v-else-if="inv.ready" class="inv-note">{{ invPickable.length }} 个人</text>
+                      <text v-else-if="inv.ready" class="inv-note">{{ invPickable.length }} 个主体</text>
                       <text v-else class="inv-note">{{ invReason || '还没识别' }}</text>
                       <text class="inv-refresh" @click.stop="loadInventory(true)">
                         {{ invLoading ? '' : (inv.ready ? '重新识别' : '识别') }}
@@ -756,15 +838,15 @@
                         @click="pickPerson(p)"
                       >
                         <view class="pc-name">{{ p.desc_zh }}</view>
-                        <view class="pc-time">{{ fmtSpan(p.appearances) }}<text v-if="p.main"> · 主角</text></view>
+                        <view class="pc-time"><text v-if="p.kind">{{ p.kind }} · </text>{{ fmtSpan(p.appearances) }}<text v-if="p.main"> · 主角</text></view>
                       </view>
                     </view>
                     <view v-if="inv.ready && invPickable.length" class="pick-note">
-                      <text>可多选：点一个换一个，再点取消。当前{{ pickedIds.length ? '换 ' + pickedIds.length + ' 个人' : '按主角换' }}（{{ subjectLimit.label }}：{{ subjectLimit.stable }} 人内最稳，最多 {{ subjectLimit.max }} 人）</text>
+                      <text>可多选：点一个换一个，再点取消。当前{{ pickedIds.length ? '换 ' + pickedIds.length + ' 个' + (pickedHasOther ? '主体' : '人') : '按主角换' }}（{{ subjectLimit.label }}：{{ subjectLimit.stable }} 人内最稳，最多 {{ subjectLimit.max }} 人）</text>
                       <text v-if="pickedIds.length" class="inv-clear" @click="clearPicked">清空</text>
                     </view>
-                    <view v-else-if="inv.ready" class="inv-empty">没识别到人物，按你写的描述换</view>
-                    <view v-else class="inv-empty">点选要换的人；不选默认换主角。识别一次约一分钱，结果会缓存</view>
+                    <view v-else-if="inv.ready" class="inv-empty">没识别到可换的主体，按你写的描述换</view>
+                    <view v-else class="inv-empty">点选要换的主体；不选默认换主角。识别一次约一分钱，结果会缓存</view>
                   </view>
                 </view>
               </view>
@@ -1145,6 +1227,10 @@ export default {
       // 声音复刻：音色槽位 ID + 训练状态（消耗复刻额度，必须用户主动点）
       vcOn: false,
       vcSpeaker: '',
+      // 🩸 口音还原（火山 `tone_fidelity`）：只对复刻音色（S_ 开头）生效。
+      // 复刻工具默认开 —— 原片的人怎么说，配出来就该怎么说（含口音/韵律/情感）；
+      // 想要标准普通话的可以关掉。后端默认关，所以老客户端/老任务行为不变。
+      fidelity: true,
       vcUploading: false,
       vcStatus: '',
       vcDemo: '',
@@ -1215,6 +1301,17 @@ export default {
         wardrobe_desc_by_id: {},
         // 换装名单：第 i 个人 → wardrobe / wardrobe2 … 各一张图；空 = 换全体
         wardrobe_ids: [],
+        /**
+         * 换发型（2026-11-05 主人：「有排斥就拆槽位」）。
+         * 以前并进「服装造型」，换发型会写成「…的服装修改为低马尾」——
+         * 官方 `guide:39`「将其中的<原特征>修改为<新特征>」的 `<原特征>` 用错词。
+         * 官方 `:95` 把「发型」列为可选核心特征，所以拆成独立槽位。
+         * 没有图片槽位：官方文件里没有"用图换发型"的句式，只收文字。
+         */
+        hair: false,
+        hair_ids: [],
+        hair_desc: '',
+        hair_desc_by_id: {},
         // 谁在说话（MiniMax H3 用）：只有名单里的人拿 (S1)(S2) 号
         speaker_ids: [],
         style: '',
@@ -1274,9 +1371,12 @@ export default {
         { k: 'scene', t: '场景', sub: '换背景 / 换地点', img: true,
           imgHint: '不传图也行，用文字描述场景',
           ph: '描述场景，例：黄昏的海边栈道' },
-        { k: 'wardrobe', t: '服装造型', sub: '换衣服 / 换发型', img: true,
+        { k: 'wardrobe', t: '服装', sub: '换衣服', img: true,
           imgHint: '传商品图就按图里的款式换；不传图就用文字描述',
-          ph: '描述服装，例：米色风衣 + 低马尾' },
+          ph: '描述服装，例：米色风衣' },
+        // 🩸 2026-11-05 拆槽位：发型从「服装造型」里独立出来。
+        // 没有 `img` —— 官方没有"用图换发型"的句式，只收文字。
+        { k: 'hair', t: '发型', sub: '换发型（文字描述）' },
       ],
       styles: [
         { v: '', t: '风格不变' },
@@ -1422,15 +1522,20 @@ export default {
       }
       // 有图就再往后留一格，方便「先传图、后选人」；勾的人多时以勾的人数为准
       const want = Math.min(cap, Math.max(picked.length, refs ? refs + 1 : 0))
+      // 点选名单里既可能是人（people）、也可能是别的带主体（others）——
+      // 两边都要查，否则第 2 个绑的是龙时这里会退回「第2个人」这种瞎叫法。
+      const all = [...(this.inv.people || []), ...(this.inv.others || [])]
       const out = []
       for (let i = 1; i < want; i += 1) {
         const id = picked[i] || ''
-        const p = (this.inv.people || []).find((x) => x.id === id)
+        const p = all.find((x) => x.id === id)
+        const kind = (p && p.kind) || ''
         out.push({
           slot: `person${i + 1}`,
           id,
           bound: !!id,
-          label: (p && p.desc_zh) || `第${i + 1}个人`,
+          kind,
+          label: kind || (p && p.desc_zh) || `第${i + 1}个`,
         })
       }
       return out
@@ -1549,7 +1654,7 @@ export default {
     // 至少勾了一项「换什么」，或者写了补充说明
     hasAnyChange() {
       const e = this.edit
-      return !!(e.person || e.product || e.scene || e.wardrobe || e.style
+      return !!(e.person || e.product || e.scene || e.wardrobe || e.hair || e.style
         || e.style_ref || e.style_video)
         || !!(e.extra || '').trim()
     },
@@ -1573,9 +1678,22 @@ export default {
      *  用户却以为已经选了。列表阶段就藏掉，比出片后才发现好。
      *  注意**不能**按 `face_visible=false` 过滤：真实盘点里 9 个无脸项只有 1 个
      *  是群体，其余 8 个都是能明确指认的单人（背影/侧脸），误杀会少掉正常目标。 */
+    /** 盘点里有没有非人主体（龙/机器人/车…）—— 文案用词跟着变，别一律说"人" */
+    invHasOther() {
+      return (this.inv.others || []).length > 0
+    },
+    /** 已点选的主体里有没有非人的（决定"换 N 个人"还是"换 N 个主体"） */
+    pickedHasOther() {
+      const ids = this.pickedIds
+      return (this.inv.others || []).some((o) => ids.indexOf(o.id) >= 0)
+    },
     invPickable() {
       const GROUP = /多名|数名|几名|若干|一群|众人|人群|民众|路人|背景人物/
-      return (this.inv.people || []).filter(
+      // 🩸 2026-11-05（主人：「难道就不能把龙换成别的吗」）：画面里不是人的主体
+      //   也要能点选 —— 复刻换的是「画面里的东西」，不只换脸。`others` 由盘点
+      //   自己判断、自己命名（`kind` 是它写的自由文本，不是我们给的类别）。
+      const all = [...(this.inv.people || []), ...(this.inv.others || [])]
+      return all.filter(
         (p) => !GROUP.test(String(p.desc_zh || '')))
     },
     /** 换装名单 → 每人一行（槽位 wardrobe / wardrobe2 …） */
@@ -1587,6 +1705,13 @@ export default {
           slot: i === 0 ? 'wardrobe' : `wardrobe${i + 1}`,
           label: (p && p.desc_zh) || id,
         }
+      })
+    },
+    /** 换发型名单 → 每人一行（发型没有图片槽，只需要名字） */
+    hairRows() {
+      return (this.edit.hair_ids || []).map((id) => {
+        const p = (this.inv.people || []).find((x) => x.id === id)
+        return { id, label: (p && p.desc_zh) || id }
       })
     },
     /** 参与指认的人：换装/道具/说话人的候选都来自视觉盘点 */
@@ -2145,6 +2270,8 @@ export default {
           voice: this.voiceId,
           rate,
           lang: this.langPick,
+          // 口音还原：试听必须能听到开关的效果，否则要等整条片出完才知道像不像
+          fidelity: this.fidelity && (this.voiceId || '').startsWith('S_'),
         })) || {}
         this.playUrl = cloneAudioUrl(d.path)
         this.playWhat = `文案 ${d.voice_label || this.voiceLabel}`
@@ -2310,6 +2437,9 @@ export default {
         dubVoices: this.edit.audio === 'original' ? null : this.dubVoices,
         // 方言代码（火山 explicit_dialect）；空 = 标准普通话
         ttsDialect: this.edit.audio === 'original' ? '' : this.dialect,
+        // 口音还原（火山 tone_fidelity）；只对复刻音色生效，保留原声时没有配音
+        ttsFidelity: this.edit.audio !== 'original' && this.fidelity
+          && (this.voiceId || '').startsWith('S_'),
         // 试听里手动调好的语速：必须带到出片，否则前台调了半天出片又变回自动
         speechRate: this.edit.audio === 'original' ? null : this.speechRate,
         // 🩸 强制重跑：默认不传（老请求体形状不变）。同样输入本来会命中
@@ -2591,6 +2721,10 @@ export default {
         if (!this.edit.wardrobe) this.edit.wardrobe_ids = []
         else if (!this.inv.ready && !this.invLoading) this.loadInventory()
       }
+      if (k === 'hair') {
+        if (!this.edit.hair) this.edit.hair_ids = []
+        else if (!this.inv.ready && !this.invLoading) this.loadInventory()
+      }
     },
     /** 视觉盘点：结果缓存在后端，重复打开/重跑都不再花钱 */
     async loadInventory(refresh = false) {
@@ -2662,6 +2796,36 @@ export default {
       }
       this.refVer = Date.now()
     },
+    /**
+     * 删掉第 2 个起的一格（图 + 绑定一起删）。
+     *
+     * 🩸 2026-11-05 主人：「第二个人物我上传以后我想删除也没有删除按键」。
+     * 图号 = 点选顺序 = 槽位号，前端没有"把后面那张图往前挪"的能力 ——
+     * 所以删中间一格时，它后面的格子一起清（和 `pickWardrobe` 删人同一套做法），
+     * 否则图会错位、换到别人脸上。
+     * 只删图不解绑也不行：出片前那道「已绑定的人没有图」的检查会一直拦住。
+     */
+    async removeExtraPerson(pp) {
+      if (this.slotLoading) return
+      this.slotLoading = pp.slot
+      try {
+        const start = Number(String(pp.slot).replace('person', '')) || 1
+        const cap = this.subjectLimit.max
+        const slots = []
+        for (let i = start; i <= cap; i += 1) {
+          const s = i === 1 ? 'person' : `person${i}`
+          if (this.hasRefImg(s)) slots.push(s)
+        }
+        if (slots.length) await this.clearRefSlots(slots)
+        if (pp.id) {
+          const ids = this.pickedIds.slice(0, start - 1)
+          this.edit.person_ids = ids
+          this.edit.person_id = ids[0] || ''
+        }
+      } finally {
+        this.slotLoading = ''
+      }
+    },
     /** 点一下指名"换的是画面里哪一件"，再点取消（不选 = 画面里那件产品） */
     pickProduct(o) {
       const same = this.edit.product_target === o.desc_zh
@@ -2698,6 +2862,28 @@ export default {
       ids.splice(k, 1)
       this.edit.wardrobe_ids = ids
       if (slots.length) this.clearRefSlots(slots)
+    },
+    /**
+     * 换发型文字描述：`id` 为空 = 没点名（全体一起换，写进 `hair_desc`）；
+     * 有 id = 这个人的发型（写进 `hair_desc_by_id`）。
+     * 和 `onWardrobeDesc` 同一套形状 —— 发型没有图片槽，文字是唯一入口。
+     */
+    onHairDesc(id, e) {
+      const v = ((e && e.detail && e.detail.value) || '').trim()
+      if (!id) {
+        this.edit.hair_desc = v
+        return
+      }
+      if (v) this.$set(this.edit.hair_desc_by_id, id, v)
+      else this.$delete(this.edit.hair_desc_by_id, id)
+    },
+    /** 换发型按人：点一下加入/移除；空 = 全体一起换。没有图片槽要清 */
+    pickHair(id) {
+      const ids = (this.edit.hair_ids || []).slice()
+      const k = ids.indexOf(id)
+      if (k < 0) ids.push(id)
+      else ids.splice(k, 1)
+      this.edit.hair_ids = ids
     },
     /** 说话人：官方 base-en:127 —— 只有说话的人拿号，不说话的不给号 */
     pickSpeaker(id) {
@@ -2976,6 +3162,21 @@ export default {
           return
         }
       }
+      // 🩸 2026-11-05 拆槽位：发型没有图片槽，文字是唯一入口 ——
+      // 勾了却没写就拦住（口径同后端 `missing_material` 的 hair 分支）。
+      if (wantRegen && this.edit.hair) {
+        const rows = this.hairRows.length ? this.hairRows : [{ id: '' }]
+        const missing = rows.filter((h) => {
+          const d = h.id
+            ? (this.edit.hair_desc_by_id || {})[h.id] || ''
+            : this.edit.hair_desc || ''
+          return !String(d).trim()
+        })
+        if (missing.length) {
+          uni.showToast({ title: '换发型要写一句换成什么发型', icon: 'none' })
+          return
+        }
+      }
       // 排除法：空数组 = 全部参与；有排除就换算成"要处理的镜头号"
       const allIds = (this.d.shots || []).map((s) => s.i)
       // 换开头 = 由前 N 秒决定要处理哪几镜，不看用户手动排除
@@ -3048,9 +3249,9 @@ export default {
         const main = this.invPickable.find((p) => p.main) || this.invPickable[0]
         const go = await new Promise((resolve) => {
           uni.showModal({
-            title: `画面里有 ${this.invPickable.length} 个人`,
+            title: `画面里有 ${this.invPickable.length} 个${this.invHasOther ? '主体' : '人'}`,
             content: `没指定换谁，就换主角：${main.desc_zh}`
-              + '（画面里出现时间最长 / 占画面最大的那位）。要换别人点「去选人」。',
+              + '（画面里出现时间最长 / 占画面最大的那个）。要换别人点「去选人」。',
             confirmText: '就换主角',
             cancelText: '去选人',
             success: (r) => resolve(!!r.confirm),
@@ -3632,6 +3833,14 @@ export default {
 .sub-v.warn {
   color: #d93025;
 }
+/* 「换一张/上传」+「删除」竖着排，按钮不挤在文字里 */
+.sub-btns {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-left: 12rpx;
+}
 .sub-btn {
   flex-shrink: 0;
   margin-left: 12rpx;
@@ -3639,6 +3848,16 @@ export default {
   color: #ff5a3c;
   border-radius: 999rpx;
   font-size: 23rpx;
+}
+.sub-btns .sub-btn {
+  margin-left: 0;
+}
+.sub-btns .sub-btn + .sub-btn {
+  margin-top: 10rpx;
+}
+.sub-btn.del {
+  background: #f2f3f5;
+  color: #6b7280;
 }
 /* 语速滑块：和上面的 sub-row 同一条视觉线 */
 .rate-row {

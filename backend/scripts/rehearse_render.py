@@ -77,9 +77,11 @@ class FakeTTS:
     ext = ".mp3"
 
     def synth(self, text: str, out: Path, *, voice: str = "",
-              rate: int = 0, dialect: str = "") -> None:
+              rate: int = 0, dialect: str = "",
+              fidelity: bool = False) -> None:
         # 签名必须跟真供应商一致（`providers/tts.py:40/117` 都收 dialect）——
         # 🩸 2026-10-28：少这个形参，整条排练在合成第一句时 TypeError。
+        # 🩸 2026-11-05：`fidelity`（口音还原）同上，流水线现在恒传它。
         out = Path(out)
         out.parent.mkdir(parents=True, exist_ok=True)
         seconds = max(1.0, len(text) * 0.19)

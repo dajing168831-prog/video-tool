@@ -208,12 +208,15 @@ class _CL25(Dialect):
     def wardrobe_subject(self, ctx: dict) -> tuple[str, bool]:
         pid = ctx["pid"]
         who = ctx.get("who") or ""
+        # 🩸 2026-11-05 拆槽位：类别词由调用方给（默认「服装」）。
+        #   换发型走**同一条模板**，只把 `<原特征>` 换成「发型」。
+        _noun = str(ctx.get("noun") or "服装")
         if not who:
-            return "服装", False
+            return _noun, False
         _loc = _wardrobe_subject_25(pid, ctx.get("people"),
                                     ctx.get("frame_people"),
                                     ctx.get("desc_by_id"))
-        return (f"{_loc}的服装" if _loc else "服装"), False
+        return (f"{_loc}的{_noun}" if _loc else _noun), False
 
     # 🩸 2026-10-28（逐句溯源）：「**改成**」在 2.5 官方里不是编辑动词 ——
     #   `sd25-pe:271` 原话是「"转换、调整、修改、**改成**、重构"等动词本身

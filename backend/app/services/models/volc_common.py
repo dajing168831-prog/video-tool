@@ -23,6 +23,21 @@ import logging
 
 log = logging.getLogger(__name__)
 
+#: 🩸 模型生成音轨被审核拒的错误码（2026-11-05）。
+#: 官方原文（`sd20/pull-2026-11-04/error-codes.md` + 实测任务 5edd4392）：
+#: 「The request failed because the output audio may be related to copyright
+#: restrictions」。判的是**模型刚生成的那条音轨**，不是参考片、不是画面。
+#: 这条音轨本来就被 `assemble._norm` 的 `-an` 丢掉 ⇒ 值得关掉音频生成重跑。
+_AUDIO_REJECT = "outputaudiosensitivecontentdetected"
+
+
+def _audio_rejected(err: Exception) -> bool:
+    """这个失败是不是「模型音轨被审核拒」？"""
+    detail = getattr(err, "detail", None) or {}
+    code = str((detail or {}).get("code") or "")
+    return (_AUDIO_REJECT in code.lower()
+            or _AUDIO_REJECT in str(err).lower())
+
 #: 参考图官方硬门槛（2026-10-21 抓自火山 1520757 / H3 创建任务接口）：
 #: 边长 [300,6000] px、宽高比 [0.4,2.5]、单张 ≤30MB
 IMAGE_LIMITS = {"side": (300, 6000), "ratio": (0.4, 2.5),
@@ -100,7 +115,7 @@ def submit(ctx: dict, *, generate_audio: bool = True) -> tuple:
             if ing_v:
                 video_url = ing_v
             refs_use = [
-                (ark_ingest.prepare_image(Path(x), cid) or x)
+                (ark_ingest.prepare_image(Path(x), cid, report=sent_ingest) or x)
                 if not isinstance(x, str) else x
                 for x in refs_list
             ]
@@ -118,24 +133,59 @@ def submit(ctx: dict, *, generate_audio: bool = True) -> tuple:
                               # 2.5 不跑那道闸，ctx 里没有这个键 → 空串。
                               shape=str(ctx.get("shape") or ""),
                               master_audio=bool(ctx.get("master_audio")))
-    ark.edit_video(
-        seg_prompt, video_url=video_url, out=ctx["out"],
-        ref_images=refs_use,
-        ref_audio=seg_audio,
-        # 风格参考视频（A9）：火山只收公网 URL
-        ref_videos=([video_edit._public_url(style_clip, cid)]
-                    if style_clip else None),
-        resolution=plan["resolution"],
-        # 段长由 ark.edit_body 按型号改写：2.5 的编辑任务只能是 -1，
-        # 2.0 则取**向上取整的整数秒**（输出时长 4~15s，`sd20.md:119`）
-        duration=dur,
-        model=plan["model"],
-        # 🩸 2.0 编辑任务要对口型，就必须让模型**生成音轨**：
-        #   `sd20-trouble` A-4「生成视频中的音频会与原本的参考音频有较大
-        #   区别…最终导致口型对不上」⇒ 口型跟着**生成出来的那条音轨**走；
-        #   `generate_audio=false` 输出的是无声视频（`volc-api:626`）。
-        #   成片音轨仍然全部后期贴（`assemble._norm` 用 `-an` 丢掉模型音轨），
-        #   这里只为拿口型。
-        generate_audio=generate_audio,
-    )
+    def _send(ga: bool) -> None:
+        ark.edit_video(
+            seg_prompt, video_url=video_url, out=ctx["out"],
+            ref_images=refs_use,
+            ref_audio=seg_audio,
+            # 风格参考视频（A9）：火山只收公网 URL
+            ref_videos=([video_edit._public_url(style_clip, cid)]
+                        if style_clip else None),
+            resolution=plan["resolution"],
+            # 段长由 ark.edit_body 按型号改写：2.5 的编辑任务只能是 -1，
+            # 2.0 则取**向上取整的整数秒**（输出时长 4~15s，`sd20.md:119`）
+            duration=dur,
+            model=plan["model"],
+            # 🩸 2.0 编辑任务开 generate_audio 是为了**口型**（⚠️ 以下是推断，不是官方明文）：
+            #   官方 API 对 `generate_audio` 只有一句「生成有声视频」
+            #   （`sd20/pull-2026-11-04/api-create.md:538`，默认 true），
+            #   **从未说明关闭后口型会怎样**。
+            #   推断依据：`sd20-trouble` A-4 的现象是「生成视频中的音频会与原本的
+            #   参考音频有较大区别…最终导致口型对不上」—— 说明口型跟着**生成出来的
+            #   那条音轨**走；那么 `generate_audio=false` 输出无声视频时，
+            #   模型就没有可对齐的音轨。
+            #   成片音轨仍然全部后期贴（`assemble._norm` 用 `-an` 丢掉模型音轨），
+            #   这里只为拿口型。**要改成 false 之前，先实测一镜口型再动。**
+            generate_audio=ga,
+        )
+
+    # 🩸 自动降级（2026-11-05）：模型生成的音轨被火山审核拒
+    #   （`OutputAudioSensitiveContentDetected.PolicyViolation`，原文
+    #   「the output audio may be related to copyright restrictions」）时，
+    #   原来的行为是**整段失败 → 整条出片废掉**。但那条音轨根本不进成片
+    #   （`assemble._norm` 用 `-an` 丢掉、换成我们自己的配音），
+    #   为一条马上就扔的音轨废掉整片不划算。
+    #   实测样本：任务 5edd4392 第 1 段，请求快照里 `"generate_audio": true`。
+    #   降级后口型可能退化（推断，未实测），但**能出片**严格优于出不了片；
+    #   降级过的段会在结果里标 `audio_fallback`，可对账。
+    try:
+        _send(generate_audio)
+    except Exception as e:  # noqa: BLE001
+        if not generate_audio or not _audio_rejected(e):
+            raise
+        log.warning("第 %d 段模型音轨被审核拒，关掉音频生成重跑本段：%s",
+                    n, str(e)[:200])
+        _send(False)
+        sent_ingest["audio_fallback"] = True
+        sent_ingest["audio_fallback_reason"] = str(e)[:300]
+        # 成功的段不会走 error_report（那里只落失败），所以单独留一份凭据 ——
+        # 以后有人说「这段口型怎么怪」，能查到是哪一段降级过。
+        try:
+            import json as _json
+            (Path(work) / f"audio_fallback_{n:03d}.json").write_text(
+                _json.dumps({"segment": n, "reason": str(e)[:500],
+                             "generate_audio": False},
+                            ensure_ascii=False, indent=1), encoding="utf-8")
+        except Exception as _e:  # noqa: BLE001
+            log.warning("降级凭据写盘失败（不影响出片）：%s", _e)
     return sent_video, sent_refs, sent_ingest

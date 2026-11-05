@@ -4,6 +4,11 @@
 >
 > 建立时间：2026-11-04（主人：「建一个 2.0 模型的导图，资料不够的就补齐」）
 >
+> 🩸 **2026-11-05 更正：`llms.txt` 不是全量。** 它 591 条，而方舟文档库（lib 82379）的目录树有
+> **863 篇**——`real-person-ip-video-api`、私域人像素材库、版权 IP 视频整族都在索引外。
+> 全量目录：`backend/data/official/sd-shared/DOCLIST.txt`；跨代共用资料：`sd-shared/pull-2026-11-05/`。
+> **以后要"官方有没有写"这类判断，先查 DOCLIST，别只翻 llms.txt。**
+>
 > 🩸 **结论先写**：官方索引 `ark.volcengine.com/llms.txt`（631 行）扫过，2.0 相关 **15 篇共 12,363 行**已落地到
 > `backend/data/official/sd20/pull-2026-11-04/`。本地原有的 `skills/sd2-pe/references/guide.md`
 > 与官方今天的《Seedance 2.0 系列提示词指南》**逐字节相同**（sha256 `dd7fe63c…`）——

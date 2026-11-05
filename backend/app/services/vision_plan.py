@@ -65,11 +65,18 @@ class VisionError(RuntimeError):
 _SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["duration_s", "people", "products", "scenes", "shots", "notes"],
+    "required": ["duration_s", "people", "others", "products", "scenes",
+                 "shots", "notes"],
     "properties": {
         "duration_s": {"type": "number", "description": "视频总时长（秒）"},
         "people": {
             "type": "array",
+            # 🩸🩸 2026-11-05（主人：「既然已经调用 2.1 模型去看一遍，你为什么要把
+            #   信息截流」「别加规则，让他看完自己报」）：
+            #   `people` 只收**人**；不是人的主体一律进顶层 `others`（见下），
+            #   由模型自己判断该放哪边 —— **不列举种类**。列清单就是加规则，
+            #   没列到的东西它就不报了（龙就是这么丢的：`60f82aab` 的 shots 9 镜
+            #   里 7 镜写了 the pale dragon，连左右方位都有，却没有字段可填）。
             "description": "画面里出现过的所有人（同一人跨镜头合并成一个）",
             "items": {
                 "type": "object",
@@ -129,6 +136,52 @@ _SCHEMA: dict[str, Any] = {
                         "description": ("这个人**嘴在动、明显在讲话**的时间段（源片绝对秒）。"
                                         "只写看得到嘴部开合的时段；没开口就给空数组。"
                                         "不要凭剧情猜谁在说话。"),
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "required": ["start", "end"],
+                            "properties": {"start": {"type": "number"},
+                                           "end": {"type": "number"}},
+                        },
+                    },
+                },
+            },
+        },
+        # 🩸🩸 2026-11-05：非人主体单独一栏。**只划一条线：是不是人**，
+        #   其余全交给模型自己判断和描述（`kind` 是自由文本，没有枚举）。
+        #   为什么不分更细：列举种类 = 加规则，没列到的东西它就不报了。
+        "others": {
+            "type": "array",
+            "description": ("画面里出现过的、**不是人**的其他主体 —— 凡是画面里能作为"
+                            "替换或指认对象、但又不是人的东西都列在这里"
+                            "（同一主体跨镜头合并成一个）。"
+                            "它到底是什么由你在 kind 里自己说，不要套现成的类别。"),
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["id", "kind", "desc_zh", "desc_en", "position",
+                             "appearances"],
+                "properties": {
+                    "id": {"type": "string",
+                           "description": "O1、O2… 按首次出现排序"},
+                    "kind": {"type": "string",
+                             "description": ("这到底是什么 —— 用你自己的话描述，"
+                                             "例如「一只白龙」「一台扫地机器人」；"
+                                             "不要套用固定类别词")},
+                    "desc_zh": {"type": "string",
+                                "description": "中文外观描述，只写看得见的"},
+                    "desc_en": {"type": "string",
+                                "description": "同一描述的英文"},
+                    "position": {
+                        "type": "string",
+                        "enum": ["top-left", "top", "top-right",
+                                 "left", "center", "right",
+                                 "bottom-left", "bottom", "bottom-right",
+                                 "unknown"],
+                        "description": "第一次清晰出现时在画面里的位置（九宫格）",
+                    },
+                    "appearances": {
+                        "type": "array",
                         "items": {
                             "type": "object",
                             "additionalProperties": False,
@@ -201,7 +254,11 @@ _SYSTEM = (
     "1) 同一个人在不同镜头里按外观（发型、服装、体型、配饰）合并成一条；"
     "拿不准是不是同一个人时，宁可分成两条，并在 notes 里说明。\n"
     "2) 时间单位是秒，保留一位小数，必须落在视频总时长之内。\n"
-    "3) 一个片段里出现多个人就都列出来；完全没人的镜头不要编造人物。\n"
+    # 🩸 2026-11-05：原文是「多个**人**就都列出来；完全没**人**的镜头不要编造人物」
+    #   —— 模型会据此只报人。改成「主体」。**不列举种类**：列了清单就是加规则，
+    #   没列到的东西它就不报了（这正是龙被漏掉的方式）。
+    "3) 一个镜头里出现多个主体就都列出来；完全没有任何主体的镜头不要编造。"
+    "人放进 people，**不是人的主体**放进 others —— 是不是人由你判断。\n"
     "4) main 只有一个：出现时间最长、占据画面最大的那个。\n"
     "5) desc 只写外观，不写情绪和剧情；中文和英文描述必须指同一个人。\n"
     "6) position 写这个人**第一次清晰出现**时在画面里的位置，按九宫格："
@@ -214,8 +271,9 @@ _SYSTEM = (
     "（固定/推/拉/摇/移/跟拍）。只写看得见的东西。"
 )
 
-_ASK = ("请盘点这条视频：列出所有出现过的人物（含各自出现的时间段）、"
-        "作为主体展示的产品、场景，以及逐镜的画面描述。"
+_ASK = ("请盘点这条视频：把人列进 people、把**不是人的主体**列进 others ——"
+        "两边都要带各自出现的时间段；不是人的东西是什么，由你在 kind 里自己说。"
+        "再列作为主体展示的产品、场景，以及逐镜的画面描述。"
         "另外每个人都要给出 `speaks`：**看得见他嘴在动、正在讲话**的时间段"
         "（多人同框时也照实填，谁开口就填谁）；没开口就给空数组，不要凭剧情猜。")
 
@@ -421,6 +479,11 @@ def normalize(data: Any) -> dict:
     dur = max(0.0, _num(data.get("duration_s"), 0.0))
 
     people: list[dict] = []
+    # 🩸 2026-11-05：非人主体（龙/宠物/机器人/载具…）单独放 `others`。
+    #   不混进 `people`：换脸、SFace、主体定义句全都只处理人脸，混进去会污染
+    #   （把龙的描述塞进 `<主体N>` 定义句，模型会照着去改那只龙）。
+    #   下游 25 处消费 `people` 的地方因此一行都不用改。
+    others: list[dict] = []
     for i, p in enumerate(data.get("people") or [], 1):
         if not isinstance(p, dict):
             continue
@@ -463,6 +526,35 @@ def normalize(data: Any) -> dict:
             "speaks": speaks,
         })
 
+    # 非人主体：模型自己判断、自己描述（`kind` 是自由文本，没有枚举）。
+    # 老盘点没有 `others` 这个键 → 读到空数组，行为与今天完全一致。
+    for i, o in enumerate(data.get("others") or [], 1):
+        if not isinstance(o, dict):
+            continue
+        o_apps: list[dict] = []
+        for a in o.get("appearances") or []:
+            if not isinstance(a, dict):
+                continue
+            s, e = _num(a.get("start")), _num(a.get("end"))
+            s = max(0.0, min(s, dur or s))
+            e = max(s, min(e, dur or e))
+            if e - s > 0.05:
+                o_apps.append({"start": round(s, 2), "end": round(e, 2)})
+        if not o_apps:
+            continue
+        o_zh = str(o.get("desc_zh") or "").strip()
+        o_en = str(o.get("desc_en") or "").strip()
+        if not o_zh and not o_en:
+            continue
+        others.append({
+            "id": str(o.get("id") or "").strip() or f"O{i}",
+            "kind": str(o.get("kind") or "").strip(),
+            "desc_zh": o_zh or o_en,
+            "desc_en": o_en or o_zh,
+            "position": _norm_position(o.get("position")),
+            "appearances": o_apps,
+        })
+
     # 🩸 官方《Seedance 2.5 指南》`:429-435`「角色对应错误」：
     # 「按人物**首次出场顺序**上传参考素材，并同步调整提示词中的图片、音频编号，
     # 确保每个角色与参考素材一一对应。」现象是「先出场的人物被其他参考角色替换」。
@@ -476,6 +568,12 @@ def normalize(data: Any) -> dict:
                                   default=0.0))
     for _i, _p in enumerate(people, 1):
         _p["id"] = f"P{_i}"
+    # 非人主体同样按首次出现排序、单独编号（O1、O2…），不与人物 id 抢号。
+    others.sort(key=lambda p: min((a["start"] for a in p["appearances"]),
+                                  default=0.0))
+    for _i, _p in enumerate(others, 1):
+        _p["id"] = f"O{_i}"
+        _p.pop("main", None)      # 「主角」这个概念只对人有意义
 
     # main 必须唯一且存在：模型没标就按出现总时长挑最长的那条
     if people and not any(p["main"] for p in people):
@@ -520,6 +618,9 @@ def normalize(data: Any) -> dict:
     return {
         "duration_s": round(dur, 2),
         "people": people,
+        # 非人主体（kind != person）。老盘点没有这个键 → 下游当空列表，
+        # 行为与今天完全一致。
+        "others": others,
         "products": _items("products"),
         "scenes": _items("scenes"),
         "shots": shots,
@@ -671,10 +772,14 @@ def targets_in(inv: dict | None, a: float, b: float,
 def summary(inv: dict | None) -> dict:
     """给前端画 chips 用的精简版（不带 desc_en 之外的大字段）。"""
     if not inv:
-        return {"ready": False, "people": [], "products": [], "scenes": []}
+        return {"ready": False, "people": [], "others": [],
+                "products": [], "scenes": []}
     return {
         "ready": True,
         "duration_s": inv.get("duration_s", 0),
+        # 🩸 2026-11-05：people 这里**不输出 kind** —— 人就是人，多一个恒为
+        #   "person" 的字段只会让前端每个 chip 都多印一行「person · 12s」。
+        #   kind 只属于 others（模型自己写的自由文本）。
         "people": [{
             "id": p["id"],
             "desc_zh": p["desc_zh"],
@@ -683,6 +788,14 @@ def summary(inv: dict | None) -> dict:
             "face_visible": bool(p.get("face_visible")),
             "appearances": p.get("appearances") or [],
         } for p in inv.get("people") or []],
+        # 非人主体（老盘点没有这个键 → 空数组，前端不受影响）
+        "others": [{
+            "id": p["id"],
+            "kind": p.get("kind") or "other",
+            "desc_zh": p["desc_zh"],
+            "desc_en": p["desc_en"],
+            "appearances": p.get("appearances") or [],
+        } for p in inv.get("others") or []],
         "products": inv.get("products") or [],
         "scenes": inv.get("scenes") or [],
         "notes": inv.get("notes") or "",

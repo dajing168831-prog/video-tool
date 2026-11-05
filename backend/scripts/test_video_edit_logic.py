@@ -209,7 +209,11 @@ def main() -> int:
     check("输出音频码 → 不冒充输入侧", "InputVideoSensitiveContentDetected" not in a_hint,
           True)
     check("输出音频码 → 说明不影响成片声音", "声音不受影响" in a_hint, True)
-    check("输出音频码 → 建议先重试", "重试" in a_hint, True)
+    # 🩸 2026-11-05：系统已改成**自动**关掉音频生成重跑该段（`volc_common.submit`），
+    #   文案跟着改成「已自动降级，看到这条说明降级也没成」。断言从「有没有劝用户重试」
+    #   改成「有没有说清自动降级这件事，且不把锅甩给素材」。
+    check("输出音频码 → 说明系统已自动降级重跑", "自动" in a_hint and "重跑" in a_hint,
+          True)
 
     # 🩸 2026-10-25 实测（`861efd72`）：不带后缀的输入敏感码，以前落到「无提示」，
     # 界面上只剩一坨原始 JSON。它既不是版权、也不是真人脸，且**模型一次没跑**。

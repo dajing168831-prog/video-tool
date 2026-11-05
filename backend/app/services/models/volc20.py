@@ -82,6 +82,8 @@ def _compile(spec: dict, *, channel: str = "volc", **kw) -> str:
     return volc20_compile._volc(
         spec, c, idx, model=kw.get("model", ""), people=people,
         frame_people=kw.get("frame_people"),
+        # 画面里的非人主体（矩阵 §3.1）；生产链路由 `video_edit._prepare` 传。
+        frame_others=kw.get("frame_others"),
         audio_ref=bool(kw.get("audio_ref")), desc_by_id=kw.get("desc_by_id"),
         shot_cuts=kw.get("shot_cuts"),
         boundary_pic=int(kw.get("boundary_pic") or 0),

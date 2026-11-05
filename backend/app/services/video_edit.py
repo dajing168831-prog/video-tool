@@ -91,9 +91,10 @@ def _volc_hint(msg: str) -> str:
             "｜注意：火山判的是**模型生成出来的那条音轨**可能涉及版权"
             "（OutputAudioSensitiveContentDetected.PolicyViolation），"
             "不是参考片、也不是画面。我们合成时本来就把模型音轨整条丢掉、"
-            "换成自己的配音，所以成片的声音不受影响，这条只影响口型："
-            "① 直接重试一次（生成内容有随机性，多数能过）；"
-            "② 反复撞就关掉这几段的音频生成（`generate_audio=False`），口型会退化。"
+            "换成自己的配音，所以成片的声音不受影响。"
+            "🩸 2026-11-05 起系统已**自动关掉音频生成重跑这一段**"
+            "（降级，口型可能不如原方案）；看到这条说明降级重跑也没成，"
+            "那就不是音轨的问题了 —— 按官方口径换参考素材或换通道。"
         )
     if "outputvideosensitivecontentdetected" in low:
         if "copyright" in low or "policyviolation" in low:
@@ -1170,6 +1171,40 @@ def _prepare(
                 f"画面里有 {len(_frame)} 个人，请先点选要换的是哪一位 —— "
                 "不说清换谁，模型会换错人或者干脆不换")
 
+    # 🩸🩸 2026-11-05（`sd20_fuzz.py` 300 组随机形态扫出来的第 3 道闸）：
+    #   画面 ≥2 人、也点选了，但被选的那个人**既没有唯一方位、也没有盘点描述**时，
+    #   编译器只能落到 `_clauses` 的文字兜底
+    #       「严格编辑@视频1，将其中的人物替换为另一个人」
+    #   —— 这正是 `missing_material` 注释里批评的「模型自己编一个换上去」，
+    #   钱花了、人没换。官方把「多人未指明谁在左/右」列为**必须打断**的关键歧义
+    #   （`sd2-pe:72`），不能静默发出去。
+    #   单人画面不拦：只有一张脸，没有指代歧义（官方 `:117` 简单场景）。
+    if (spec.get("change") or {}).get("person"):
+        _chg = spec.get("change") or {}
+        _frame = (inventory or {}).get("people") or []
+        if len(_frame) >= 2:
+            _pos_cnt: dict[str, int] = {}
+            for _p in _frame:
+                if _p and _p.get("present", True) is not False:
+                    _k = str(_p.get("position") or "")
+                    if _k:
+                        _pos_cnt[_k] = _pos_cnt.get(_k, 0) + 1
+            _picked = {str(x) for x in (_chg.get("person_ids") or [])}
+            if not _picked and _chg.get("person_id"):
+                _picked = {str(_chg.get("person_id"))}
+            for _p in _frame:
+                if str(_p.get("id") or "") not in _picked:
+                    continue
+                _has_desc = bool(str(_p.get("desc_zh") or "").strip())
+                _pos = str(_p.get("position") or "")
+                _pos_ok = bool(_pos) and _pos_cnt.get(_pos, 0) <= 1
+                if not _has_desc and not _pos_ok:
+                    raise EditError(
+                        "盘点没能把这个人跟画面里其他人区分开"
+                        "（方位撞车、也没有外观描述）—— 换人提示词会退化成"
+                        "「将其中的人物替换为另一个人」，模型会自己编一张脸。"
+                        "请先在画面上点选要换的那一位，或重新盘点这段视频")
+
     src = rec.get("source") or {}
     width = int(src.get("width") or 1080)
     height = int(src.get("height") or 1920)
@@ -1215,6 +1250,27 @@ def _prepare(
     #     2.5 还多一层职责行），各在自己文件里写，**不共用一把尺**
     #   · `person_ids` 必须传：闸要按**实际勾选顺序**取人，否则"只勾第 2 个人"
     #     时会拿盘点里的第 1 个人去判
+    # 🩸🩸 2026-11-05：盘点现在会报**非人主体**（龙 / 机器人 / 车…），前端也把它们
+    #   放进了可点列表。但编译链**仍然只认人**：下面 `_by_id` 只查 `people`，
+    #   `_head_noun` 也要求描述以人称名词收尾。勾了非人主体照常编译 →
+    #   `source_people` 为空 → 退化成「将其中的人物替换为@图片N中的人物」，
+    #   而 @图片N 是那条龙的图：钱花了，模型只能自己猜画面里哪个"人物"要换成它。
+    #   ⇒ 明确拒绝，别静默发出去。接编译器是下一步（要按主体种类取词）。
+    _chg_o = spec.get("change") or {}
+    if _chg_o.get("person"):
+        _people_ids = {str(p.get("id") or "")
+                       for p in ((inventory or {}).get("people") or [])}
+        _others_by_id = {str(o.get("id") or ""): o
+                         for o in ((inventory or {}).get("others") or [])}
+        for _pid in [str(x) for x in (_chg_o.get("person_ids") or [])]:
+            if _pid in _people_ids or _pid not in _others_by_id:
+                continue
+            _o = _others_by_id[_pid]
+            raise EditError(
+                f"盘点认出的「{_o.get('kind') or _o.get('desc_zh') or _pid}」不是人，"
+                "换非人主体的提示词还没接上（这一步只支持换人）。"
+                "请先在「画面里有谁」里取消它再出片")
+
     _ad = models.adapter_for(model=edit_model, channel=ch)
     _ad.pre_compile(spec)
     _ad.gate(inventory=inventory, slots=slots,
@@ -1260,6 +1316,10 @@ def _prepare(
         # 🩸 整个画面的人（不是这次勾选的人）：2.0 判「在场是否 ≥2 人」和
         # 方位是否唯一都要用这个分母（见 `edit_spec._sd20_person_tags`）。
         frame_people=(inventory or {}).get("people") or [],
+        # 🩸 矩阵 §3.1：画面里的非人主体（龙/宠物/机器人）。有它时单人换人句
+        # 的源宾语必须点名（`skill:24` 的 `<原特征>`）——「人物」在这类画面里
+        # 没有唯一解（真实样本 `60f82aab`：女子 + 龙）。
+        frame_others=(inventory or {}).get("others") or [],
         desc_by_id=desc_by_id(inventory), style_video=style_video is not None)
 
     # 提示词硬上限（MiniMax 官方 7000 字符；火山官方只给"建议字数"，没有硬上限）。
@@ -1604,7 +1664,10 @@ def _span_plan(plan: dict, spans: list[tuple[float, float]]) -> dict:
     # 🩸 只换衣服时也要分诊：点名的那几个人**不在这段**，这段就没东西可改。
     # 不点名（名单为空 = 全体一起换）才退回整片套用同一句。
     wid = [str(x).strip() for x in (c.get("wardrobe_ids") or []) if str(x).strip()]
-    watch = list(dict.fromkeys(ids + wid))
+    # 🩸 2026-11-05 拆槽位：换发型和换装一样按人分诊 —— 点名的人不在这段，
+    #   这段就没东西可改（同款理由见上一段注释）。
+    hid = [str(x).strip() for x in (c.get("hair_ids") or []) if str(x).strip()]
+    watch = list(dict.fromkeys(ids + wid + hid))
     # 名单空着但勾了「换人物」= 老语义（自动取主角），不能当成"没有目标"
     if not watch and not c.get("person"):
         return {}
@@ -1638,7 +1701,8 @@ def _span_plan(plan: dict, spans: list[tuple[float, float]]) -> dict:
     other = any(c.get(k) for k in ("product", "scene", "style",
                                    "style_ref", "style_video")) \
         or bool(spec.get("extra")) \
-        or bool(c.get("wardrobe") and not wid)
+        or bool(c.get("wardrobe") and not wid) \
+        or bool(c.get("hair") and not hid)
     # 🩸 只有**保留原声**时才允许整段留原片。
     # 全新配音（tts/mix）时原片的口型对不上新台词，这一段必须重画重做口型，
     # 哪怕不该换人 —— 否则观众看到的是"这张脸在说别的话"。
@@ -1742,6 +1806,33 @@ def _shot_looks(cid: str, rec: dict) -> list[str]:
         return []
 
 
+def _span_shots(inventory: dict | None, a: float, b: float) -> list[dict]:
+    """把整片的镜头表裁成**这一段**，时间轴平移到段内从 0 开始。
+
+    🩸🩸 2026-11-05（主人：「H3提示词是不是有问题？都分开了还写 1-30 秒？」）：
+    `_span_prompt` 以前把 `inventory.shots` **整片**传给编译器，H3 的
+    【画面过程说明】于是按全片写「0-1 秒…25-30 秒」—— 而这一段只截了 0–7.083 秒。
+    模型收到的是 7 秒的片段，提示词却告诉它 30 秒要发生什么：
+    多出来的镜头要么被硬塞进这 7 秒，要么让模型以为素材被截坏了。
+    只保留与 [a,b) 有交集的镜头，并减去段起点 —— 段内时间轴从 0 起。
+    """
+    out: list[dict] = []
+    for s in (inventory or {}).get("shots") or []:
+        try:
+            s0, s1 = float(s.get("start") or 0), float(s.get("end") or 0)
+        except (TypeError, ValueError):
+            continue
+        if s1 <= a + 0.05 or s0 >= b - 0.05:
+            continue
+        out.append({**s,
+                    "start": round(max(0.0, s0 - a), 3),
+                    "end": round(min(b - a, s1 - a), 3)})
+    # 段边界切出来的碎片（如 7.0–7.083）不值得单独写一行时间轴
+    if len(out) > 1:
+        out = [x for x in out if float(x["end"]) - float(x["start"]) >= 0.2] or out
+    return out
+
+
 def _span_prompt(plan: dict, targets: list | None, *, drop_person: bool,
                  audio_ref: bool | None = None,
                  boundary_pic: int = 0,
@@ -1749,7 +1840,8 @@ def _span_prompt(plan: dict, targets: list | None, *, drop_person: bool,
                  shot_cuts: list[float] | None = None,
                  shot_looks: list[str] | None = None,
                  shot_lines: list[list[dict]] | None = None,
-                 frame_people: list[dict] | None = None) -> str:
+                 frame_people: list[dict] | None = None,
+                 shot_desc: list[dict] | None = None) -> str:
     """按段重编译提示词：把盘点到的"那个人"写进去，或把换人项摘掉。
 
     `audio_ref` 传 None = 跟着 plan 走（默认要喂音轨）；传 False = 这一段没有音轨，
@@ -1776,8 +1868,11 @@ def _span_prompt(plan: dict, targets: list | None, *, drop_person: bool,
             plan["ch"], shot_cuts, model=plan.get("model") or "")).strip()
     if (not targets and not drop_person and not boundary_pic
             and same_slots and shot_cuts is None and shot_looks is None
-            and shot_lines is None
+            and shot_lines is None and shot_desc is None
             and audio_ref == bool(plan.get("audio_ref"))):
+        # 🩸 `shot_desc` 也要算进捷径条件：传了段内镜头就得重编译。
+        #   2026-11-05 之前这里没它 —— 分段调用方传了 `_span_shots(...)`，
+        #   却被这条捷径原样返回整片提示词（三段输出一模一样）。
         return plan["prompt"]
     spec = json.loads(json.dumps(spec))  # 深拷贝：别把 plan 里的规格改掉
     if drop_person:
@@ -1792,6 +1887,11 @@ def _span_prompt(plan: dict, targets: list | None, *, drop_person: bool,
         # 只换两个人中的一个时那张表长度为 1，拿它数永远进不了多人分支。
         frame_people=(frame_people if frame_people is not None
                       else (plan.get("inventory") or {}).get("people") or []),
+        # 🩸🩸 2026-11-05：**分段路径**以前漏了这一项 —— 整片编译补上了
+        # `frame_others`，但界面上「每段要发给模型的提示词」走的是
+        # `_span_prompt` 重编译，这条链没传 ⇒ 每段又退回裸「其中的人物」。
+        # 主人截图看到的"怎么还是这样"就是这个（矩阵 §3.1）。
+        frame_others=(plan.get("inventory") or {}).get("others") or [],
         audio_ref=audio_ref, slots=slots,
         subject_look=plan.get("look") or {},
         subject_looks=plan.get("looks") or {},
@@ -1802,7 +1902,11 @@ def _span_prompt(plan: dict, targets: list | None, *, drop_person: bool,
         #   `:260`「切镜的时候可明确写出**切镜到什么景别**…有助于跨镜头一致性」。
         #   没有它，切镜句只说"第 3.33 秒切"，切过去是什么全靠模型猜
         #   （`de591f35` 实测：猜成了参考图2 的庭院大特写）。
-        shot_desc=(plan.get("inventory") or {}).get("shots") or [],
+        # 🩸 2026-11-05：默认仍是整片镜头表（老调用方行为不变）；
+        #   分段调用方**必须**传 `_span_shots(...)` 的段内镜头，
+        #   否则 H3 的【画面过程说明】会写出整片 0–30 秒的时间轴。
+        shot_desc=(shot_desc if shot_desc is not None
+                   else (plan.get("inventory") or {}).get("shots") or []),
         shot_looks=shot_looks, shot_lines=shot_lines,
         # 风格参考视频（A9）：这一段真的会发出去才写 @视频2 / <Video 2>
         style_video=bool(plan.get("style_video")))
@@ -1908,6 +2012,48 @@ def _assign_speakers(rec: dict, inventory: dict | None) -> None:
         if pid in mapping.values():
             continue
         mapping[spk] = pid
+
+    # 第 1.5 轮（2026-11-05）：**整句太长、逐句规则判不出人时，按「累计动嘴时长」落人**。
+    #   背景：官方 `:251` 要求每个 shot 写明人物台词，官方 `:700` 更是把口型问题的
+    #   成因直接指到台词上；写「台词：“…”」却不写是谁说的，等于把一句长对白丢给
+    #   模型自己猜谁动嘴。
+    #   原来的逐句规则（`who_speaking`）要求**某一个窗口**覆盖这句 ≥40% 才算数 ——
+    #   一句 8.5 秒的台词横跨两个人、各开口两次时，没有哪个窗口占到 40%，
+    #   结果一个字都不标。实测 `764b3fd9`：3.7–12.18s 一整句，
+    #   P2 动嘴累计 5.18s / P1 1.30s，旧规则判「没人」。
+    #   这里改用**整段累计**：同一句的台词时间里，谁动嘴的总时长明显领先
+    #   （≥1.5 倍且 ≥30%），这个声纹就落到谁身上。
+    #   仍然是「看得见的嘴」，不是猜剧情；没有明显领先就继续不标（不编人）。
+    def _speak_overlap(ln: dict, p: dict) -> float:
+        s0 = float(ln.get("start") or 0.0)
+        e0 = float(ln.get("end") or 0.0)
+        return sum(max(0.0, min(e0, float(ap.get("end") or 0.0))
+                       - max(s0, float(ap.get("start") or 0.0)))
+                   for ap in (p.get("speaks") or []))
+
+    _taken = set(mapping.values())
+    _by_spk: dict[str, list[dict]] = {}
+    for _ln in lines:
+        _spk = str(_ln.get("asr_speaker") or "").strip()
+        if _spk and _spk not in mapping:
+            _by_spk.setdefault(_spk, []).append(_ln)
+    for _spk, _grp in _by_spk.items():
+        _tot = sum(max(0.0, float(x.get("end") or 0) - float(x.get("start") or 0))
+                   for x in _grp)
+        if _tot <= 0:
+            continue
+        _score = {str(p["id"]): sum(_speak_overlap(x, p) for x in _grp)
+                  for p in people}
+        _ranked = sorted(_score.items(), key=lambda kv: -kv[1])
+        if not _ranked or _ranked[0][1] <= 0:
+            continue
+        _pid, _best = _ranked[0]
+        _second = _ranked[1][1] if len(_ranked) > 1 else 0.0
+        if _pid in _taken:
+            continue
+        if _best >= 0.3 * _tot and _best >= 1.5 * _second:
+            mapping[_spk] = _pid
+            _taken.add(_pid)
 
     # 第 2 轮：逐句定人 —— 能直接定就用直接证据（动嘴 > 唯一在场），否则查声纹映射
     for ln in lines:
@@ -2174,6 +2320,8 @@ def _gen_spans(
                 subject_look=plan.get("look") or {},
                 subject_looks=plan.get("looks") or {},
                 frame_people=(plan.get("inventory") or {}).get("people") or [],
+                # 画面里的非人主体（矩阵 §3.1），与 `_prepare` / `_span_prompt` 同一条口径
+                frame_others=(plan.get("inventory") or {}).get("others") or [],
                 desc_by_id=desc_by_id(plan.get("inventory")))
     # 口型参考音轨：整条片只有一条，先取一次。拿不到就把提示词里的 <Audio 1> 全撤掉
     audio_track = _audio_track(plan.get("spec") or {}, video, work) \
@@ -2439,7 +2587,9 @@ def _gen_spans(
                                   boundary_pic=bf_pic, slots=span_slots,
                                   shot_cuts=cuts, shot_looks=seg_looks,
                                   shot_lines=seg_lines,
-                                  frame_people=frame_ppl)
+                                  frame_people=frame_ppl,
+                                  # 这一段的镜头表（时间轴从 0 起），不是整片的
+                                  shot_desc=_span_shots(plan.get("inventory"), a, b))
         # agent 版本优先（签名已在上面对过）。段号 n 从 1 起，与 prompts.json 一致。
         # 缓存键用的是**编译后的提示词**，所以换成 agent 版后旧缓存自然失效。
         if _agent_segs.get(n):

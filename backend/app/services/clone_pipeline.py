@@ -513,6 +513,10 @@ def render(
     # 方言（火山 `explicit_dialect`）：空 = 标准普通话。
     # 只有音色表里带 `dialects` 的那几个 2.0 音色才吃这个参数。
     tts_dialect: str = "",
+    # 🩸 口音还原（2026-11-05）：火山 `tone_fidelity`，只对复刻音色（S_ 开头）生效。
+    # 官方原文见 `providers/tts.py` synth() 的注释；跨语种会被官方拒，
+    # 所以下面调用处只在「原文语种」下才真的传下去。
+    tts_fidelity: bool = False,
     tts=None,
     # 默认关：见 `api/clone.py` 里 mask_bottom 的注释（实心黑边 + 盖不到字幕）
     mask_bottom: bool = False,
@@ -698,7 +702,13 @@ def render(
                 if _vn:
                     log.warning("第 %d 行音色替换：%s", i + 1, _vn)
             tts.synth(t, p, voice=_vid, rate=rate,
-                      dialect=(tts_dialect or "").strip().lower())
+                      dialect=(tts_dialect or "").strip().lower(),
+                      # 🩸 还原模式：官方「仅支持合成和上传音频同语种的文本，
+                      # 不支持跨语种合成」。翻译过的台词（lang 非中文）传了会被
+                      # 官方拒、整条配音失败 —— 所以只在本语种下才真的打开。
+                      fidelity=bool(tts_fidelity) and (
+                          not (lang or "").strip()
+                          or (lang or "").strip().lower().startswith("zh")))
             audios.append(p)
             clips[i] = p
 
@@ -854,7 +864,7 @@ def render(
     # 🩸 不只在"换人物"时要盘点：只换衣服/道具的人**不在**换人名单里，
     # 提示词得靠盘点给出的外观描述指认「是哪一位」。
     if wants_change and spec and (chg_now.get("person") or chg_now.get("wardrobe_ids")
-                                  or chg_now.get("props")):
+                                  or chg_now.get("hair_ids") or chg_now.get("props")):
         inventory = _inventory_or_none(cid)
 
 
