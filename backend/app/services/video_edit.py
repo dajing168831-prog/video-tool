@@ -1317,7 +1317,7 @@ def _prepare(
         # 方位是否唯一都要用这个分母（见 `edit_spec._sd20_person_tags`）。
         frame_people=(inventory or {}).get("people") or [],
         # 🩸 矩阵 §3.1：画面里的非人主体（龙/宠物/机器人）。有它时单人换人句
-        # 的源宾语必须点名（`skill:24` 的 `<原特征>`）——「人物」在这类画面里
+        # 的源宾语必须点名（`sd2-pe:24` 的 `<原特征>`）——「人物」在这类画面里
         # 没有唯一解（真实样本 `60f82aab`：女子 + 龙）。
         frame_others=(inventory or {}).get("others") or [],
         desc_by_id=desc_by_id(inventory), style_video=style_video is not None)

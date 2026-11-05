@@ -166,17 +166,25 @@ def sd20_locator(per: dict | None, pool: list[dict] | None = None) -> str:
         if p and _present(p)
         and str(p.get("id") or "") != str((per or {}).get("id") or ""))
     if pool:
-        # ② 特征档：能唯一指认就到此为止，**不写方位**
-        _f = (_feat_phrase(desc, cloth=False, sd20=True)
-              or _feat_phrase(desc, cloth=True, sd20=True))
+        # 🩸 2026-11-05 主人拍板改序：**方位 + 类别词优先**，外观是兜底。
+        #   只改 2.0 的这一份，2.5 的 `edit_spec` 指认尺不动。
+        _n = sum(1 for p in pool if p and _present(p))
+        _noun = _person_noun(desc)
+        if _n >= 2:
+            # ① 方位唯一 → 「画面中央的女性」（官方 `SD20-skill:153`）
+            _pos = _uniq_pos(per, pool)
+            if _pos:
+                return f"{_pos}的{_noun}" if _noun else f"{_pos}的人物"
+            # ② 方位撞车 → 人称词本身能否唯一指认
+            if _noun and not _collides_others(_noun, others_text):
+                return _noun
+        # ③ 特征档（**剔掉面部细节**，剃空 = 取不到）
+        _f = _drop_face(_feat_phrase(desc, cloth=False, sd20=True)
+                        or _feat_phrase(desc, cloth=True, sd20=True))
         if _f:
             _f = _disambiguate_20(_f, desc, others_text, cloth=False)
             if not _collides_others(_f, others_text):
                 return _f
-        # ③ 方位档：特征指认不了才用它
-        _pos = _uniq_pos(per, pool)
-        if _pos:
-            return f"{_pos}的人物"
     own = _landmark_phrase_20(desc)
     if not own:
         own = (_feat_phrase(desc, cloth=False)
@@ -202,6 +210,34 @@ def sd20_locator(per: dict | None, pool: list[dict] | None = None) -> str:
 
 
 
+def _person_noun(desc: str) -> str:
+    """描述里的**纯人称名词**（女性 / 男性 / 老人 / 女生…），取不到返回 ""。
+
+    与 `_head_noun` 的区别：`_head_noun` 返回**整个主语短语**（「留齐刘海长发的
+    女性」），这里只要人称词本体（「女性」）。
+
+    2026-11-05 主人拍板：`<原特征>` = **方位 + 类别词**，修饰语一律不要。
+    """
+    s = _head_noun(desc)
+    m = _PERSON_HEAD.search(s) if s else None
+    return m.group(0) if m else ""
+
+
+#: 面部细节 —— **永不进 `<原特征>`**。
+#: 官方四条编辑实例（`pg:941`「香水」/ `tutorial:550`「礼盒中的香水」/
+#: `SD20-skill:153`「女生位于画面左侧」/ `:164`「左侧角色穿灰蓝色作训服」）
+#: 零条写五官。实测 2026-11-05：`dcc84c1b` 那句写了「右眼下有一颗痣」，
+#: 成片两个人身份都换成了，但新脸上带着那颗痣 —— 模型读到什么就画什么。
+_FACE_DETAIL = re.compile(
+    r"痣|雀斑|脸型|脸|五官|眼型|双眼皮|单眼皮|眉|鼻|唇|酒窝|肤色")
+
+
+def _drop_face(phrase: str) -> str:
+    """剔掉带面部细节的分句；剩下的为空就返回 ""（宁可不写，也不写脸）。"""
+    segs = [x.strip() for x in re.split(r"[、，,；;]", phrase or "") if x.strip()]
+    return "、".join(x for x in segs if not _FACE_DETAIL.search(x))
+
+
 def _orig_feat_20(people: list[dict] | None, i: int,
                   pool: list[dict] | None = None, cloth: bool = True) -> str:
     """原片里第 i 个人的**指认短语**（2.0 的一份）。
@@ -209,11 +245,18 @@ def _orig_feat_20(people: list[dict] | None, i: int,
     🩸 2026-10-28 从 `edit_spec.py` 搬来（原本叫 `_sd20_orig_feat`，
     但 2.5 的换人句一直在借它 —— 两家的指认尺不许互借，各留一份）。
 
-    三档（2026-10-30 主人拍板，与 `sd20_locator` 同一把尺、同一先后）：
-      · **特征能唯一指认他** → `:95` 的特征短语（「短卷发男性」「东亚男性」）；
-      · 特征取不到、或跟同画面别人撞成一句 → 方位在画面里**唯一**才用
-        「画面中央的人物」（官方 `:153`）；
-      · 两样都没有 → 空串（调用方跳过这个人）。
+    🩸 2026-11-05 主人拍板**改序**：`<原特征>` 只要「**方位 + 类别词**」。
+    依据 = 官方四条编辑实例零条写五官：
+      `pg:941`「视频1中的香水」/ `tutorial:550`「视频1礼盒中的香水」/
+      `SD20-skill:153`「@图片2 中的女生位于画面左侧」/
+      `:164`「左侧角色穿灰蓝色作训服」。
+    实测 = `dcc84c1b` 写了「右眼下的痣」，换成功的成片新脸上还带着那颗痣。
+
+    新三档：
+      ① 画面 ≥2 人且方位唯一 → 「画面中央的女性」（官方 `:153` 的类别 + 方位）；
+      ② 方位撞车 → 人称词本身能否指认（同画面别人没有同一个词）；
+      ③ 还不行 → 封顶特征短语，但**剔掉面部细节**；剃空就当取不到。
+      ④ 空串（调用方跳过这个人）。
 
     出处：`sd20-guide:95`「2–3 个清晰、稳定的静态特征…确保唯一可识别性」；
     `sd2-pe:72` 把"多人未指明谁在左/右"列为关键歧义；`:153` 的写法是
@@ -237,16 +280,27 @@ def _orig_feat_20(people: list[dict] | None, i: int,
         re.sub(r"[\r\n\t]+", " ", str(p.get("desc_zh") or ""))
         for p in (pool if pool else ppl)
         if p and _present(p) and str(p.get("id") or "") != str(per.get("id") or ""))
+    # 分母必须是**整个画面**（`pool`）：生产里 `people` 只含勾选的人，
+    # 拿它数方位，每个方位天然"唯一"，两个人都在 center 时会照写「画面中央」。
+    _pool = pool if pool else ppl
+    _n = sum(1 for p in _pool if p and _present(p))
+    noun = _person_noun(desc)
+    if _n >= 2:
+        # ① 方位唯一 → 「画面中央的女性」（官方 `SD20-skill:153` 的类别 + 方位）
+        pos = _uniq_pos(per, _pool)
+        if pos:
+            return f"{pos}的{noun}" if noun else f"{pos}的人物"
+        # ② 方位撞车 → 人称词本身能否指认（同画面别人没有同一个词）
+        if noun and not _collides_others(noun, others):
+            return noun
+    # ③ 最后一档：封顶特征短语，但**剔掉面部细节**（剃空 = 取不到）
     base = _feat_phrase(desc, cloth=cloth, sd20=True)
+    if base:
+        base = _drop_face(base)
     if base:
         base = _disambiguate_20(base, desc, others, cloth=cloth)
         if not _collides_others(base, others):
             return base
-    # 分母必须是**整个画面**（`pool`）：生产里 `people` 只含勾选的人，
-    # 拿它数方位，每个方位天然"唯一"，两个人都在 center 时会照写「画面中央」。
-    pos = _uniq_pos(per, pool if pool else ppl)
-    if pos:
-        return f"{pos}的人物"
     return ""
 
 
@@ -889,6 +943,10 @@ def _shot_plan(cuts: list[float]) -> str:
 # sd2-pe:129 明写「路径 A 仍必须挂载默认必挂的兜底约束包（画质 / 稳定 / 水印 Logo）」，
 # 编辑任务属于路径 A。以前这里只挂了稳定 + 水印、而且用的是我们自己概括的
 # "画面稳定无变形"，缺了官方的画质包。
+# 🩸 2026-11-05（主人拍板「挂」）：稳定包**逐字换成官方 `:159` 原句**。
+#   旧句「画面稳定无变形」取自 `:103` 的折叠示例（管整幅画面），
+#   官方定义的稳定包（`:159`，`:219` 称"强制兜底"）第一句管的是**人物面部**
+#   （「人物面部稳定不变形、五官清晰」）—— 换人任务里这句正好落在被编辑的人脸上。
 def _volc20_boilerplate(c: dict) -> str:
     """2.0 强制兜底包 —— 各句逐字取 sd2-pe 原文，顺序同官方示例（`:172`/`:184`）。
 
@@ -921,7 +979,8 @@ def _volc20_boilerplate(c: dict) -> str:
         _quality = _STYLE_ANCHOR_20.get(_st) or STYLES.get(_st) or _quality
     parts = [
         _quality,
-        "画面稳定无变形",
+        # `sd2-pe:159` 稳定包原文，逐字不改词
+        "人物面部稳定不变形、五官清晰、动作连贯自然，不僵硬，无穿模无卡顿",
         "保持无字幕，避免生成任何文字或字幕",
         "不要生成水印",
         "不要生成 Logo",
@@ -1308,7 +1367,7 @@ def _volc(spec: dict, c: dict, idx: dict[str, int], *, model: str = "",
                      people=people, desc_by_id=desc_by_id,
                      frame_people=frame_people,
                      # 🩸 矩阵 §3.1：画面里的**非人主体**（龙/宠物/机器人）。
-                     # 有它的时候单人换人句的源宾语必须点名（`skill:24` 的 `<原特征>`），
+                     # 有它的时候单人换人句的源宾语必须点名（`sd2-pe:24` 的 `<原特征>`），
                      # 裸「人物」在"人 + 龙"的画面里没有唯一解。
                      frame_others=frame_others,
                      keep=spec["keep"],

@@ -54,14 +54,16 @@ def check(text: str, *, n_src: int, n_swap: int,
     if i_ref != -1 and i_edit != -1 and i_ref > i_edit:
         bad.append("I4 参考分句排在「严格编辑」之后（pg:65-67）")
 
-    # I5 约束包（skill:158-161 / :101 默认必挂）
-    for k in ("高清", "画面稳定无变形", "无字幕", "水印", "Logo"):
+    # I5 约束包（sd2-pe:158-161 / :101 默认必挂）
+    # 稳定包按 `sd2-pe:159` **完整版**判（2026-11-05 主人拍板「挂」）：
+    #   「人物面部稳定不变形、五官清晰…」—— 压缩版「画面稳定无变形」不在判据里。
+    for k in ("高清", "人物面部稳定不变形", "无字幕", "水印", "Logo"):
         if k not in text:
-            bad.append(f"I5 缺约束包「{k}」（skill:158-161）")
+            bad.append(f"I5 缺约束包「{k}」（sd2-pe:158-161）")
 
-    # I6 双胞胎兜底按人数（skill:162「多人/多主体场景必挂」）
+    # I6 双胞胎兜底按人数（sd2-pe:162「多人/多主体场景必挂」）
     if n_src >= 2 and "双胞胎" not in text:
-        bad.append("I6 多人画面缺双胞胎兜底（skill:162）")
+        bad.append("I6 多人画面缺双胞胎兜底（sd2-pe:162）")
 
     # I7 宾语不得以服装结尾（10-24 20:49 实测：读成「把衣服换成一个人」）
     for seg in re.split(r"[；;]", text):

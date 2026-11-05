@@ -1129,7 +1129,7 @@ def _clauses(channel: str, c: dict, idx: dict[str, int], *,
                 obj = f"{pos}的人物"
             elif frame_others and not multi and src and _single_feat(src):
                 # 🩸 2026-11-05（矩阵 §3.1）：画面里除了人还有别的主体（龙/宠物/机器人）时，
-                #   裸「人物」没有唯一解 —— 官方 `skill:24` 的「改」句式本来就要 `<原特征>`。
+                #   裸「人物」没有唯一解 —— 官方 `sd2-pe:24` 的「改」句式本来就要 `<原特征>`。
                 #   单人画面才走这里；多人由上面两条分支先接管。
                 obj = _single_feat(src)
             elif src and multi and _head_noun(src):

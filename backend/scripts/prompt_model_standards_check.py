@@ -307,11 +307,11 @@ def phase_positions(sel: str) -> None:
     if sel == "volc20":
         p20 = edit_spec.compile_prompt("volc", s, model=V20[0], slots=slots,
                                        source_people=ppl, desc_by_id=d)
-        # 🩸 2026-10-30 主人拍板：**方位由「优先」降为「兜底」**（`sd20_locator` 三档）。
-        # 两人描述互不相同 ⇒ 特征就能指认，这时不该再写方位（官方 `:95` 的定义形状）。
-        chk("2.0 特征可分 → 用特征、不写方位（sd2-pe:95）",
-            "画面左侧" not in p20 and "画面右侧" not in p20
-            and "穿蓝衣的男人" in p20 and "戴帽子的女人" in p20, p20[:160])
+        # 🩸 2026-11-05 主人拍板：`<原特征>` = **方位 + 类别词**（官方 `SD20-skill:153`）。
+        # 方位唯一时写方位 + 人称词，**不写外观**（外观会被模型照着画回去）。
+        chk("2.0 方位唯一 → 方位+类别词、不写外观（sd2-pe:153）",
+            "画面左侧的男人" in p20 and "画面右侧的女人" in p20
+            and "穿蓝衣" not in p20 and "戴帽子" not in p20, p20[:160])
         # 兜底档：描述一模一样 ⇒ 特征指认不了，方位**必须**写（官方 `:153`）
         same20 = "留短黑发的男性"
         ppl20 = [dict(p, desc_zh=same20) for p in ppl]
@@ -343,9 +343,9 @@ def phase_positions(sel: str) -> None:
         ptb = edit_spec.compile_prompt("volc", s, model=V20[0], slots=slots,
                                        source_people=tb, desc_by_id=dtb)
         # 特征可分（浅棕短发 / 浅银白短发）⇒ 用特征、不写方位（2026-10-30 方位降兜底）
-        chk("上下分屏：2.0 特征可分 → 用特征、不写方位",
-            "画面上方" not in ptb and "画面下方" not in ptb
-            and "浅棕色短发男性" in ptb and "浅银白短发男性" in ptb, ptb[:160])
+        chk("上下分屏：2.0 方位唯一 → 方位+类别词、不写外观",
+            "画面上方的男性" in ptb and "画面下方的男性" in ptb
+            and "浅棕色短发" not in ptb and "浅银白短发" not in ptb, ptb[:160])
         # 兜底档：两人描述一样 ⇒ 只剩方位能分，必须写画面上方/下方
         same_tb = "短发男性"
         tb2 = [dict(p, desc_zh=same_tb) for p in tb]

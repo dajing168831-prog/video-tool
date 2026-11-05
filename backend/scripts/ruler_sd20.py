@@ -236,13 +236,31 @@ def r09_object_unique(p, ctx):
         if k:
             pos_count[k] = pos_count.get(k, 0) + 1
     bad = []
-    for m in re.finditer(r"将其中的\s*(.{0,26}?)\s*(?:完整)?(?:替换为|换成|改成|修改为)", p):
+    #: 类别词 → 性别。2026-11-05 主人拍板「`<原特征>` = 方位 + 类别词」后，
+    #   方位撞车的画面会写裸类别词（「将其中的男子替换为…」）——
+    #   **一男一女的画面里「男子」是唯一的**，不能只看 n≥2 就判死。
+    #   真病灶是「同画面还有同性别的人」（两个男人都叫「男子」= 没指认）。
+    _GENDER = {"男性": "m", "男子": "m", "男人": "m", "男士": "m",
+               "女性": "f", "女子": "f", "女人": "f", "女士": "f"}
+    _objs = list(re.finditer(
+        r"将其中的\s*(.{0,26}?)\s*(?:完整)?(?:替换为|换成|改成|修改为)", p))
+    for _i, m in enumerate(_objs):
         obj = m.group(1).strip()
         # 纯泛称（方位/特征一律没有）在 ≥2 人画面里没有唯一解。
         # 换装句的宾语是「<谁>的服装」，把后缀摘掉再看剩下的是不是纯泛称。
         core = obj[:-len("的服装")] if obj.endswith("的服装") else obj
-        if re.fullmatch(r"人物|男性|女性|男子|女子|男人|女人|男士|女士", core):
+        if core == "人物":
             bad.append(f"宾语=「{obj}」，画面 ≥2 人时无唯一解")
+        elif core in _GENDER:
+            g = _GENDER[core]
+            # 统计**整个画面**有几个同性别的人：只有 1 个时这个词就是唯一解。
+            # 不能按句序对人不齐 —— 「只换第 2 个」只有一句、`⑤ 同时换装` 两句
+            # 对同一个人，句序和 `people` 下标根本不是一一对应。
+            _w = "男" if g == "m" else "女"
+            _n_same = sum(1 for x in ppl
+                          if _w in str((x or {}).get("desc_zh") or ""))
+            if _n_same >= 2:
+                bad.append(f"宾语=「{obj}」，画面有 {_n_same} 个同性别的人，无唯一解")
         for k, n in pos_count.items():
             if obj == f"{k}的人物" and n > 1:
                 bad.append(f"宾语=「{obj}」，但{k}站着 {n} 个人")
@@ -2172,10 +2190,8 @@ def _d8_ablation() -> list[tuple[str, bool, str]]:
                     f"期望{'变' if should_change else '不变'}，实际"
                     f"{'变了' if changed else '没变'}：{p[:120]}"
                     + (f"（合法不变：{why}）" if not changed else "")))
-    # 🩸 2026-10-30：方位档现在是**兜底**（`sd20_locator` 三档，主人拍板
-    # 「方位只能给特征指认不了的场合用」）。所以要测方位有没有落点，必须
-    # 造「特征指认不了」的场合 = 同框两人描述**一模一样**。
-    # 造样本时不能拿「不一样的描述 + 方位缺失」去比 —— 那测的是特征档。
+    # 🩸 2026-11-05：方位重新成为**首选**（主人拍板 `<原特征>` = 方位 + 类别词）。
+    #   所以要测方位有没有落点，用「两个人都在场」即可，不再需要造一模一样描述。
     _same = "留短黑发的男性"
     _b2 = _sd_case("b2", n=2, pos="unique", picks=(0,), zh=[_same, _same])[1]
     _m2 = _sd_case("m2", n=2, pos="missing", picks=(0,), zh=[_same, _same])[1]
@@ -2183,12 +2199,12 @@ def _d8_ablation() -> list[tuple[str, bool, str]]:
                 "" if _m2 != _b2 else
                 f"期望变，实际没变：{_m2[:120]}"
                 "（描述完全相同、方位是唯一指认手段，缺了它提示词必须变）"))
-    # 反向对照：特征能指认时，方位**不该**改变输出（这正是这次的改动本身）
+    # 反向对照：方位现在是首选，所以「方位从有到无」**必须**改变输出。
     _b3 = _sd_case("b3", n=2, pos="unique", picks=(0,))[1]
     _m3 = _sd_case("m3", n=2, pos="missing", picks=(0,))[1]
-    out.append(("pos 方位缺失（特征能指认时·不该变）", _m3 == _b3,
-                "" if _m3 == _b3 else
-                f"特征已经能指认，方位却还在改提示词：{_m3[:120]}"))
+    out.append(("pos 方位缺失（新序：必须改变提示词）", _m3 != _b3,
+                "" if _m3 != _b3 else
+                f"方位是首选档，缺了它提示词却没变：{_m3[:120]}"))
     # 单人路径：带切点**必须**声明范围，而且要用官方的词（「视频全程」）
     a = _sd_case("s", n=1, pos="unique")[1]
     b = _sd_case("s", n=1, pos="unique", cuts=[3.0])[1]
@@ -2302,7 +2318,11 @@ def _d13_position_matrix() -> list[tuple[str, bool, str]]:
         ④ 方位撞车/缺失 → 不许写出会指错人的方位。
     """
     rows: list[tuple[str, bool, str]] = []
-    _POS_RE = r"^画面(左上|上方|右上|左侧|中央|右侧|左下|下方|右下)的人物$"
+    # 2026-11-05：方位宾语带**类别词**（「画面左侧的男性」），不再只有「人物」——
+    # 主人拍板 `<原特征>` = 方位 + 类别词（官方 `SD20-skill:153`「女生位于画面左侧」）。
+    _POS_RE = (r"^画面(左上|上方|右上|左侧|中央|右侧|左下|下方|右下)的"
+               r"(人物|男性|女性|男子|女子|男人|女人|男士|女士|老人|老者"
+               r"|小孩|儿童|少年|少女|青年|男生|女生|男孩|女孩|姑娘|小伙)$")
 
     # 🩸 2026-10-30：`<主体N>` 定义句停用 ⇒ 指认现在只体现在**替换句宾语**里。
     #   判据从"每个原片侧主体有定义"改成"每条换人句的宾语怎么写的"。
@@ -2310,7 +2330,7 @@ def _d13_position_matrix() -> list[tuple[str, bool, str]]:
         return [x.strip() for x in re.findall(
             r"将其中的(.{1,40}?)(?:完整)?替换为@图片\d+中的人物", p)]
 
-    # A 组：特征能唯一指认 → 用特征、不写方位
+    # A 组：**方位唯一 → 用方位 + 类别词**（2026-11-05 主人拍板的新序）
     for n in (2, 3, 4):
         want = n  # 勾选了 n 个人，就该有 n 条换人句
         try:
@@ -2318,15 +2338,15 @@ def _d13_position_matrix() -> list[tuple[str, bool, str]]:
             p = _sd_case(f"D13-A-{n}", n=n, pos="unique",
                          picks=tuple(range(want)))[1]
         except Exception as e:  # noqa: BLE001
-            rows.append((f"A 特征可分 n={n}", False, f"编译器崩了：{e}"))
+            rows.append((f"A 方位唯一 n={n}", False, f"编译器崩了：{e}"))
             continue
         objs = _objs(p)
         has_pos = [bool(re.match(_POS_RE, x)) for x in objs]
         ok = (len(objs) == want and len(objs) == len(set(objs))
-              and not any(has_pos))
-        rows.append((f"A 特征可分 n={n}（用特征·不写方位）", ok,
+              and all(has_pos))
+        rows.append((f"A 方位唯一 n={n}（用方位+类别词）", ok,
                      f"{len(objs)}/{want} 条宾语：{objs}"
-                     + ("" if ok else " → 特征已经能指认却还在用方位/写成同一句")))
+                     + ("" if ok else " → 方位唯一却没写方位/写成同一句")))
 
     # B 组：特征指认不了（同框描述一模一样）→ 方位兜底
     same = "留短黑发的男性"

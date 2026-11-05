@@ -519,7 +519,13 @@ def load_manifests(root: Path | None = None) -> tuple[dict, list, list]:
             p = man_path.parent / str(it.get("path") or "")
             sha = str(it.get("sha256") or "")
             shared = tuple(sorted(it.get("shared_with") or ()))
-            for ab in it.get("abbr") or []:
+            # 🩸 MANIFEST 里 `abbr` 两种写法都存在：h3 / sd10-camera 是数组，
+            #   sd20 / sd25 是字符串。直接 `for ab in "sd20"` 会逐**字符**遍历，
+            #   于是这两个家族的缩写永远认不到（多字符缩写一律报"不在 MANIFEST 里"）。
+            _ab = it.get("abbr") or []
+            if isinstance(_ab, str):
+                _ab = [_ab]
+            for ab in _ab:
                 owners.setdefault(ab, []).append((fam, sha, shared, p))
             canon.append((fam, p, sha, int(it.get("lines") or 0)))
 

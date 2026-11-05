@@ -13,8 +13,8 @@
   R2 换人目标 = 1 时**不得**出现 `<主体N>`（2026-10-30 三次真机 + 60f82aab share 0.0）
   R3 不得出现「参考@视频1」（`pg:48-51` 明令禁止，会被误判成参考任务）
   R4 单人宾语不得带服装/道具外观（`pg:95` 允许，但 2026-10-24 真机反证只换衣不换脸）
-  R5 双胞胎兜底按人数挂（`pg:411` / `skill:162`）
-  R6 画质 / 稳定 / 字幕 / 水印包（`skill:158-163`）
+  R5 双胞胎兜底按人数挂（`pg:411` / `sd2-pe:162`）
+  R6 画质 / 稳定 / 字幕 / 水印包（`sd2-pe:158-163`）
   R7 改动项必须真的出现在提示词里
 """
 from __future__ import annotations
@@ -99,7 +99,8 @@ def check(text: str, n_swap: int, flags: dict, has_other: bool = False) -> dict:
         r4 = not re.search(r"身着|身穿|外穿|手持|持着|外套|衬衫|连衣裙", o)
     twin = "双胞胎" in text or "同款分身" in text
     r5 = twin if n_swap >= 2 else True      # 多人必挂；单人没有第二张脸
-    r6 = all(k in text for k in ("高清", "画面稳定无变形", "无字幕", "水印", "Logo"))
+    # 稳定包按 `sd2-pe:159` 完整版判（2026-11-05 主人拍板「挂」）
+    r6 = all(k in text for k in ("高清", "人物面部稳定不变形", "无字幕", "水印", "Logo"))
     parts = []
     if flags.get("wardrobe"):
         parts.append("服装" in text)
@@ -111,7 +112,7 @@ def check(text: str, n_swap: int, flags: dict, has_other: bool = False) -> dict:
         parts.append("花瓶" in text or "青瓷茶壶" in text)
     r7 = all(parts) if parts else True
     # R8（矩阵 §3.1 新增）：画面里除了人还有别的主体时，源宾语必须点名那个人。
-    # 官方 `skill:24` 的"改"句式是「将其中的<原特征>修改为<新特征>」——
+    # 官方 `sd2-pe:24` 的"改"句式是「将其中的<原特征>修改为<新特征>」——
     # `<原特征>` 位写裸「人物」= 没指认，画面里有两个主体时模型自己猜。
     r8 = True
     if has_other and n_swap == 1:
