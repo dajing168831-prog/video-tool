@@ -2072,3 +2072,66 @@ lite 官方支持最多 **14 张**参考图，`image` 字段收 string 或 strin
 
 **同时确认**：这条片子本身只有 43.7 秒，解析不是被截的 —— 下载 43.733s、配方 15 镜、
 末镜 43.73s、`truncated=False`，三个数对得上。
+
+
+## 三十七、抖音图文（note）解析必挂：`KeyError: 'videoInfoRes'`（2026-11-05）
+
+**现象**：贴抖音「图文作品」分享链接，界面报 `douyin 解析失败: 'videoInfoRes'`。
+
+**根因不是"图文不支持"**，是 vendored 库回退 HTML 时用了**全新的 httpx client**：
+- 短链 `v.douyin.com/xxx` 第一次访问时，抖音下发 `ttwid` cookie；
+- 回退请求换了一个 client，不带这个 cookie，拿到的只是**不含内容的精简 SSR**
+  （图文页 `note_(id)/page` 里连 `videoInfoRes` 键都没有）；
+- 代码写的是 `page["videoInfoRes"]` → 直接 KeyError，而不是给可读错误。
+
+**判别实验**（同一目标 URL，各 3 次，一次只变一个变量）：
+| 组合 | 命中 |
+|---|---|
+| iOS UA + 共享 ttwid | 2/3 |
+| Android UA + 共享 ttwid | 3/3 |
+| Android UA + 清掉 cookie | **0/3** |
+
+⇒ **ttwid 是必要条件，UA 不是决定因素**。另注：`_get_slides_info` 对图文 id 返回
+`filter_list: [{"reason": 8}]`（接口侧不给图文），所以这类必须走 HTML 回退。
+
+**同批第二处：图片下载下来不是真图片**
+
+现象：下载到的文件叫 `xxx_1.jpg`，内容是 **webp 字节**，Windows 看图/手机相册打不开。
+根因在 `_get_no_webp_url()`：它靠 `url.endswith(".webp")` 挑非 webp 候选，而抖音给的是
+**带签名的完整 URL**（`…~tplv-…:q80.webp?lk3s=…&x-signature=…`），endswith 永远不成立
+→ 每次都退回第一条 webp。实测同一 `url_list` 4 条里，**第 4 条就是 `.jpeg`（同为 1599×2763 全尺寸）**。
+改成按**路径部分**判断（`url.split("?")[0].endswith(".webp")`）即可，不用转码、不加依赖。
+
+**同批第三处：落地地址被硬拼**
+
+短链 302 的落地地址本身就区分类型（图文 `share/note/{id}`、视频 `share/video/{id}`），
+以前一律 `_get_request_url_by_video_id()` 硬拼成 video 路径 → 图文落到不稳定的 SSR。
+改成用重定向落地的 `location`。
+
+**补丁汇总**（都在 `vendor/parse-video-py/.../parser/douyin.py`，升级这个库时会被覆盖）：
+1. 记下原始分享链 `origin_url`；HTML 回退时先在**同一个 client** 里请求一次拿 ttwid；
+2. 用重定向落地地址而不是硬拼 video 路径；
+3. SSR 拿不到 `item_list` 就**换新 client 重试**（最多 5 次，间隔 0.6s）——
+   抖音会随机返回「精简版 SSR」（整页 36.8KB、`douyinpic` 出现 0 次、连 `videoInfoRes` 键都没有），
+   实测这不是 UA 也不是 cookie 单因，只能重试兜底；
+4. `["videoInfoRes"]` 改 `.get()`，缺内容时报可读中文而不是裸 KeyError。
+
+**判据**：`backend/scripts/probe_douyin_note.py <分享链接>`
+（断言 images 非空 **且** 首图 magic 是 JPEG/PNG，不是 webp）→ 连跑 **14/14 GREEN**，
+`ext=jpeg ctype=image/jpeg 427112 bytes magic=JPEG`。
+⚠️ **视频分支回归未跑**（缺可用视频样本）：改动只在 HTML 回退路径，视频正常走 `slidesinfo`
+接口碰不到；主人 2026-11-05 确认「视频解析一直都正常」。
+⚠️ 前端下载文件名本来就是 `.jpg`（`result.vue` 的 `saveImage`），现在名实相符。
+
+**同批前端两处（2026-11-05 主人报「显得很突兀」）**
+
+1. **图集被裁成一条横幅**：`.gallery-item` 是 `width:48%` 两列 + `.gallery-img { height:320rpx }` +
+   `mode="aspectFill"`，而图文多是 1599×2763 竖图 → 只露出中间一截。
+   改成**单列 + `mode="widthFix"`**（宽度撑满、高度跟原图比例走）+ 桌面 `max-width:640px` 居中。
+   实测：430 视口 398×688、1400 视口 640×1106，与原图比例 0.5787 **逐位一致 = 零裁切**。
+2. **作品文案卡片里几百像素的大空白**：不是布局问题，是**文案本身**里塞了 14 行
+   `U+2800`（盲文空白 `⠀`）—— 抖音博主拿它当排版间距，在 App 里看不见，搬到网页就是空洞。
+   加 `displayText` computed 把「只含空白字符的行」折掉（连续空行 + 行尾 + 行首盲文空白）；
+   **复制仍走 `fullText` 原文**，用户拿到的内容一个字没改。
+   同时 `.desc` 加 `display:block`（uni-text 默认 inline，宽度只按最长一行算，187px→1344px）。
+   实测：`.desc-card` 451→123px，整页 1819→1491px。

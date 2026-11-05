@@ -18,7 +18,7 @@
       <!-- 图集 -->
       <view v-else class="gallery">
         <view v-for="(img, i) in imageSrcs" :key="i" class="gallery-item">
-          <image class="gallery-img" :src="img" mode="aspectFill" @click="preview(img)" />
+          <image class="gallery-img" :src="img" mode="widthFix" @click="preview(img)" />
           <view class="gallery-save" @click="saveImage(img, i)">保存</view>
         </view>
       </view>
@@ -46,7 +46,7 @@
 
       <view class="desc-card">
         <view class="desc-title">作品文案（标题 / 简介 / 话题）</view>
-        <text class="desc" :user-select="true">{{ fullText || '（无文案）' }}</text>
+        <text class="desc" :user-select="true">{{ displayText || '（无文案）' }}</text>
       </view>
 
       <!-- 口播文案：视频里真正说出来的话（语音识别），和上面的作品文案不是一回事 -->
@@ -107,6 +107,20 @@ export default {
         parts.push(this.data.tags.map((t) => `#${t}`).join(' '))
       }
       return parts.join('\n')
+    },
+    /**
+     * 展示用文案。抖音博主常拿 U+2800「⠀」（盲文空白）堆空行做排版，
+     * 在 App 里是看不见的间距，搬到网页上就是几百像素的大空洞。
+     * 这里把「只含空白字符的行」折掉；**复制仍走 fullText 原文**，不改用户拿到的内容。
+     */
+    displayText() {
+      const t = this.fullText
+      if (!t) return ''
+      return t
+        .replace(/\r\n?/g, '\n')
+        .replace(/\n(?:[ \t⠀]*\n)+/g, '\n')
+        .replace(/[ \t⠀]+$/gm, '')
+        .replace(/^⠀+/gm, '')
     },
   },
   onLoad(query) {
@@ -351,24 +365,24 @@ export default {
   width: 100%;
   height: 420rpx;
 }
+/* 图文多为竖图（如 1599×2763）：以前两列 + 固定 320rpx 高 + aspectFill 会裁成一条横幅，
+   只露出中间一截。改成单列、宽度自适应、高度跟着原图比例走，整张图完整展开。 */
 .gallery {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: center;
 }
 .gallery-item {
   position: relative;
-  width: 48%;
-  margin: 0 4% 4% 0;
+  width: 100%;
+  max-width: 640px; /* 桌面 H5 不至于一张竖图铺满整个屏幕；手机上 100% 生效 */
+  margin-bottom: 24rpx;
   border-radius: 16rpx;
   overflow: hidden;
   background: #fff;
 }
-.gallery-item:nth-child(2n) {
-  margin-right: 0;
-}
 .gallery-img {
   width: 100%;
-  height: 320rpx;
   display: block;
 }
 .gallery-save {
@@ -491,6 +505,7 @@ export default {
   font-size: 26rpx;
 }
 .desc {
+  display: block; /* uni-text 默认 inline，宽度只按最长一行算，和上面的卡片对不齐 */
   font-size: 26rpx;
   line-height: 1.8;
   color: #1b1f27;

@@ -8,7 +8,11 @@ frontend/app/node_modules/
 venv/
 
 # ── 三方原样下载的东西（vendor/bgutil-src 自带 .git，是个独立仓库）──
-vendor/
+# ⚠️ vendor/parse-video-py 必须进仓库：它不在 PyPI 上，requirements.txt 用
+#    `-e ./vendor/parse-video-py` 引用，缺了别人 clone 下来直接装不上。
+#    所以这里用 vendor/* 而不是 vendor/（父目录被忽略时 ! 子目录不生效）。
+vendor/*
+!vendor/parse-video-py/
 
 # ── 本机数据：用户素材、成片、缓存、临时 ──
 backend/data/clone/
