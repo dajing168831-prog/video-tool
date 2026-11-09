@@ -39,6 +39,23 @@ from app.services.models.volc_common import (  # noqa: E402
     submit as _submit,
 )
 
+#: 🩸 2.0 的**参考视频时长上限**与 2.5 不是一把尺，必须分开给。
+#:   `volc_common.VIDEO_LIMITS["max_sec"] = 30.2` 是 **2.5** 的实测值（任务
+#:   `116928ec`），2.0 原来直接继承它 → `_gen_spans` 里「中间段能不能往后借
+#:   0.5s 尾巴」的判断（`b + _EXTRA <= _tail_cap`）对 2.0 永远放行 →
+#:   15.00s 的段被切成 15.50s 发出去 → 平台 400：
+#:     「the parameter video duration (seconds) specified in the request must
+#:      be less than or equal to **15.2** for model doubao-seedance-2.0-mini in r2v」
+#:   （2026-11-05 真跑报错原文）。
+#:   官方口径 `docs/SD20-OFFICIAL-MAP.md:197`（源 `api-create:272`）
+#:   「视频时长 [2,15]s，最多 3 个参考视频，总时长 ≤15s」。
+#:   取 **15.0**（官方值）而不是 15.2（平台容差线）：容差是"不会被拒"的边界，
+#:   不是"该发多少"的标准；踩着 15.199 发没有收益，平台一收紧就炸。
+#:   与 H3 的 `_H3_VIDEO_LIMITS["max_sec"] = 15.0` 同一口径。
+#:   只影响 `max_sec` 这一个键：`_fit_segment` 读的是 side/ratio/min_px/
+#:   max_px/fps/max_bytes，不看 max_sec，压缩逻辑不受影响。
+_VOLC20_VIDEO_LIMITS = {**VIDEO_LIMITS, "max_sec": 15.0}
+
 
 # ---------------------------------------------------------------------------
 # 视频延长（向前/向后）—— 2.0 的官方句式，2.5 的口径**不许**搬过来
@@ -148,7 +165,7 @@ adapter = register(ModelAdapter(
               # 核心层 `edit_spec` 不许认识型号名，分离门 2026-10-28 抓到的）
               wardrobe_check_per_person=True,
               resolutions=VOLC_RESOLUTIONS, resolution_alias=VOLC_RES_ALIAS,
-              image_limits=IMAGE_LIMITS, video_limits=VIDEO_LIMITS,
+              image_limits=IMAGE_LIMITS, video_limits=_VOLC20_VIDEO_LIMITS,
               # 延长：2.0 指南 §「延长视频衔接处跳变」→ 前段末删 6 帧、后段头删 1 帧
               extend_seam=(6, 1), extend_transition=True,
               # 方舟对**参考视频**的总像素下限/上限（不是成片分辨率，是喂给模型那段）。

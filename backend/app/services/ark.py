@@ -221,9 +221,10 @@ def _find_video_url(obj, depth: int = 0) -> str:
     return ""
 
 
-def generate_video(prompt: str, *, out: Path, first_frame: Path | None = None,
+def generate_video(prompt: str, *, out: Path, model: str,
+                   first_frame: Path | None = None,
                    last_frame: Path | None = None,
-                   model: str = "", duration: int = 5, ratio: str = "16:9",
+                   duration: int = 5, ratio: str = "16:9",
                    resolution: str = "720p", watermark: bool = False,
                    timeout: float = 900, poll: float = 4.0) -> Path:
     """图生视频 / 文生视频（异步任务：创建 → 轮询 → 下载）。
@@ -235,8 +236,6 @@ def generate_video(prompt: str, *, out: Path, first_frame: Path | None = None,
     🩸 首帧 / 首尾帧 / 全模态参考**三种互斥，不可混用**（`volc-create.md:269`）——
     所以这条路径不能带 `reference_video`，编辑任务永远用不上尾帧。
     """
-    from app.core.config import settings
-
     if last_frame is not None and first_frame is None:
         raise ArkError("给了尾帧就必须给首帧：官方只有「首帧」和「首尾帧」，没有单独的尾帧")
 
@@ -260,9 +259,9 @@ def generate_video(prompt: str, *, out: Path, first_frame: Path | None = None,
     if not content:
         raise ArkError("提示词和首帧至少要给一个")
 
-    model_id = model or settings.ark_video_model
+    model_id = model
     # 🩸 Seedance 2.5 的首尾帧「默认且仅支持 adaptive」（`volc-create.md:505`）：
-    # 传具体宽高比会被拒或表现异常。2.0 / 1.0 系列可以指定，不动它们。
+    # 传具体宽高比会被拒或表现异常。2.0 系列可以指定，不动它们。
     if last_frame is not None and str(ratio).lower() != "adaptive":
         from app.services import model_specs
 
@@ -380,24 +379,92 @@ def _is_dead(detail: dict | None) -> bool:
     return str((detail or {}).get("status") or "") in ("failed", "cancelled", "expired")
 
 
-def _download_video(tid: str, out: Path, *, timeout: float, poll: float) -> Path:
-    """轮询任务号 → 下载成片。generate_video 和 edit_video 共用。"""
-    t0 = time.time()
-    url = _poll_video_url(tid, timeout=timeout, poll=poll)
+def last_frame_path(out: Path) -> Path:
+    """平台返回的真实尾帧落盘位置（与成片同名，`.last.jpg`）。
 
-    with httpx.Client(timeout=300, follow_redirects=True) as c:
-        v = c.get(url)
+    官方口径：尾帧是 jpeg、宽高与成片一致、无水印，URL **只保 24 小时**
+    （2.5 `api-get.md:65`；2.0 同字段 `sd20/api-get.md:65`）——
+    必须当场落盘，否则 24 小时后这条接缝素材就没了。
+    """
+    return out.with_suffix(".last.jpg")
+
+
+def _http_url(v) -> str:
+    """字段值可能是字符串，也可能是 `{"url": ...}` —— 两种都认。"""
+    if isinstance(v, str):
+        s = v.strip()
+        return s if s.startswith("http") else ""
+    if isinstance(v, dict):
+        for k in ("url", "last_frame_url"):
+            u = _http_url(v.get(k))
+            if u:
+                return u
+    return ""
+
+
+def _find_last_frame_url(obj, depth: int = 0) -> str:
+    """在任务响应里找 `content.last_frame_url`（不同版本外层形状不一，递归找）。"""
+    if depth > 6:
+        return ""
+    if isinstance(obj, dict):
+        u = _http_url(obj.get("last_frame_url"))
+        if u:
+            return u
+        for v in obj.values():
+            u = _find_last_frame_url(v, depth + 1)
+            if u:
+                return u
+    elif isinstance(obj, list):
+        for v in obj:
+            u = _find_last_frame_url(v, depth + 1)
+            if u:
+                return u
+    return ""
+
+
+def _save_last_frame(url: str, out: Path) -> Path | None:
+    """下载平台尾帧。**失败只告警** —— 尾帧是加分项，不能让它把已付费的成片判失败。"""
+    if not url:
+        return None
+    try:
+        with httpx.Client(timeout=120, follow_redirects=True) as c:
+            r = c.get(url)
+        if r.status_code != 200:
+            log.warning("下载尾帧失败 HTTP %s（成片不受影响）", r.status_code)
+            return None
+        p = last_frame_path(out)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(r.content)
+        log.info("平台真实尾帧 %s (%.0fKB)", p.name, len(r.content) / 1024)
+        return p
+    except Exception as e:  # noqa: BLE001
+        log.warning("下载尾帧失败（成片不受影响）：%s", e)
+        return None
+
+
+def _download_urls(out: Path, video_url: str, last_url: str, *, t0: float) -> Path:
+    """下载成片 + （有就）下载尾帧。下载/落盘规则只此一处。"""
+    with httpx.Client(timeout=600, follow_redirects=True) as c:
+        v = c.get(video_url)
     if v.status_code != 200:
         raise ArkError(f"下载视频失败 HTTP {v.status_code}")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(v.content)
     log.info("生成视频 %s (%.1fMB, %.0fs)", out.name,
              len(v.content) / 1024 / 1024, time.time() - t0)
+    _save_last_frame(last_url, out)
     return out
 
 
-def _poll_video_url(tid: str, *, timeout: float, poll: float) -> str:
-    """轮询到成功并返回视频地址。generate_video 和 edit_video 共用。"""
+def _download_video(tid: str, out: Path, *, timeout: float, poll: float) -> Path:
+    """轮询任务号 → 下载成片（+ 尾帧）。generate_video 和 edit_video 共用。"""
+    t0 = time.time()
+    url, last_url = _poll_urls(tid, timeout=timeout, poll=poll)
+    return _download_urls(out, url, last_url, t0=t0)
+
+
+def _poll_urls(tid: str, *, timeout: float, poll: float) -> tuple[str, str]:
+    """轮询到成功，返回 (视频地址, 尾帧地址)。没请求尾帧时第二个是空串。"""
     t0 = time.time()
     while time.time() - t0 < timeout:
         time.sleep(poll)
@@ -413,7 +480,7 @@ def _poll_video_url(tid: str, *, timeout: float, poll: float) -> str:
             # video_url 可能是字符串也可能是 {"url": ...}）—— 递归找，不猜形状。
             url = _find_video_url(d)
             if url:
-                return url
+                return url, _find_last_frame_url(d)
             raise ArkError(f"视频任务 {tid} 成功但找不到 video_url: {str(d)[:300]}")
         # expired = 超过 execution_expires_after 被平台终止；不认它就会一直空转到超时
         if st in ("failed", "cancelled", "expired"):
@@ -427,6 +494,49 @@ def _poll_video_url(tid: str, *, timeout: float, poll: float) -> str:
             raise ArkError(f"视频任务 {tid} 状态 {st}: {d.get('error')}",
                            detail=detail)
     raise ArkError(f"视频任务 {tid} 超时（{timeout:.0f}s）")
+
+
+def _poll_video_url(tid: str, *, timeout: float, poll: float) -> str:
+    """只要视频地址时的薄包装（保留旧调用点语义）。"""
+    return _poll_urls(tid, timeout=timeout, poll=poll)[0]
+
+
+# ---------------------------------------------------------------------------
+# C17 云端任务恢复：只查/只取，**绝不重新提交**
+# ---------------------------------------------------------------------------
+
+
+def fetch_task(tid: str) -> dict:
+    """查一次任务状态（不轮询、不下载、不提交）。
+
+    返回 `{status, video_url, last_frame_url}`；`status` 是平台原值
+    （submitted / running / succeeded / failed / cancelled / expired …）。
+    """
+    with httpx.Client(timeout=60) as c:
+        r = c.get(f"{VIDEO_TASKS}/{tid}", headers=_headers())
+    if r.status_code != 200:
+        raise ArkError(f"查询任务状态失败 HTTP {r.status_code}（任务号 {tid}）")
+    d = r.json() or {}
+    st = str(d.get("status") or "")
+    return {
+        "status": st,
+        "video_url": _find_video_url(d) if st == "succeeded" else "",
+        "last_frame_url": _find_last_frame_url(d) if st == "succeeded" else "",
+    }
+
+
+def retrieve_task(tid: str, out: Path) -> dict:
+    """领回**已提交**的任务结果：只查询 + 下载，绝不提交新任务、不花新钱。
+
+    平台还在跑 → 原样返回状态；已经成功 → 下载成片（含尾帧）并落盘。
+    """
+    got = fetch_task(tid)
+    if got["status"] != "succeeded":
+        return got
+    if not got["video_url"]:
+        raise ArkError(f"任务 {tid} 显示成功，但响应里找不到 video_url")
+    _download_urls(Path(out), got["video_url"], got["last_frame_url"], t0=time.time())
+    return got
 
 
 # ---------------------------------------------------------------------------
@@ -624,8 +734,14 @@ def edit_video(
 
 
 def _run_video_task(body: dict, out: Path, *, timeout: float, poll: float,
-                    tag: str) -> Path:
-    """建任务 → 轮询 → 下载。编辑和延长走的是同一个接口，只有 body 不同。"""
+                    tag: str, want_last_frame: bool = False) -> Path:
+    """建任务 → 轮询 → 下载。编辑和延长走的是同一个接口，只有 body 不同。
+
+    `want_last_frame` 只加在**真正发出去的 payload** 上，不进 `body` ——
+    `_task_sig` 认的是 `body`，这样升级前已提交、还挂在平台上的任务仍能按旧指纹
+    领回来（避免为了一个新开关把在飞任务作废、重新付一次钱）。
+    代价：领回来的旧任务没请求过尾帧，这次就拿不到尾帧（下次新任务才有）。
+    """
     from app.services import retry
 
     # 进程被杀/重启后，先用上次落盘的任务号去取，别重新提交（重提交=重新花钱）
@@ -639,8 +755,9 @@ def _run_video_task(body: dict, out: Path, *, timeout: float, poll: float,
                 raise
             log.warning("上次的%s任务 %s 已在平台侧失效，重新提交", tag, old)
 
+    payload = {**body, "return_last_frame": True} if want_last_frame else body
     with httpx.Client(timeout=120) as c:
-        r = retry.post(c, VIDEO_TASKS, headers=_headers(), json=body)
+        r = retry.post(c, VIDEO_TASKS, headers=_headers(), json=payload)
     if r.status_code == 429:
         raise ArkError("火山并发/频率超了（429）。多人同时出片时会这样，等一两分钟再跑这一条")
     if r.status_code != 200:
@@ -659,21 +776,15 @@ def _run_video_task(body: dict, out: Path, *, timeout: float, poll: float,
 
     _save_tid(out, tid, body)
     t0 = time.time()
-    url = _poll_video_url(tid, timeout=timeout, poll=poll)
-    with httpx.Client(timeout=600, follow_redirects=True) as c:
-        v = c.get(url)
-    if v.status_code != 200:
-        raise ArkError(f"下载视频失败 HTTP {v.status_code}")
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_bytes(v.content)
+    url, last_url = _poll_urls(tid, timeout=timeout, poll=poll)
     # ⚠️ 2.5 编辑任务要的是 mov 容器（`edit_body` 的 `output_format`），但这里
     # 不管后缀 —— `out` 由调用方定，一直是 `chunk_XXX.mp4`，文件里装的其实是
     # mov。**不用转封装**：下游（`_normalize` / `_fit_segment` / `assemble`）
     # 全部交给 ffmpeg，它按内容探测容器，不看后缀；最终成片是重新编码的 mp4。
     # 只有"把中间产物直接甩给浏览器"时才需要在意，而那条路不存在。
-    log.info("%s成片 %s (%.1fMB, %.0fs)", tag, out.name,
-             len(v.content) / 1024 / 1024, time.time() - t0)
-    return out
+    # 下载/落盘只走 `_download_urls` 一处：起任务和领旧任务（`_download_video`）
+    # 两条路的成片、尾帧规则必须一样，别再各自写一份（尾帧漏下过一次）。
+    return _download_urls(out, url, last_url, t0=t0)
 
 
 def extend_body(
@@ -851,3 +962,100 @@ def transition_video(
     log.info("转场任务请求 model=%s resolution=%s duration=%s（两段参考视频）",
              body["model"], body["resolution"], body["duration"])
     return _run_video_task(body, out, timeout=timeout, poll=poll, tag="转场")
+
+
+def omni_body(
+    prompt: str,
+    *,
+    ref_images: list[str] | None = None,
+    model: str = "",
+    resolution: str = "720p",
+    duration: int = 5,
+    ratio: str = "9:16",
+    watermark: bool = False,
+    generate_audio: bool = True,
+) -> dict:
+    """**全模态参考生视频**的请求体：从零生成，参考图锁人物/商品/场景。
+
+    和 `edit_body`（改原片）、`transition_body`（两段之间补缝）都不同 ——
+    这条没有待编辑视频，画面完全由提示词 + 参考图决定。
+
+    官方口径（`volc-create.md:25/:35`）：
+      · 属于「全模态参考生视频」；`:458` 明说 `omni_reference_task_type=reference`
+        时 `ratio` / `duration` 无特殊限制（不显式声明可能被按编辑任务判定，
+        那套要求 `ratio=adaptive`、`duration=-1`，会打架 `:460`）。
+      · `omni_reference_task_type` 只有 2.5 认（`:442`），2.0 系列靠提示词判定。
+
+    参考图顺序就是提示词里的 `@图片N` 编号：数组第 1 张 = @图片1，绝不重排。
+    """
+    from app.core.config import settings
+    from app.services import model_specs
+
+    prompt = (prompt or "").strip()
+    if not prompt:
+        raise ArkError("出片提示词不能为空")
+
+    content: list[dict] = [{"type": "text", "text": prompt}]
+    for u in (ref_images or []):
+        u = (u or "").strip()
+        if not u:
+            continue
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": u},
+            "role": "reference_image",
+        })
+
+    # 用**单独的**配置项：商品短剧要 30s 单次 + 多张 `reference_image`，
+    # 只有 2.5 给得出来，和复刻线的 edit 任务不是一套参数。
+    model_id = model or settings.ark_video_film_model
+    spec = model_specs.volc(model_id)
+    lo = max(1, int(round(float(spec.get("min_sec") or 4))))
+    hi = int(spec.get("max_sec") or 15)
+    body: dict = {
+        "model": model_id,
+        "content": content,
+        "resolution": resolution,
+        "watermark": watermark,
+        "generate_audio": bool(generate_audio),
+        "ratio": ratio,
+        "duration": max(lo, min(int(round(duration)), hi)),
+    }
+    # 显式声明任务类型 —— 只有 2.5 认。判据是 `edit_duration == -1`
+    # （2.5 的编辑任务只支持 duration=-1、ratio=adaptive 这套，`volc-create.md:442/:460`）。
+    # 🩸 不能用 `edit_task_param`：1.0-pro-fast 在表里也是 True。
+    if spec.get("edit_duration") == -1:
+        body["omni_reference_task_type"] = "reference"
+        body["output_format"] = "mov"
+    return body
+
+
+def omni_video(
+    prompt: str,
+    *,
+    out: Path,
+    ref_images: list[str] | None = None,
+    model: str = "",
+    resolution: str = "720p",
+    duration: int = 5,
+    ratio: str = "9:16",
+    watermark: bool = False,
+    generate_audio: bool = True,
+    timeout: float = 2400,
+    poll: float = 6.0,
+) -> Path:
+    body = omni_body(
+        prompt, ref_images=ref_images, model=model, resolution=resolution,
+        duration=duration, ratio=ratio, watermark=watermark,
+        generate_audio=generate_audio,
+    )
+    log.info("全模态参考生视频 model=%s resolution=%s duration=%s ratio=%s 参考图=%d 音轨=%s",
+             body["model"], body["resolution"], body["duration"], body["ratio"],
+             sum(1 for x in body["content"] if x.get("type") == "image_url"),
+             body["generate_audio"])
+    # 让平台把**真实尾帧**一起返回：jpeg、与成片同宽高、无水印，24 小时内必须取走
+    # （2.5 `api-get.md:65`；2.0 同字段 `sd20/api-get.md:65`；创建参数
+    #  `api-create-task.md:707` / `sd20/api-create.md:612`，默认 false）。
+    # 官方给的用法就是「上一段尾帧作为下一段首帧，连续生成多段」。
+    return _run_video_task(body, out, timeout=timeout, poll=poll, tag="出片",
+                           want_last_frame=True)

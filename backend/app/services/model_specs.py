@@ -420,6 +420,30 @@ def minimax(model: str) -> dict:
     return SPECS["minimax"]
 
 
+#: 图片模型的参考图能力（**官方数字，别猜**）。
+#: 出处：火山《图片生成 API》（`https://www.volcengine.com/docs/82379/1541523`，2026-11-06 抓取原文）：
+#:   · Seedream 5.0 pro / 5.0 flash：多图生图 **2–10** 张；单图生图 1 张；文生图 0 张
+#:   · Seedream 5.0 lite / 4.5 / 4.0：多图生图 **2–14** 张
+#: 注意「2–10」是**多图**那档的区间，1 张走的是单独的「单图生图」，所以 1 张不算越界。
+IMAGE_REF_LIMITS = {
+    "seedream-5-0-pro": 10,
+    "seedream-5-0-flash": 10,
+    "seedream-5-0-lite": 14,
+    "seedream-4-5": 14,
+    "seedream-4-0": 14,
+}
+
+
+def image_ref_limit(model: str = "") -> int:
+    """这个图片模型最多收几张参考图。认不出来的按 5.0 那档（10 张）算。"""
+    m = _norm(model)
+    for key, limit in IMAGE_REF_LIMITS.items():
+        if key in m:
+            return limit
+    # 认不出型号：宁可报窄（10），别报宽（14）——报宽了请求会被服务端直接拒
+    return 10
+
+
 def subjects(model: str = "") -> tuple[int, int]:
     """这次能换几个人 → (稳定线, 硬上限)。
 

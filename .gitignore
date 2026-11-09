@@ -14,6 +14,11 @@ venv/
 vendor/*
 !vendor/parse-video-py/
 
+# ── 开发临时目录：探针脚本 + 参考视频 + 抽帧 + 日志（约 800MB）──
+# 判据同上：删掉它，别人拉下来照样能跑。里面的参考视频动辄几十 MB，
+# 探针是一次性验证用的，真要复现按文档重跑即可。
+temp/
+
 # ── 本机数据：用户素材、成片、缓存、临时 ──
 backend/data/clone/
 backend/data/tmp/

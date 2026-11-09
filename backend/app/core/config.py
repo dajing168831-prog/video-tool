@@ -129,14 +129,10 @@ class Settings:
     face_model: str = _env("VT_FACE_MODEL", str(ROOT / "models" / "face_yunet.onnx"))
     # 图生图：拿原片关键帧当参考，换主体不换构图
     ark_image_model: str = _env("VT_ARK_IMAGE_MODEL", "doubao-seedream-5-0-flash-260915")
-    # 图生视频：把重绘出来的静帧变成能放进时间轴的片段
-    # 1.0-pro-fast 是实测可用且最短支持 2 秒的档，比 2.0/2.5 便宜
-    ark_video_model: str = _env("VT_ARK_VIDEO_MODEL", "doubao-seedance-1-0-pro-fast-251015")
     # 一条片子里最多重绘几个镜头（防止一次点下去生成几十个视频）
     clone_max_regen: int = int(_env("VT_CLONE_MAX_REGEN", "12"))
     # 无缝转场（B7）：给延长接缝补过渡段用的型号。必须是**支持两段参考视频**的档：
     # 2.5 = 官方「视频无缝转场」，2.0 系列 = 「轨道补齐」（≤3 段 / 总 ≤15s）。
-    # 🩸 别让它继承 `ark_video_model`（1.0 pro fast 只吃一张首帧，喂两段视频会报错）。
     # 🩸 只服务**延长链路**那一个接缝：出片链路不接（2026-10-25 主人拍板）。
     clone_seam_model: str = _env("VT_CLONE_SEAM_MODEL", "doubao-seedance-2-5-260628")
 
@@ -149,6 +145,10 @@ class Settings:
     # 能保住原片的时长/构图/动作，这是"1:1 复刻"的正解。
     # 注意它和逐镜重绘用的 1.0 fast 不是一个档，别混。
     ark_video_edit_model: str = _env("VT_ARK_VIDEO_EDIT_MODEL", "doubao-seedance-2-5-260628")
+    # 商品短剧出片（全模态参考生视频：从零生成 + 多张参考图锁人物/商品）。
+    # 要 30s 单次 + 多张 `reference_image`，只有 2.5 这一档给得出来，
+    # 和复刻线的 edit 任务也不是同一套参数 ⇒ 单列，别和上面任何一项合并。
+    ark_video_film_model: str = _env("VT_ARK_FILM_MODEL", "doubao-seedance-2-5-260628")
     # 火山**只收公网 URL 当参考视频**（图/音频才收 base64），
     # 所以必须配一个对外能访问的地址，比如 https://api.example.com
     public_base_url: str = _env("VT_PUBLIC_BASE_URL", "")

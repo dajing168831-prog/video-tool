@@ -12,3 +12,7 @@ opencv-python-headless>=4.10
 
 # parse-video-py 不在 PyPI 上，用随包源码安装（会带出 fake-useragent 等依赖）
 -e ./vendor/parse-video-py
+
+# D1 免费配音（微软 Edge 朗读）：微软的 Sec-MS-GEC 已是 v2 令牌（改过的 SHA256 + CS64），
+# 手写 WebSocket 一律 403 —— 由这个 MIT 库维护令牌算法与时钟偏差校正。
+edge-tts==7.3.1

@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.clone import router as clone_router
+from app.api.drama import router as drama_router
 from app.api.prompt import router as prompt_router
 from app.api.routes import router
 from app.core.config import settings
@@ -37,6 +38,7 @@ app.add_middleware(
 app.include_router(router, prefix="/api")
 app.include_router(clone_router, prefix="/api")
 app.include_router(prompt_router, prefix="/api")
+app.include_router(drama_router, prefix="/api")
 
 
 @app.on_event("startup")

@@ -43,6 +43,14 @@
       <view class="pe-arrow">›</view>
     </view>
 
+    <view class="drama-entry" @click="goDrama">
+      <view class="ce-left">
+        <view class="ce-title">商品短剧</view>
+        <view class="ce-sub">给一件商品，写成有角色、有冲突、有反转的短剧</view>
+      </view>
+      <view class="de-arrow">›</view>
+    </view>
+
     <view class="tips">
       <view class="tip-title">使用说明</view>
       <view class="tip">· 请使用各平台 App 里的「分享 → 复制链接」，网页地址栏复制的链接常缺参数</view>
@@ -82,6 +90,10 @@ export default {
     },
     goPrompt() {
       uni.navigateTo({ url: '/pages/prompt/index' })
+    },
+    goDrama() {
+      // 入口页：清栈进工作台（小程序页面栈上限 10 层）
+      uni.reLaunch({ url: '/pages/drama/start' })
     },
     async submit() {
       const t = (this.text || '').trim()
@@ -221,6 +233,22 @@ export default {
   box-shadow: 0 12rpx 36rpx rgba(91, 108, 255, 0.24);
 }
 .pe-arrow {
+  font-size: 44rpx;
+  color: #fff;
+  opacity: 0.9;
+}
+/* 商品短剧：同款卡片，绿色区分（只出剧本与分镜，不出片） */
+.drama-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 20rpx 28rpx 0;
+  padding: 32rpx;
+  border-radius: 24rpx;
+  background: linear-gradient(135deg, #12b886 0%, #0b8f6b 100%);
+  box-shadow: 0 12rpx 36rpx rgba(18, 184, 134, 0.24);
+}
+.de-arrow {
   font-size: 44rpx;
   color: #fff;
   opacity: 0.9;

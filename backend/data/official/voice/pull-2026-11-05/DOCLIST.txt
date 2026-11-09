@@ -1,0 +1,254 @@
+# 文档总数 251（去重后）/ 原始行 251
+# 库: doubao-voice  库ID: 6561
+# 层级	DocumentID	DocumentCode	标题路径
+0	1354864	product-overview-21	产品概述
+1	2668039	product-dynamics-1	产品概述/产品动态
+1	163032	product-overview-13	产品概述/产品简介
+1	2499930	model-list	产品概述/模型列表
+1	1257544	tone-list-3	产品概述/音色列表
+0	163047	quick-start	快速入门
+1	2119699	quick-start-new-console	快速入门/快速入门（新版控制台）
+1	163043	quick-start-old-console	快速入门/快速入门（旧版控制台）
+1	2485392	console-guidance	快速入门/控制台指引
+1	196768	console-usage-faq	快速入门/控制台使用FAQ
+1	1167802	sound-replication-ord-erin-gand-usage-guide	快速入门/声音复刻下单及使用指南
+1	1339608	project-label-billing-function-user-guide	快速入门/项目&标签账单功能使用指南
+1	1330194	ssm-lmarkuplanguage	快速入门/SSML标记语言
+0	2502423	best-practices	最佳实践
+1	2298705	sound-replication-20-best-practices	最佳实践/声音复刻2.0最佳实践
+1	2604976	hot-words-and-context	最佳实践/热词与上下文
+1	1871062	doubao-text-to-speech-20-capability-introduction	最佳实践/语音指令与标签
+1	1204182	sound-replica-icl-best-practices	最佳实践/声音复刻1.0最佳实践
+1	2699972	speaker-separation	最佳实践/大模型ASR-说话人分离最佳实践
+0	2705550	apiguide	接入必读
+1	2678884	access-must-read-1	接入必读/录音文件识别
+1	2687968	access-must-read-1-1	接入必读/流式语音识别
+1	2549732	access-must-read	接入必读/端到端实时语音
+1	2709746	podcast-mustread	接入必读/语音播客
+0	163046	related-agreements-1	相关协议
+1	107349	volcano-engine-speech-and-audio-grade-of-service-agreement	相关协议/火山引擎-智能语音服务等级协议
+1	1533787	generative-model-service-specific-terms	相关协议/生成式模型服务专用条款
+1	1362111	doubao-foundation-model-speech-entrepreneur-acceleration-program-customer-notice	相关协议/豆包大模型语音创业者加速计划-客户须知
+1	1866421	volcano-engine-speech-model-experience-service-disclaimerand-service-rules	相关协议/火山引擎-语音模型体验服务免责声明和服务规则说明
+1	1136414	volcano-engine-sound-replication-protocol	相关协议/火山引擎声音复刻协议
+1	735863	sound-replica-sdk-privacy-policy	相关协议/声音复刻SDK隐私政策
+1	782308	sound-replica-sdk-developer-compliance-specification	相关协议/声音复刻SDK开发者使用合规规范
+1	2697433	audio1-5marketingplan	相关协议/Seed Audio 1.5 营销资源合作计划
+0	1351304	archive	归档
+1	133351	voice-conversion	归档/音色转换
+2	133352	product-overview-11	归档/音色转换/产品简介
+2	637628	product-billing-5	归档/音色转换/产品计费
+2	269555	tone-list-1	归档/音色转换/音色列表
+2	516820	parameter-description-1	归档/音色转换/参数说明
+2	215896	streaming-voice-conversion-api	归档/音色转换/流式音色转换API
+2	193347	in-offline-streaming-voice-conversion-sdk	归档/音色转换/在离线流式音色转换SDK
+3	193349	integration-guide-13	归档/音色转换/在离线流式音色转换SDK/集成指南
+3	193350	c-interface-call-flow	归档/音色转换/在离线流式音色转换SDK/C 接口调用流程
+3	269277	error-code-description-2	归档/音色转换/在离线流式音色转换SDK/错误码说明
+3	269484	publish-information-6	归档/音色转换/在离线流式音色转换SDK/发布信息
+1	145116	sound-replication-sdk	归档/声音复刻SDK
+2	145132	sdk-overview-3	归档/声音复刻SDK/SDK概览
+2	145273	publish-information-3	归档/声音复刻SDK/发布信息
+2	145138	android-3	归档/声音复刻SDK/Android
+3	145142	integration-guide-10	归档/声音复刻SDK/Android/集成指南
+3	145143	access-process-2	归档/声音复刻SDK/Android/接入流程
+2	145141	ios-3	归档/声音复刻SDK/iOS
+3	145145	integration-guide-11	归档/声音复刻SDK/iOS/集成指南
+3	145144	access-process-3	归档/声音复刻SDK/iOS/接入流程
+0	1359370	billing-instructions	计费说明
+0	1359369	billing-overview	计费概述
+0	1359371	refund-instructions	退费说明
+0	1359394	due-over-due-shut-down	到期/欠费关停
+0	1359373	service-usage	服务用量
+0	1359374	taxes-and-invoices	税费及发票
+0	1257536	TextToSpeechLargeModel	语音合成大模型
+1	1257543	product-overview-18	语音合成大模型/产品简介
+1	2550877	audio-generation	语音合成大模型/音频生成
+2	2550782	audio-generation-http	语音合成大模型/音频生成/音频生成
+1	2550870	synchronize-text-to-speech	语音合成大模型/同步语音合成
+2	2528925	unidirectional-streaming-text-to-speech-http	语音合成大模型/同步语音合成/单向流式语音合成(HTTP)
+2	2534913	unidirectional-streaming-text-to-speech-websocket	语音合成大模型/同步语音合成/单向流式语音合成(WebSocket)
+2	2532486	bidirectional-streaming-text-to-speech-websocket	语音合成大模型/同步语音合成/双向流式语音合成(WebSocket)
+1	2550871	asynchronous-long-text-text-to-speech	语音合成大模型/异步长文本语音合成
+2	2670603	task-sub-mission	语音合成大模型/异步长文本语音合成/任务提交
+2	2670604	result-query	语音合成大模型/异步长文本语音合成/结果查询
+1	2550872	sound-reproduction-1	语音合成大模型/声音复刻
+2	133350	product-overview-10	语音合成大模型/声音复刻/产品简介
+2	2534906	tone-training-http	语音合成大模型/声音复刻/音色注册
+2	2535742	tone-query-http	语音合成大模型/声音复刻/音色查询
+2	2535751	tone-upgrade-http	语音合成大模型/声音复刻/音色升级
+1	2550873	tone-design	语音合成大模型/音色设计
+2	2277844	sound-design-api	语音合成大模型/音色设计/音色设计
+1	2534853	error-code-query-1	语音合成大模型/错误码查询
+1	2534847	old-version-console-authentication-reference-example	语音合成大模型/旧版控制台鉴权参考示例
+0	1354867	Automaticspeechrecognitionlargemodel	语音识别大模型
+1	1354871	product-overview-22	语音识别大模型/产品简介
+1	2607736	streaming-automatic-speech-recognition-2	语音识别大模型/流式语音识别
+2	2628951	unidirectional-streaming-automatic-speech-recognition-websocket	语音识别大模型/流式语音识别/一句话识别
+2	2630027	bidirectional-streaming-automatic-speech-recognition-websocket	语音识别大模型/流式语音识别/实时语音识别
+1	2607734	audio-file-recognition-1-1	语音识别大模型/录音文件识别
+2	2607737	audio-file-recognition-standard-edition-1	语音识别大模型/录音文件识别/录音文件识别标准版
+3	2606791	task-submission-http-1	语音识别大模型/录音文件识别/录音文件识别标准版/任务提交
+3	2606792	result-query-http-1	语音识别大模型/录音文件识别/录音文件识别标准版/结果查询
+2	2608617	audio-file-recognition-idle-time-edition	语音识别大模型/录音文件识别/录音文件识别闲时版
+3	2608618	task-submission-http	语音识别大模型/录音文件识别/录音文件识别闲时版/任务提交
+3	2608619	result-query-http	语音识别大模型/录音文件识别/录音文件识别闲时版/结果查询
+2	2608628	recording-file-recognition-lite-http	语音识别大模型/录音文件识别/录音文件识别极速版
+1	2611432	error-code-query	语音识别大模型/错误码查询
+1	2699985	voice-print-registration-management-api	语音识别大模型/声纹注册/管理接口
+0	1594357	end-to-endreal-time-speech-large-model	端到端实时语音大模型
+1	1594360	product-overview-23	端到端实时语音大模型/产品简介
+1	2549778	end-to-end-real-time-voice-full-duplex-version	端到端实时语音大模型/端到端实时语音（Seeduplex）
+1	2722879	seedrealtime	端到端实时语音大模型/Doubao-Seed-Realtime-1.0
+0	1631587	voice-pod-cast-large-model	语音播客大模型
+1	1631586	product-overview-24	语音播客大模型/产品简介
+1	2708572	podcast	语音播客大模型/语音播客
+0	1631604	speech-simultaneous-interpretation-large-model	语音同传大模型
+1	1631605	product-overview-25	语音同传大模型/产品简介
+1	1756902	simultaneous-interpretation2-0-api-access-documentation	语音同传大模型/同声传译
+0	2306581	machine-translation-large-model	机器翻译大模型
+1	2306582	product-overview-27	机器翻译大模型/产品简介
+1	2306735	machine-translation-large-model-api-access-documentation	机器翻译大模型/机器翻译
+0	2586547	speech-sdk	Speech SDK
+1	2586548	text-to-speech-large-model-1	Speech SDK/语音合成大模型
+2	2586552	bidirectional-streaming-tts-ios-sdk-interface-documentation	Speech SDK/语音合成大模型/双向流式语音合成(iOS)
+2	2586553	bidirectional-streaming-tts-android-sdk-interface-documentation-1	Speech SDK/语音合成大模型/双向流式语音合成(Android)
+1	2586550	automatic-speech-recognition-large-model-1	Speech SDK/语音识别大模型
+2	2604753	large-model-streaming-automatic-speech-recognition-ios-sdk-interface	Speech SDK/语音识别大模型/流式语音识别(iOS)
+2	2604754	large-model-streaming-automatic-speech-recognition-android-sdk-interface	Speech SDK/语音识别大模型/流式语音识别(Android)
+1	2586551	end-to-end-real-time-speech-large-model	Speech SDK/端到端实时语音大模型
+2	2553734	end-to-end-full-duplex-android-sdk-documentation	Speech SDK/端到端实时语音大模型/实时语音(Android)
+2	2556358	end-to-end-full-duplex-ios-sdk-documentation	Speech SDK/端到端实时语音大模型/实时语音(iOS)
+0	155745	self-learning-platform	自学习平台
+1	155738	product-overview-12	自学习平台/产品简介
+1	155739	hot-words	自学习平台/热词
+1	1742791	hot-word-management-api-v10	自学习平台/热词管理
+1	1206007	replacement-word	自学习平台/替换词
+1	1742792	replacement-word-api-v11	自学习平台/替换词管理
+1	2306745	term-words	自学习平台/术语词
+1	155743	faqs-4	自学习平台/常见问题
+0	1772902	console-related-interfaces	控制台相关接口
+1	1777242	api-reference	控制台相关接口/API参考
+2	1771284	timbre	控制台相关接口/API参考/音色
+3	1770994	list-big-model-tts-timbres-large-model-sound-list	控制台相关接口/API参考/音色/大模型音色列表
+3	2160690	list-speakers-large-model-sound-list-new-interface	控制台相关接口/API参考/音色/大模型音色列表
+2	1801324	api-key	控制台相关接口/API参考/api_key
+3	1801323	list-api-keys-pull-api-key-list	控制台相关接口/API参考/api_key/获取APIKey列表
+3	1801958	create-api-key-create-api-key	控制台相关接口/API参考/api_key/创建APIKey
+3	1801959	delete-api-key-delete-api-key	控制台相关接口/API参考/api_key/删除APIKey
+3	1801960	update-api-key-update-api-key	控制台相关接口/API参考/api_key/更新APIKey
+2	1801934	service	控制台相关接口/API参考/service
+3	1801941	service-status-service-status	控制台相关接口/API参考/service/获取服务状态
+3	1801942	pause-service-suspend-service	控制台相关接口/API参考/service/暂停服务
+3	1801943	resume-service-re-enable-the-service	控制台相关接口/API参考/service/重新启用服务
+3	1801944	activate-service-activate-service	控制台相关接口/API参考/service/开通服务
+3	1801945	terminate-service-deactivate-service	控制台相关接口/API参考/service/停用服务
+2	1801935	resource-packs	控制台相关接口/API参考/resource_packs
+3	1801937	formalize-resource-packs-conversion-effect-package	控制台相关接口/API参考/resource_packs/转正资源包
+3	1801938	resource-packs-status-effect-package-status-information	控制台相关接口/API参考/resource_packs/获取资源包状态信息
+3	1801939	alias-resource-pack-update-sound-resource-aliases	控制台相关接口/API参考/resource_packs/更新音色资源别名
+3	1801940	order-resource-packs-buyeffectspackage	控制台相关接口/API参考/resource_packs/购买资源包
+2	1801946	tag	控制台相关接口/API参考/tag
+3	1801949	list-tags-for-resources-query-all-labels-attached-to-are-source	控制台相关接口/API参考/tag/查询资源所附加的全部标签
+3	1801950	untag-resources-remove-tags-from-resources	控制台相关接口/API参考/tag/移除资源标签
+3	1801951	tag-resources-attach-tags-to-resources	控制台相关接口/API参考/tag/附加标签
+2	1801947	Soundreproduction-1	控制台相关接口/API参考/声音复刻
+3	1801952	list-mega-tts-train-status-query-speaker-id-status-information	控制台相关接口/API参考/声音复刻/查询SpeakerID状态信息
+3	1801953	batch-list-mega-tts-train-status-page-query-speaker-id-status	控制台相关接口/API参考/声音复刻/分页查询SpeakerID状态
+3	1801954	order-access-resource-packs-sound-order	控制台相关接口/API参考/声音复刻/音色下单
+3	1801955	renew-access-resource-packs-tone-renewal	控制台相关接口/API参考/声音复刻/音色续费
+3	1835745	list-mega-tts-by-order-id-query-purchased-sounds-by-order-id	控制台相关接口/API参考/声音复刻/查询购买音色
+2	1801948	monitoring	控制台相关接口/API参考/监控
+3	1801956	quota-monitoring-quota-query-interface	控制台相关接口/API参考/监控/Quota查询接口
+3	1801957	usage-monitoring-call-query-interface	控制台相关接口/API参考/监控/调用量查询接口
+1	1816214	api-key-usage	控制台相关接口/API Key使用
+1	1476626	qps-concurrent-query-interface-description	控制台相关接口/QPS/并发查询接口说明
+1	1476625	call-volume-query-interface-description	控制台相关接口/调用量查询接口说明
+0	2382606	history-docs	历史文档
+1	2430963	historical-text-to-speech-interface	历史文档/语音合成接口
+2	1719100	websocket-unidirectional-streaming-v3	历史文档/语音合成接口/WebSocket 单向流式-V3
+2	1329505	websocket-bidirectional-streaming-v3	历史文档/语音合成接口/WebSocket 双向流式-V3
+2	1598757	http-chunked-sse-unidirectional-streaming-v3	历史文档/语音合成接口/HTTP Chunked/SSE单向流式-V3
+2	1257584	http-one-timecompositenon-streaming-interface-v1-not-recommended	历史文档/语音合成接口/大模型HTTP非流式接口-V1
+2	79820	http-interface-one-time-composition-non-streaming	历史文档/语音合成接口/小模型HTTP非流式接口
+2	79821	websocket-interface	历史文档/语音合成接口/小模型Websocket接口
+2	1096680	api-interface-documentation-2	历史文档/语音合成接口/小模型异步长文本合成接口
+2	1105162	authentication-method-1	历史文档/语音合成接口/鉴权方法
+2	1108211	tone-list-2	历史文档/语音合成接口/音色列表
+2	79823	para-meter-basic-description	历史文档/语音合成接口/参数基本说明
+2	97465	tone-list	历史文档/语音合成接口/小模型音色列表
+1	2479203	ssml-markup-language	历史文档/SSML标记语言
+1	80910	automatic-speech-recognition-1	历史文档/语音识别接口
+2	107789	authentication-method	历史文档/语音识别接口/鉴权方法
+2	1354868	large-model-recording-file-recognition-standard-version-api	历史文档/语音识别接口/录音文件识别标准版HTTP
+2	1840838	large-model-recording-file-recognition-idle-version	历史文档/语音识别接口/录音文件识别闲时版HTTP
+2	1631584	large-model-recording-file-lite-recognition-api	历史文档/语音识别接口/录音文件极速版识别HTTP
+2	80816	one-sentence-recognition-1	历史文档/语音识别接口/一句话识别
+2	80818	streaming-automatic-speech-recognition-1	历史文档/语音识别接口/流式语音识别
+2	80820	AudioFileRecognitionStandardEdition	历史文档/语音识别接口/录音文件识别标准版
+2	192519	audio-file-recognition-lite	历史文档/语音识别接口/录音文件识别极速版
+2	1354869	large-model-streaming-automatic-speech-recognition-api-1	历史文档/语音识别接口/大模型流式语音识别API
+1	80907	audio-video-sub-tit-les	历史文档/音视频字幕接口
+2	109884	product-overview-7	历史文档/音视频字幕接口/产品简介
+3	109885	product-overview-8	历史文档/音视频字幕接口/产品简介/产品概述
+3	109886	product-advantages-1	历史文档/音视频字幕接口/产品简介/产品优势
+3	109887	application-scenarios-1	历史文档/音视频字幕接口/产品简介/应用场景
+2	111578	faqs-3	历史文档/音视频字幕接口/常见问题
+3	111579	model-effect-faq-1	历史文档/音视频字幕接口/常见问题/模型效果FAQ
+3	111586	api-access-faq-1	历史文档/音视频字幕接口/常见问题/API接入FAQ
+3	114291	billing-faq-1	历史文档/音视频字幕接口/常见问题/计费FAQ
+2	80909	audio-video-sub-title-gene-ration	历史文档/音视频字幕接口/音视频字幕生成
+2	149749	automatic-sub-title-typing	历史文档/音视频字幕接口/自动字幕打轴
+1	2431044	his-tori-cal-sound-replication-interface	历史文档/声音复刻接口
+2	2227958	sound-replica-api-v3	历史文档/声音复刻接口/声音复刻API-V3
+1	1354860	sdk-access-documentation-1	历史文档/SDK接入文档
+2	79826	from-online-text-to-speech-sdk	历史文档/SDK接入文档/离在线语音合成SDK
+3	79827	sdk-overview	历史文档/SDK接入文档/离在线语音合成SDK/SDK概览
+3	79828	parameter-description	历史文档/SDK接入文档/离在线语音合成SDK/参数说明
+3	79829	error-code-description	历史文档/SDK接入文档/离在线语音合成SDK/错误码说明
+3	79830	publish-information	历史文档/SDK接入文档/离在线语音合成SDK/发布信息
+3	1124300	text-to-speech-sdk-usage-faq	历史文档/SDK接入文档/离在线语音合成SDK/语音合成 SDK 使用 FAQ
+3	79831	android	历史文档/SDK接入文档/离在线语音合成SDK/Android
+4	79832	integration-guide	历史文档/SDK接入文档/离在线语音合成SDK/Android/集成指南
+4	79834	access-process	历史文档/SDK接入文档/离在线语音合成SDK/Android/接入流程
+4	79838	faqs	历史文档/SDK接入文档/离在线语音合成SDK/Android/常见问题
+4	516011	model-issue	历史文档/SDK接入文档/离在线语音合成SDK/Android/模型下发
+5	79836	model-issuing-interface-description-v2	历史文档/SDK接入文档/离在线语音合成SDK/Android/模型下发/模型下发接口说明（V2）
+5	516028	model-issuing-interface-description-v4	历史文档/SDK接入文档/离在线语音合成SDK/Android/模型下发/模型下发接口说明（V4）
+3	79833	ios	历史文档/SDK接入文档/离在线语音合成SDK/iOS
+4	79835	integration-guide-1	历史文档/SDK接入文档/离在线语音合成SDK/iOS/集成指南
+4	79837	access-process-1	历史文档/SDK接入文档/离在线语音合成SDK/iOS/接入流程
+4	79840	faqs-1	历史文档/SDK接入文档/离在线语音合成SDK/iOS/常见问题
+4	516111	model-issue-1	历史文档/SDK接入文档/离在线语音合成SDK/iOS/模型下发
+5	79839	model-issuing-interface-description-v2-1	历史文档/SDK接入文档/离在线语音合成SDK/iOS/模型下发/模型下发接口说明（V2）
+5	516112	model-issuing-interface-description-v4-1	历史文档/SDK接入文档/离在线语音合成SDK/iOS/模型下发/模型下发接口说明（V4）
+3	116695	related-agreements	历史文档/SDK接入文档/离在线语音合成SDK/相关协议
+4	116696	text-to-speech-sdk-privacy-policy	历史文档/SDK接入文档/离在线语音合成SDK/相关协议/语音合成SDK隐私政策
+4	116711	text-to-speech-sdk-developer-compliance	历史文档/SDK接入文档/离在线语音合成SDK/相关协议/语音合成 SDK开发者使用合规规范
+2	111512	streaming-automatic-speech-recognition-sdk-including-one-sentence	历史文档/SDK接入文档/流式语音识别 SDK(含一句话)
+3	120573	publish-information-2	历史文档/SDK接入文档/流式语音识别 SDK(含一句话)/发布信息
+3	125686	sdk-overview-2	历史文档/SDK接入文档/流式语音识别 SDK(含一句话)/SDK概览
+3	113639	android-2	历史文档/SDK接入文档/流式语音识别 SDK(含一句话)/Android
+4	113641	integration-guide-4	历史文档/SDK接入文档/流式语音识别 SDK(含一句话)/Android/集成指南
+4	113642	calling-flow-2	历史文档/SDK接入文档/流式语音识别 SDK(含一句话)/Android/调用流程
+3	113640	ios-2	历史文档/SDK接入文档/流式语音识别 SDK(含一句话)/iOS
+4	113643	integration-guide-5	历史文档/SDK接入文档/流式语音识别 SDK(含一句话)/iOS/集成指南
+4	113644	calling-flow-3	历史文档/SDK接入文档/流式语音识别 SDK(含一句话)/iOS/调用流程
+3	120567	linux-c-1	历史文档/SDK接入文档/流式语音识别 SDK(含一句话)/Linux C++
+4	120569	integration-guide-8	历史文档/SDK接入文档/流式语音识别 SDK(含一句话)/Linux C++/集成指南
+4	120570	calling-flow-6	历史文档/SDK接入文档/流式语音识别 SDK(含一句话)/Linux C++/调用流程
+3	120568	linux-java-1	历史文档/SDK接入文档/流式语音识别 SDK(含一句话)/Linux Java
+4	120571	integration-guide-9	历史文档/SDK接入文档/流式语音识别 SDK(含一句话)/Linux Java/集成指南
+4	120572	calling-flow-7	历史文档/SDK接入文档/流式语音识别 SDK(含一句话)/Linux Java/调用流程
+2	1395846	large-model-stream-recognition-sdk-1	历史文档/SDK接入文档/大模型流式识别SDK
+2	1739228	bidirectional-streaming-tts-ios-sdk-interface-documentation-1	历史文档/SDK接入文档/双向流式TTS - iOS SDK 接口文档
+2	1739229	BidirectionalStreamingTTS-AndroidSDKInterfaceDocumentation	历史文档/SDK接入文档/双向流式TTS - Android SDK 接口文档
+1	2625674	historical-end-to-end-real-time-voice-interface	历史文档/端到端实时语音接口
+2	1594356	end-to-endreal-time-speech-large-model-api-access-document	历史文档/端到端实时语音接口/端到端实时语音大模型API接入文档
+2	1597646	end-to-endios-sdk-interface-documentation	历史文档/端到端实时语音接口/端到端iOS SDK 接口文档
+2	1597643	end-to-end-android-sdk-interface-documentation	历史文档/端到端实时语音接口/端到端Android SDK 接口文档
+1	1798095	doubao-voice-minutes	历史文档/豆包语音妙记
+2	1798349	product-overview-26	历史文档/豆包语音妙记/产品简介
+2	1798094	doubao-voice-minutes-api-access-documentation	历史文档/豆包语音妙记/语音妙记
+1	2720564	history-podcast	历史文档/语音播客接口
+2	1668014	podcast-api-websocket-v3protocol	历史文档/语音播客接口/语音播客

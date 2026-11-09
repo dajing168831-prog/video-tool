@@ -1,0 +1,1114 @@
+{
+  "source": "clipforge src/lib/script-engine/templates/*.ts",
+  "categories": {
+    "beauty": {
+      "templates": [
+        {
+          "name": "素颜逆袭",
+          "description": "从素颜到妆后的对比反转，利用视觉冲击力引发好奇和购买欲",
+          "suitableFor": [
+            "底妆",
+            "遮瑕",
+            "粉底液",
+            "气垫",
+            "素颜霜"
+          ],
+          "shotStructure": [
+            {
+              "type": "hook",
+              "duration": "3",
+              "camera": "怼脸特写，微微晃动",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "pain_point",
+              "duration": "4",
+              "camera": "脸部特写慢慢拉远",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "product_reveal",
+              "duration": "3",
+              "camera": "产品居中旋转展示",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "demo",
+              "duration": "8",
+              "camera": "手部上妆过程特写 + 脸部分屏对比",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "social_proof",
+              "duration": "3",
+              "camera": "评论截图 / 销量数据飞入",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "cta",
+              "duration": "4",
+              "camera": "完妆脸部特写 + 产品叠化",
+              "transition": "ffmpeg_fade"
+            }
+          ],
+          "example": "【黄金3秒】\"姐妹们，别划走！这个素颜出门的效果你敢信？\"（素颜怼脸，痘印斑点清晰可见）\n【痛点】\"每次化妆都要半小时，底妆还斑驳卡粉？之前我也这样...\"（叹气表情）\n【产品亮相】\"直到我发现了这款XX粉底液\"（产品从下方滑入画面）\n【使用演示】\"看好了，就一泵的量\"（手背试色→上脸→推开→分屏素颜vs上妆对比）\n【信任背书】\"小红书5万+收藏，回购率92%\"（数据飞入画面）\n【行动号召】\"今天直播间买一送一，库存只剩最后200件，点下方链接抢！\"（完妆特写+产品+价格标签）"
+        },
+        {
+          "name": "成分党种草",
+          "description": "从成分科学角度切入，建立专业信任感后推荐产品",
+          "suitableFor": [
+            "精华液",
+            "面霜",
+            "防晒",
+            "眼霜",
+            "面膜"
+          ],
+          "shotStructure": [
+            {
+              "type": "hook",
+              "duration": "3",
+              "camera": "产品成分表特写",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "pain_point",
+              "duration": "4",
+              "camera": "肤质问题近距离展示",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "product_reveal",
+              "duration": "4",
+              "camera": "产品全景 + 成分图示飞入",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "demo",
+              "duration": "7",
+              "camera": "质地展示 + 上脸涂抹过程",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "social_proof",
+              "duration": "3",
+              "camera": "使用前后对比图",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "cta",
+              "duration": "4",
+              "camera": "产品 + 价格卡片",
+              "transition": "ffmpeg_fade"
+            }
+          ],
+          "example": "【黄金3秒】\"含30%烟酰胺的精华你敢用吗？这个浓度真的太猛了！\"（成分表怼脸）\n【痛点】\"换季烂脸、暗沉发黄，花了几千块什么都没改善\"（展示泛红暗沉肌肤）\n【产品亮相】\"这瓶XX精华，核心成分是30%烟酰胺+传明酸+光甘草定\"（产品特写+成分图解）\n【使用演示】\"质地是流动的水状，上脸0负担\"（挤到手背→展示流动性→上脸按压吸收）\n【信任背书】\"用了28天，暗沉真的肉眼可见提亮了\"（前后对比照）\n【行动号召】\"旗舰店299，我们这里只要159，赠同款小样3支！\"（价格卡片弹入）"
+        },
+        {
+          "name": "一抹变色",
+          "description": "利用产品使用前后的即时视觉变化制造冲击力",
+          "suitableFor": [
+            "唇釉",
+            "腮红",
+            "眼影",
+            "染发剂",
+            "美白牙贴"
+          ],
+          "shotStructure": [
+            {
+              "type": "hook",
+              "duration": "3",
+              "camera": "使用瞬间的近景特写",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "pain_point",
+              "duration": "3",
+              "camera": "中景展示无妆状态",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "product_reveal",
+              "duration": "3",
+              "camera": "产品微距 + 质地展示",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "demo",
+              "duration": "8",
+              "camera": "上妆过程特写 + 颜色变化",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "cta",
+              "duration": "3",
+              "camera": "完妆全脸 + 产品 + 价格",
+              "transition": "ffmpeg_fade"
+            }
+          ],
+          "example": "【黄金3秒】\"这个颜色也太绝了吧！\"（嘴唇特写，唇釉一抹变色瞬间）\n【痛点】\"纯素颜嘴巴真的没气色，整个人看着很憔悴\"（展示素唇）\n【产品亮相】\"这支XX唇釉，色号是#208蜜桃乌龙\"（产品旋转+刷头沾满唇釉特写）\n【使用演示】\"薄涂一层奶茶色，厚涂就是烂番茄！\"（上唇过程→薄涂效果→叠涂效果→各角度展示）\n【行动号召】\"今天下单立减30，还送同系列唇线笔！3号链接冲！\"（完妆+价格浮窗）"
+        },
+        {
+          "name": "约会妆教",
+          "description": "场景化教程式种草，将产品植入实用妆容教程中",
+          "suitableFor": [
+            "彩妆套装",
+            "眼影盘",
+            "口红",
+            "高光修容",
+            "定妆喷雾"
+          ],
+          "shotStructure": [
+            {
+              "type": "hook",
+              "duration": "3",
+              "camera": "完妆美颜特写（倒叙）",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "pain_point",
+              "duration": "3",
+              "camera": "约会场景焦虑情景",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "product_reveal",
+              "duration": "3",
+              "camera": "化妆台产品阵列展示",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "demo",
+              "duration": "10",
+              "camera": "分步骤妆教特写",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "social_proof",
+              "duration": "3",
+              "camera": "评论/男友反应片段",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "cta",
+              "duration": "3",
+              "camera": "产品合集 + 优惠信息",
+              "transition": "ffmpeg_fade"
+            }
+          ],
+          "example": "【黄金3秒】\"约会画这个妆，他全程盯着你看！\"（完妆转头微笑慢动作）\n【痛点】\"每次约会前化妆都手抖，生怕画成'刻意感'...\"（对镜焦虑表情）\n【产品亮相】\"今天的约会妆只用这4样\"（化妆台俯拍，4个产品排列）\n【使用演示】\"底妆→眼影→腮红→唇妆，每步30秒搞定\"（分步快进教程+产品名弹幕）\n【信任背书】\"上次用这个妆出门，朋友都问我是不是恋爱了哈哈\"（聊天截图/评论飞入）\n【行动号召】\"这4个产品打包价只要XXX，还送化妆包！\"（产品组合+价格标）"
+        }
+      ],
+      "directive": "你正在为【美妆护肤】品类创作短视频带货脚本。请注意以下要点：\n1. 视觉冲击力是核心：妆前妆后对比、质地特写、颜色展示是关键画面\n2. 成分和功效要言之有物，避免违禁词（如\"药妆\"\"医学级\"等）\n3. 使用感受要具体化：\"丝滑\"\"轻薄\"\"贴皮\"比\"好用\"更有说服力\n4. 配色和光线描述要精准，方便后续 AI 生成素材\n5. 目标用户画像：18-35岁女性，注重性价比和真实使用效果\n6. 文案风格：闺蜜聊天式，真诚不做作，可以适当用网络热词",
+      "name": "美妆护肤"
+    },
+    "food": {
+      "templates": [
+        {
+          "name": "试吃测评",
+          "description": "真实试吃+夸张表情反应，用视觉和听觉（咀嚼音）双重刺激食欲",
+          "suitableFor": [
+            "零食",
+            "方便食品",
+            "饮品",
+            "糕点",
+            "坚果"
+          ],
+          "shotStructure": [
+            {
+              "type": "hook",
+              "duration": "3",
+              "camera": "食物掰开/咬开的瞬间特写，汁水飞溅",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "pain_point",
+              "duration": "3",
+              "camera": "翻看手机找零食/空空的零食柜",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "product_reveal",
+              "duration": "3",
+              "camera": "快递拆箱/产品阵列俯拍",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "demo",
+              "duration": "8",
+              "camera": "拆袋→近距离展示→入口咀嚼特写",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "social_proof",
+              "duration": "3",
+              "camera": "销量截图/回购订单",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "cta",
+              "duration": "3",
+              "camera": "产品堆叠 + 价格闪烁",
+              "transition": "ffmpeg_fade"
+            }
+          ],
+          "example": "【黄金3秒】\"这个爆浆的瞬间我录了10遍！\"（麻薯掰开，内馅拉丝特写）\n【痛点】\"刷了一晚上嘴馋，外卖又贵又不健康\"（深夜刷手机+空零食柜）\n【产品亮相】\"这箱XX麻薯终于到了！\"（拆快递→取出一盒盒排列）\n【使用演示】\"先看这个个头，比我拳头还大\"（手持对比→掰开拉丝→咬一口→表情陶醉→ASMR咀嚼音）\n【信任背书】\"我已经回购第4箱了，月销10万+\"（订单截图飞入）\n【行动号召】\"现在下单2箱立减20！3号链接冲，手慢无！\"（产品+价格动效）"
+        },
+        {
+          "name": "懒人食谱",
+          "description": "将产品融入超简单烹饪教程，解决'不会做饭'的痛点",
+          "suitableFor": [
+            "预制菜",
+            "调味料",
+            "酱料",
+            "速食",
+            "半成品食材"
+          ],
+          "shotStructure": [
+            {
+              "type": "hook",
+              "duration": "3",
+              "camera": "成品菜近距离特写，热气腾腾",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "pain_point",
+              "duration": "3",
+              "camera": "外卖堆积/厨房狼藉的情景",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "product_reveal",
+              "duration": "3",
+              "camera": "产品包装正面展示",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "demo",
+              "duration": "10",
+              "camera": "烹饪过程快剪：倒入→翻炒→出锅→装盘",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "social_proof",
+              "duration": "3",
+              "camera": "家人/朋友试吃反应",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "cta",
+              "duration": "3",
+              "camera": "成品菜+产品+优惠信息",
+              "transition": "ffmpeg_fade"
+            }
+          ],
+          "example": "【黄金3秒】\"不会做饭的姐妹看过来！这道菜3分钟搞定！\"（红烧肉特写，酱汁浓稠发亮）\n【痛点】\"天天点外卖，钱包空了身体也垮了\"（外卖垃圾堆成山）\n【产品亮相】\"有了这瓶XX酱，厨房小白秒变大厨\"（酱料瓶居中特写）\n【使用演示】\"五花肉切块→倒入两勺酱→加水没过肉→焖15分钟→出锅！\"（快剪烹饪过程）\n【信任背书】\"老公说比外面饭店做的还好吃！\"（老公竖大拇指+一家人吃饭画面）\n【行动号召】\"一瓶能做20次，算下来每顿不到3块钱！限时买二送一！\"（价格计算动画+产品）"
+        },
+        {
+          "name": "办公室投喂",
+          "description": "利用办公室社交场景制造分享传播，好评即信任背书",
+          "suitableFor": [
+            "分享装零食",
+            "饼干",
+            "果干",
+            "巧克力",
+            "茶饮冲泡"
+          ],
+          "shotStructure": [
+            {
+              "type": "hook",
+              "duration": "3",
+              "camera": "同事们疯抢的场面",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "pain_point",
+              "duration": "3",
+              "camera": "下午犯困/嘴巴无聊的办公室日常",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "product_reveal",
+              "duration": "3",
+              "camera": "打开分享装/礼盒铺开展示",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "demo",
+              "duration": "6",
+              "camera": "分给同事→各种试吃反应集锦",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "social_proof",
+              "duration": "3",
+              "camera": "同事好评弹幕 + 空袋特写",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "cta",
+              "duration": "3",
+              "camera": "产品+办公桌场景+价格",
+              "transition": "ffmpeg_fade"
+            }
+          ],
+          "example": "【黄金3秒】\"带了一袋零食去公司，5分钟被抢光了！\"（同事伸手疯抢画面）\n【痛点】\"每天下午3点就犯困，嘴巴空空没动力\"（办公室趴桌+打哈欠）\n【产品亮相】\"就是这袋XX每日坚果，独立小包装超方便\"（倒出一堆小包+铺满桌面）\n【使用演示】\"我先来一包——这个腰果好大颗！蔓越莓酸甜的！\"（自己吃→分给同事→每人一句短评）\n【信任背书】\"第二天3个同事让我帮忙带！\"（微信群截图：'链接发我！'）\n【行动号召】\"30包独立装只要XX元，每天不到2块钱！\"（产品+价格+购买引导）"
+        },
+        {
+          "name": "深夜放毒",
+          "description": "利用深夜饥饿感和食物特写ASMR制造强烈购买冲动",
+          "suitableFor": [
+            "夜宵食品",
+            "即食类",
+            "泡面",
+            "卤味",
+            "烧烤食材"
+          ],
+          "shotStructure": [
+            {
+              "type": "hook",
+              "duration": "3",
+              "camera": "食物微距特写+蒸汽/油光",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "pain_point",
+              "duration": "3",
+              "camera": "深夜翻冰箱什么都没有",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "product_reveal",
+              "duration": "2",
+              "camera": "产品包装 + 打开瞬间",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "demo",
+              "duration": "8",
+              "camera": "加热/烹饪→装盘→吃的全过程ASMR",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "cta",
+              "duration": "4",
+              "camera": "吃完满足表情 + 产品 + 价格",
+              "transition": "ffmpeg_fade"
+            }
+          ],
+          "example": "【黄金3秒】\"深夜慎点！这碗螺蛳粉我闻了就疯了！\"（汤底沸腾，酸笋和花生特写）\n【痛点】\"加班到12点，饿得前胸贴后背，外卖全关了\"（深夜空荡的厨房+饥饿表情）\n【产品亮相】\"还好囤了XX螺蛳粉！\"（撕开包装→取出料包排列）\n【使用演示】\"煮面→加料包→搅拌→吸溜一大口\"（ASMR咀嚼+汤汁特写+满足表情）\n【行动号召】\"5包装只要XX元，深夜食堂随时开！点击下方3号链接！\"（产品+价格弹入）"
+        },
+        {
+          "name": "健康轻食",
+          "description": "主打健康概念，用数据和对比打消吃零食的罪恶感",
+          "suitableFor": [
+            "低卡零食",
+            "代餐",
+            "蛋白棒",
+            "无糖食品",
+            "有机食品"
+          ],
+          "shotStructure": [
+            {
+              "type": "hook",
+              "duration": "3",
+              "camera": "称体重/量腰围+吃零食的矛盾画面",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "pain_point",
+              "duration": "4",
+              "camera": "普通零食热量表对比",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "product_reveal",
+              "duration": "3",
+              "camera": "产品+营养成分表特写",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "demo",
+              "duration": "6",
+              "camera": "开袋试吃+口感描述",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "social_proof",
+              "duration": "3",
+              "camera": "减脂期用户好评/体重变化",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "cta",
+              "duration": "3",
+              "camera": "产品组合+优惠价",
+              "transition": "ffmpeg_fade"
+            }
+          ],
+          "example": "【黄金3秒】\"减肥期也能放心吃的零食，真的存在！\"（一手拿秤一手吃零食，反差画面）\n【痛点】\"减脂期嘴馋到抓狂，普通饼干一包就400大卡\"（热量表大字弹出：薯片=跑步1小时）\n【产品亮相】\"这款XX蛋白棒，每根只有98大卡！\"（产品居中+营养标签放大）\n【使用演示】\"口感真的绝！像在吃士力架，但热量只有1/4\"（掰开展示→咬一口→满意表情）\n【信任背书】\"健身博主都在推，减脂期的救星\"（KOL截图+用户好评墙）\n【行动号召】\"10根尝鲜装只要XX元！0罪恶感解馋！\"（产品+价格+下单引导）"
+        }
+      ],
+      "directive": "你正在为【食品零食】品类创作短视频带货脚本。请注意以下要点：\n1. 食欲感是第一要义：画面描述中要突出色泽、蒸汽、汁水、质地等细节\n2. ASMR音效描述很重要：咀嚼音、酥脆声、汤汁沸腾声要在配音文案中体现\n3. 口感描述要具象化：\"外酥里嫩\"\"入口即化\"\"酸甜交织\"等\n4. 注意食品安全相关表述，不做虚假营养声明\n5. 场景植入自然：办公室、宿舍、深夜、追剧等生活场景\n6. 价格锚点很重要：换算成\"每包/每顿多少钱\"更有说服力\n7. 文案风格：吃货分享式，热情洋溢，制造\"现在就想吃\"的冲动",
+      "name": "食品零食"
+    },
+    "home": {
+      "templates": [
+        {
+          "name": "痛点解决方案",
+          "description": "先展示生活痛点场景，再用产品一招解决，对比效果极其强烈",
+          "suitableFor": [
+            "清洁用品",
+            "收纳工具",
+            "除湿除味",
+            "修补工具",
+            "防滑垫"
+          ],
+          "shotStructure": [
+            {
+              "type": "hook",
+              "duration": "3",
+              "camera": "脏乱/问题场景的怼脸特写",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "pain_point",
+              "duration": "4",
+              "camera": "崩溃表情 + 失败的传统方法",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "product_reveal",
+              "duration": "3",
+              "camera": "产品从画面外滑入，居中特写",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "demo",
+              "duration": "8",
+              "camera": "使用过程 + 效果对比分屏",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "social_proof",
+              "duration": "3",
+              "camera": "用户好评截图 / 销量数据",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "cta",
+              "duration": "4",
+              "camera": "before/after 对比 + 产品 + 价格",
+              "transition": "ffmpeg_fade"
+            }
+          ],
+          "example": "【黄金3秒】\"家里的玻璃胶发霉发黑？千万别铲！\"（发霉玻璃胶特写，触目惊心）\n【痛点】\"用刷子刷、用酒精擦、用牙膏涂...全都没用！\"（各种失败方法快速闪过）\n【产品亮相】\"试试这个XX除霉啫喱\"（产品居中，瓶身特写）\n【使用演示】\"挤上去，盖上保鲜膜，等6小时\"（操作过程→快进→揭开保鲜膜→焕然一新！）\n【信任背书】\"已经卖出200万支了，好评率99%\"（销量+好评弹幕飞过）\n【行动号召】\"一支能用半年，今天特价只要XX元！点下方链接！\"（对比图+产品+价格）"
+        },
+        {
+          "name": "好物开箱",
+          "description": "拆箱仪式感+颜值展示+使用体验，三重满足",
+          "suitableFor": [
+            "家居装饰",
+            "桌面摆件",
+            "香薰",
+            "餐具套装",
+            "家纺床品"
+          ],
+          "shotStructure": [
+            {
+              "type": "hook",
+              "duration": "3",
+              "camera": "精致包装的开箱瞬间",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "pain_point",
+              "duration": "3",
+              "camera": "家里旧物/单调空间展示",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "product_reveal",
+              "duration": "4",
+              "camera": "产品全角度展示+细节微距",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "demo",
+              "duration": "7",
+              "camera": "放入实际空间+氛围感展示",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "social_proof",
+              "duration": "3",
+              "camera": "买家秀/网红同款对比",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "cta",
+              "duration": "3",
+              "camera": "氛围感全景+产品+价格",
+              "transition": "ffmpeg_fade"
+            }
+          ],
+          "example": "【黄金3秒】\"拆到这个快递的时候我尖叫了！\"（双手撕开快递→露出精致礼盒）\n【痛点】\"租的房子太单调了，毫无生活气息\"（空荡荡的白墙+简陋桌面）\n【产品亮相】\"这套XX香薰蜡烛也太美了吧！\"（取出→每个角度慢旋转→纹理微距）\n【使用演示】\"放在书桌上，点燃的那一刻整个房间都温柔了\"（点燃→烛光摇曳→房间暖光氛围）\n【信任背书】\"小红书爆了的平价高级感好物\"（小红书笔记截图+点赞数）\n【行动号召】\"3支套装只要XX元，比星巴克一杯咖啡还便宜！\"（套装+价格弹出）"
+        },
+        {
+          "name": "家务革命",
+          "description": "用夸张的家务效率对比突出产品的省时省力",
+          "suitableFor": [
+            "扫地机器人",
+            "拖把",
+            "洗碗机",
+            "洗衣凝珠",
+            "多功能清洁剂"
+          ],
+          "shotStructure": [
+            {
+              "type": "hook",
+              "duration": "3",
+              "camera": "累到瘫倒在沙发上/家务堆积",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "pain_point",
+              "duration": "4",
+              "camera": "传统做家务的辛苦过程",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "product_reveal",
+              "duration": "3",
+              "camera": "产品闪亮登场（英雄式登场）",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "demo",
+              "duration": "8",
+              "camera": "产品使用过程 + 计时器倒计时",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "social_proof",
+              "duration": "3",
+              "camera": "家人反应 / 时间对比图表",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "cta",
+              "duration": "4",
+              "camera": "干净整洁的家 + 产品 + 优惠",
+              "transition": "ffmpeg_fade"
+            }
+          ],
+          "example": "【黄金3秒】\"以前拖地1小时，现在只要5分钟！\"（计时器5:00→拖地完成→地板反光）\n【痛点】\"下班回家还要拖地擦桌子洗碗...真的想罢工！\"（瘫在沙发上+脏乱的厨房）\n【产品亮相】\"自从买了这个XX免手洗拖把，家务减负80%\"（拖把从盒中取出，旋转展示）\n【使用演示】\"脏水自动清洗，拖把自动拧干\"（一键清洗演示→拖地过程→前后对比）\n【信任背书】\"老婆说这是我今年买得最值的东西\"（老婆竖大拇指+家庭温馨画面）\n【行动号召】\"原价299今天只要149！送替换拖布3块！\"（产品+价格+限时标签）"
+        },
+        {
+          "name": "出租屋改造",
+          "description": "小成本改造出租屋，精准打中年轻人租房痛点",
+          "suitableFor": [
+            "墙贴",
+            "LED灯带",
+            "置物架",
+            "窗帘",
+            "地毯",
+            "桌布"
+          ],
+          "shotStructure": [
+            {
+              "type": "hook",
+              "duration": "3",
+              "camera": "改造后的惊艳效果（倒叙）",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "pain_point",
+              "duration": "4",
+              "camera": "出租屋原始状态的各种问题",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "product_reveal",
+              "duration": "3",
+              "camera": "一堆改造好物铺开展示",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "demo",
+              "duration": "8",
+              "camera": "贴/装/摆的改造过程 + 快进",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "cta",
+              "duration": "4",
+              "camera": "全景before/after + 总花费 + 链接",
+              "transition": "ffmpeg_fade"
+            }
+          ],
+          "example": "【黄金3秒】\"花200块把出租屋改成ins风！房东看了都想涨房租！\"（改造后房间全景，灯光温馨）\n【痛点】\"大白墙、老旧家具、昏暗灯光...这就是月租3000的房子\"（出租屋原始面貌360度展示）\n【产品亮相】\"今天改造只用这5件好物\"（5样产品一字排开+总价显示）\n【使用演示】\"贴墙纸→挂灯带→铺地毯→放置物架→换桌布\"（每步快进+完成效果对比）\n【行动号召】\"全部加起来不到200块！链接都给你们放好了！\"（5件产品分格+分别价格+总价）"
+        }
+      ],
+      "directive": "你正在为【家居日用】品类创作短视频带货脚本。请注意以下要点：\n1. Before/After对比是最强说服力：脏vs干净、乱vs整齐、旧vs新\n2. 操作简便性要突出：\"一喷一擦\"\"一键启动\"\"免打孔安装\"等\n3. 使用场景要真实：厨房、卫生间、卧室、出租屋等真实生活空间\n4. 时间/金钱成本换算：\"每天不到X元\"\"省下X小时\"更有冲击力\n5. 氛围感很重要：灯光、角度、布景要有家居博主的质感\n6. 文案风格：生活家/家居博主式，有烟火气又不失品质感\n7. 注意突出耐用性和性价比，这是家居用品的核心决策因素",
+      "name": "家居日用"
+    },
+    "fashion": {
+      "templates": [
+        {
+          "name": "穿搭变身",
+          "description": "从路人到时尚达人的穿搭变身，利用反转制造视觉冲击",
+          "suitableFor": [
+            "连衣裙",
+            "外套",
+            "套装",
+            "一整套穿搭",
+            "风格单品"
+          ],
+          "shotStructure": [
+            {
+              "type": "hook",
+              "duration": "3",
+              "camera": "变身后的惊艳全身镜头（倒叙）",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "pain_point",
+              "duration": "3",
+              "camera": "衣柜一堆衣服不知道穿什么",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "product_reveal",
+              "duration": "3",
+              "camera": "衣服平铺/衣架展示+面料特写",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "demo",
+              "duration": "8",
+              "camera": "上身展示：正面/侧面/背面 + 细节特写",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "social_proof",
+              "duration": "3",
+              "camera": "街拍回头率/朋友反应",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "cta",
+              "duration": "3",
+              "camera": "全身穿搭 + 产品信息 + 价格",
+              "transition": "ffmpeg_fade"
+            }
+          ],
+          "example": "【黄金3秒】\"穿上这件裙子，整条街都在看我！\"（慢动作转圈，裙摆飞扬）\n【痛点】\"衣柜塞满了衣服，出门还是觉得没衣服穿\"（翻衣柜崩溃画面）\n【产品亮相】\"这条XX法式碎花裙，一眼就心动了\"（裙子从衣架取下→面料垂坠感→花纹特写）\n【使用演示】\"看这个版型，收腰显瘦还不挑身材\"（正面→侧面→背面→走路自然摆动→坐下不起皱）\n【信任背书】\"穿出去逛街被3个人问链接！\"（街拍路人回头+朋友惊叹表情）\n【行动号召】\"S-XXL都有，现在下单还送同款发带！\"（尺码表+产品+价格+赠品展示）"
+        },
+        {
+          "name": "一衣多穿",
+          "description": "同一件单品搭出多种风格，突出性价比和百搭属性",
+          "suitableFor": [
+            "基础款",
+            "衬衫",
+            "西装外套",
+            "牛仔裤",
+            "白T恤"
+          ],
+          "shotStructure": [
+            {
+              "type": "hook",
+              "duration": "3",
+              "camera": "快速切换多套穿搭的混剪",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "pain_point",
+              "duration": "3",
+              "camera": "买了一堆只穿一次的衣服",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "product_reveal",
+              "duration": "3",
+              "camera": "单品平铺展示+面料触感",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "demo",
+              "duration": "10",
+              "camera": "3-4种搭配方案依次展示",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "social_proof",
+              "duration": "3",
+              "camera": "穿搭博主推荐集锦",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "cta",
+              "duration": "3",
+              "camera": "4套穿搭四宫格 + 产品 + 价格",
+              "transition": "ffmpeg_fade"
+            }
+          ],
+          "example": "【黄金3秒】\"一件衣服穿出4种风格！通勤约会全搞定！\"（快速切换4套穿搭）\n【痛点】\"买了一柜子衣服，每件只穿一次就压箱底了\"（衣柜爆满+标签还没拆的衣服）\n【产品亮相】\"这件XX白衬衫，质感好到离谱\"（衬衫特写→面料触感→不起皱演示）\n【使用演示】\"Look1: 搭西裤=职场精英｜Look2: 搭牛仔裙=甜酷女孩｜Look3: 搭阔腿裤=慵懒法式｜Look4: 单穿当裙子=度假风\"\n【信任背书】\"全网穿搭博主都在推的万能单品\"（博主穿搭截图合集）\n【行动号召】\"到手价只要XX元，配XS到XXL！\"（四宫格穿搭+价格）"
+        },
+        {
+          "name": "身材焦虑终结",
+          "description": "针对身材痛点（梨形、苹果型、小个子等），用穿搭解决方案种草",
+          "suitableFor": [
+            "显瘦单品",
+            "增高裤",
+            "遮肉连衣裙",
+            "大码女装",
+            "小个子穿搭"
+          ],
+          "shotStructure": [
+            {
+              "type": "hook",
+              "duration": "3",
+              "camera": "穿前/穿后同角度对比",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "pain_point",
+              "duration": "4",
+              "camera": "试穿不合适的衣服尴尬画面",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "product_reveal",
+              "duration": "3",
+              "camera": "产品展示+设计细节标注",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "demo",
+              "duration": "8",
+              "camera": "上身效果展示+遮肉/显高/显瘦效果",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "social_proof",
+              "duration": "3",
+              "camera": "不同身材用户穿搭展示",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "cta",
+              "duration": "4",
+              "camera": "全身效果 + 产品 + 价格 + 尺码指引",
+              "transition": "ffmpeg_fade"
+            }
+          ],
+          "example": "【黄金3秒】\"小肚子、胯宽？穿这条裤子全部藏住！\"（穿前腰腹特写→穿后腰腹特写，视觉对比强烈）\n【痛点】\"梨形身材的痛，胯宽腿粗，裤子要么腰大要么腿紧\"（试穿紧身裤的尴尬画面）\n【产品亮相】\"这条XX高腰阔腿裤，专为梨形身材设计\"（裤子展示→高腰设计→裤腿宽度→面料垂感）\n【使用演示】\"高腰线直接拉长腿部比例，A字裤型完美遮胯\"（上身→正面/侧面→走路效果→坐下不紧绷）\n【信任背书】\"90斤到150斤的姐妹都在穿！\"（不同身材买家秀拼图）\n【行动号召】\"XS-3XL全尺码！今天前100名送腰带！\"（尺码对照表+产品+价格）"
+        },
+        {
+          "name": "季节换新",
+          "description": "结合季节变换推荐应季新品，制造换季购买紧迫感",
+          "suitableFor": [
+            "换季新品",
+            "羽绒服",
+            "防晒衣",
+            "春装",
+            "秋冬外套"
+          ],
+          "shotStructure": [
+            {
+              "type": "hook",
+              "duration": "3",
+              "camera": "季节感画面+穿搭展示",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "pain_point",
+              "duration": "3",
+              "camera": "换季没衣服穿/去年的穿不了",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "product_reveal",
+              "duration": "4",
+              "camera": "新品展示+面料科技讲解",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "demo",
+              "duration": "7",
+              "camera": "室内外场景穿搭展示",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "social_proof",
+              "duration": "3",
+              "camera": "预售/销量数据",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "cta",
+              "duration": "3",
+              "camera": "场景穿搭+产品+限时价格",
+              "transition": "ffmpeg_fade"
+            }
+          ],
+          "example": "【黄金3秒】\"今年秋天最火的外套，我先穿为敬！\"（秋风落叶+外套特写，电影感画面）\n【痛点】\"每年换季都不知道买什么，去年的款式今年又过时了\"（翻去年旧衣服）\n【产品亮相】\"这件XX短款皮衣，今年的大爆款\"（皮衣全景→皮质光泽→内衬→五金细节）\n【使用演示】\"搭长裙→温柔飒姐｜搭牛仔裤→酷帅女孩\"（室外街拍→咖啡店→日常通勤）\n【信任背书】\"预售就卖了5000件，每天都在补货\"（销量截图）\n【行动号召】\"早秋限定价XX元，过了国庆恢复原价！\"（倒计时+产品+限时价格标）"
+        }
+      ],
+      "directive": "你正在为【服饰鞋包】品类创作短视频带货脚本。请注意以下要点：\n1. 上身效果是核心：正面、侧面、背面、走路动态都要有镜头描述\n2. 面料和做工细节要体现：质感、垂坠感、不起球不褪色等\n3. 身材适配性是购买决策关键：突出显瘦/显高/遮肉/不挑身材等\n4. 场景化展示：通勤、约会、逛街、度假等真实穿搭场景\n5. 尺码覆盖要提及，降低用户的选择焦虑\n6. 文案风格：时尚穿搭博主式，自信但不做作，给人\"我也能穿出这个效果\"的信心\n7. 搭配建议增加购买连带率：上衣推荐搭配裤子，外套推荐搭配内搭\n8. 季节感和潮流感要拿捏准确",
+      "name": "服饰鞋包"
+    },
+    "tech": {
+      "templates": [
+        {
+          "name": "开箱首测",
+          "description": "新品开箱+功能实测，满足数码爱好者的好奇心和尝鲜欲",
+          "suitableFor": [
+            "新品数码",
+            "手机",
+            "耳机",
+            "智能手表",
+            "平板配件"
+          ],
+          "shotStructure": [
+            {
+              "type": "hook",
+              "duration": "3",
+              "camera": "产品最惊艳的功能瞬间",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "pain_point",
+              "duration": "3",
+              "camera": "旧设备的种种不便",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "product_reveal",
+              "duration": "4",
+              "camera": "开箱全过程+配件展示+产品各角度",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "demo",
+              "duration": "10",
+              "camera": "核心功能逐一实测+屏幕/数据录制",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "social_proof",
+              "duration": "3",
+              "camera": "跑分数据/专业评测引用",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "cta",
+              "duration": "3",
+              "camera": "产品+价格+购买渠道",
+              "transition": "ffmpeg_fade"
+            }
+          ],
+          "example": "【黄金3秒】\"这个降噪效果我直接跪了！\"（戴上耳机→周围噪音瞬间消失→震惊表情）\n【痛点】\"地铁上听歌全是噪音，开会耳机漏音被同事听到...\"（嘈杂环境+尴尬表情）\n【产品亮相】\"XX降噪耳机到手！先看包装——\"（拆封→取出耳机→充电盒→各角度展示）\n【使用演示】\"降噪实测：关闭→普通→深度降噪\"（三档切换+环境音对比）→\"通话降噪：对面完全听不到背景音\"→\"续航实测：充一次用了整整8小时\"\n【信任背书】\"某知名评测博主评分9.2，同价位降噪天花板\"（评测截图）\n【行动号召】\"首发价XX元，比官网便宜200！前50名送收纳包！\"（产品+价格+赠品）"
+        },
+        {
+          "name": "效率神器",
+          "description": "聚焦生产力场景，展示产品如何提升工作/学习效率",
+          "suitableFor": [
+            "键盘",
+            "显示器",
+            "充电器",
+            "扩展坞",
+            "平板",
+            "打印机"
+          ],
+          "shotStructure": [
+            {
+              "type": "hook",
+              "duration": "3",
+              "camera": "使用前后的效率对比（分屏）",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "pain_point",
+              "duration": "4",
+              "camera": "工作/学习中的效率痛点",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "product_reveal",
+              "duration": "3",
+              "camera": "桌面全景中产品亮相",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "demo",
+              "duration": "8",
+              "camera": "实际使用场景演示+效率提升可视化",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "social_proof",
+              "duration": "3",
+              "camera": "用户评价/专业人士推荐",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "cta",
+              "duration": "3",
+              "camera": "桌面全景+产品+价格",
+              "transition": "ffmpeg_fade"
+            }
+          ],
+          "example": "【黄金3秒】\"自从用了这个，我每天早下班2小时！\"（分屏：左边手忙脚乱vs右边从容操作）\n【痛点】\"笔记本只有2个接口，开会投屏还要拔U盘，崩溃！\"（桌面线材缠绕+接口不够用）\n【产品亮相】\"这个XX 12合1扩展坞，彻底解决接口焦虑\"（产品放在桌面→各接口标注）\n【使用演示】\"HDMI双屏扩展→SD卡直接读取→100W快充直通→千兆网口秒连\"（每个接口实际接入演示）\n【信任背书】\"程序员圈人手一个，某乎推荐Top1\"（知乎截图+IT博主推荐）\n【行动号召】\"到手价XX元，送理线带+收纳袋！\"（产品+价格+赠品清单）"
+        },
+        {
+          "name": "极限测试",
+          "description": "通过极端环境/条件测试展示产品品质，制造话题和信任",
+          "suitableFor": [
+            "手机壳",
+            "充电宝",
+            "运动手表",
+            "防水设备",
+            "保护膜"
+          ],
+          "shotStructure": [
+            {
+              "type": "hook",
+              "duration": "3",
+              "camera": "极端测试的精彩瞬间（高空落下/水中等）",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "pain_point",
+              "duration": "3",
+              "camera": "日常损坏场景集锦",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "product_reveal",
+              "duration": "3",
+              "camera": "产品正面展示+卖点标注",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "demo",
+              "duration": "10",
+              "camera": "多项极限测试全过程",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "social_proof",
+              "duration": "3",
+              "camera": "测试结果汇总/用户真实故事",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "cta",
+              "duration": "3",
+              "camera": "测试后完好的产品+价格",
+              "transition": "ffmpeg_fade"
+            }
+          ],
+          "example": "【黄金3秒】\"从10楼扔下去还能用！这手机壳什么做的？？\"（手机从高处坠落慢动作→捡起来完好无损）\n【痛点】\"换了3个手机壳，一摔就裂，手机角都磕花了\"（碎裂手机壳合集+手机磕碰痕迹）\n【产品亮相】\"这个XX军工级手机壳，我要好好测一下\"（手机壳各角度→气囊结构特写→材质触感）\n【使用演示】\"测试1：2米高度跌落→完好！测试2：汽车碾压→完好！测试3：钥匙暴力划→0划痕！\"（每项测试完整记录）\n【信任背书】\"美军MIL-STD-810G认证，这不是吹的\"（认证标志+用户实测好评）\n【行动号召】\"一个壳用到换手机，XX元保你用3年！\"（产品+价格+购买引导）"
+        },
+        {
+          "name": "桌面改造",
+          "description": "极客/文艺风桌面搭建过程，种草桌面好物",
+          "suitableFor": [
+            "桌面收纳",
+            "显示器支架",
+            "氛围灯",
+            "桌垫",
+            "音箱",
+            "充电底座"
+          ],
+          "shotStructure": [
+            {
+              "type": "hook",
+              "duration": "3",
+              "camera": "完美桌面全景 + 灯光氛围",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "pain_point",
+              "duration": "3",
+              "camera": "混乱的桌面现状",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "product_reveal",
+              "duration": "3",
+              "camera": "所有好物一字排开",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "demo",
+              "duration": "10",
+              "camera": "逐一安装/摆放 + 每样的使用效果",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "cta",
+              "duration": "4",
+              "camera": "完成桌面全景 + 产品清单 + 总价",
+              "transition": "ffmpeg_fade"
+            }
+          ],
+          "example": "【黄金3秒】\"这个桌面太干净了吧！线都去哪了？\"（极简桌面全景，RGB灯光流动）\n【痛点】\"我的桌面：线缆像蜘蛛网，杂物堆成山\"（凌乱桌面360度展示）\n【产品亮相】\"改造用到这6件好物\"（6件产品并排展示+价格标签）\n【使用演示】\"Step1: 显示器支架→桌面多出50%空间｜Step2: 理线槽→线缆全隐藏｜Step3: 无线充电板→告别充电线｜Step4: 屏幕挂灯→不占桌面｜Step5: 桌垫→颜值翻倍｜Step6: 氛围灯→仪式感拉满\"\n【行动号召】\"6件总共不到XX元！清单放评论区！\"（完成桌面+购物清单+总价）"
+        },
+        {
+          "name": "对比横评",
+          "description": "多款同类产品横向对比，最后推荐性价比最高的那款",
+          "suitableFor": [
+            "充电宝",
+            "蓝牙耳机",
+            "数据线",
+            "手机支架",
+            "智能灯"
+          ],
+          "shotStructure": [
+            {
+              "type": "hook",
+              "duration": "3",
+              "camera": "多款产品并排对比画面",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "pain_point",
+              "duration": "3",
+              "camera": "选择困难/踩雷经历",
+              "transition": "ffmpeg_fade"
+            },
+            {
+              "type": "product_reveal",
+              "duration": "4",
+              "camera": "参评产品逐一亮相+价格标注",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "demo",
+              "duration": "10",
+              "camera": "逐项对比测试（外观/性能/细节）",
+              "transition": "direct_concat"
+            },
+            {
+              "type": "social_proof",
+              "duration": "3",
+              "camera": "评分汇总表/推荐理由",
+              "transition": "ai_start_end"
+            },
+            {
+              "type": "cta",
+              "duration": "3",
+              "camera": "推荐款特写+价格+购买引导",
+              "transition": "ffmpeg_fade"
+            }
+          ],
+          "example": "【黄金3秒】\"花2000块买了5款充电宝，就为了告诉你买哪个！\"（5款充电宝排成一排）\n【痛点】\"充电宝踩雷太多了——虚标容量、充电慢、还有安全隐患\"（烂充电宝合集）\n【产品亮相】\"今天横评这5款：A品牌99元/B品牌149元/C品牌199元/D品牌249元/E品牌399元\"（逐一亮相+价格）\n【使用演示】\"测试1：实际容量→C款最实在｜测试2：充电速度→C款67W最快｜测试3：做工细节→C款铝合金手感最好｜测试4：安全认证→C款通过全部认证\"\n【信任背书】\"综合评分：C款 9.5分稳居第一\"（评分对比图表）\n【行动号召】\"闭眼入C款！今天下单XX元到手！\"（C款产品特写+价格+下单引导）"
+        }
+      ],
+      "directive": "你正在为【数码3C】品类创作短视频带货脚本。请注意以下要点：\n1. 参数不要堆砌，要翻译成用户能感知的体验：\"67W快充\"→\"30分钟充满\"\n2. 实测数据比宣传话术更有说服力：续航实测、速度实测、跌落测试等\n3. 使用场景具象化：通勤、办公、游戏、出差等具体场景\n4. 与竞品/旧设备的对比能快速建立认知：快多少、轻多少、省多少\n5. 极客用户在意参数，普通用户在意体验，脚本要两者兼顾\n6. 文案风格：科技博主式，专业但不枯燥，偶尔带点极客幽默\n7. 配件类产品要突出与主设备（手机/电脑）的兼容性和搭配效果\n8. 注意不要做未经验证的性能承诺，保持客观公正的测评态度",
+      "name": "数码3C"
+    }
+  }
+}

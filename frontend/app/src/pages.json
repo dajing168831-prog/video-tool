@@ -2,27 +2,155 @@
   "pages": [
     {
       "path": "pages/index/index",
-      "style": { "navigationBarTitleText": "视频工具" }
+      "style": {
+        "navigationBarTitleText": "视频工具"
+      }
     },
     {
       "path": "pages/result/result",
-      "style": { "navigationBarTitleText": "解析结果" }
+      "style": {
+        "navigationBarTitleText": "解析结果"
+      }
     },
     {
       "path": "pages/clone/index",
-      "style": { "navigationBarTitleText": "复刻爆款" }
+      "style": {
+        "navigationBarTitleText": "复刻爆款"
+      }
     },
     {
       "path": "pages/prompt/index",
-      "style": { "navigationBarTitleText": "提示词优化" }
+      "style": {
+        "navigationBarTitleText": "提示词优化"
+      }
+    },
+    {
+      "path": "pages/drama/start",
+      "style": {
+        "navigationBarTitleText": "商品短剧 · 工作台"
+      }
+    },
+    {
+      "path": "pages/drama/projects",
+      "style": {
+        "navigationBarTitleText": "我的项目"
+      }
+    },
+    {
+      "path": "pages/drama/topic",
+      "style": {
+        "navigationBarTitleText": "说一个话题"
+      }
+    },
+    {
+      "path": "pages/drama/new",
+      "style": {
+        "navigationBarTitleText": "新建项目"
+      }
+    },
+    {
+      "path": "pages/drama/world",
+      "style": {
+        "navigationBarTitleText": "选故事世界"
+      }
+    },
+    {
+      "path": "pages/drama/products",
+      "style": {
+        "navigationBarTitleText": "商品库"
+      }
+    },
+    {
+      "path": "pages/drama/batch",
+      "style": {
+        "navigationBarTitleText": "批量出片"
+      }
+    },
+    {
+      "path": "pages/drama/media-lab",
+      "style": {
+        "navigationBarTitleText": "媒体解构"
+      }
+    },
+    {
+      "path": "pages/drama/settings",
+      "style": {
+        "navigationBarTitleText": "设置"
+      }
+    },
+    {
+      "path": "pages/drama/script",
+      "style": {
+        "navigationBarTitleText": "脚本"
+      }
+    },
+    {
+      "path": "pages/drama/assets",
+      "style": {
+        "navigationBarTitleText": "素材"
+      }
+    },
+    {
+      "path": "pages/drama/video",
+      "style": {
+        "navigationBarTitleText": "视频"
+      }
+    },
+    {
+      "path": "pages/drama/export",
+      "style": {
+        "navigationBarTitleText": "导出"
+      }
+    },
+    {
+      "path": "pages/drama/production",
+      "style": {
+        "navigationBarTitleText": "导演台"
+      }
+    },
+    {
+      "path": "pages/drama/transcript",
+      "style": {
+        "navigationBarTitleText": "转写工作台"
+      }
+    },
+    {
+      "path": "pages/drama/clone",
+      "style": {
+        "navigationBarTitleText": "照着参考片开新剧"
+      }
+    },
+    {
+      "path": "pages/drama/showcase",
+      "style": {
+        "navigationBarTitleText": "示例展示"
+      }
+    },
+    {
+      "path": "pages/drama/presenters",
+      "style": {
+        "navigationBarTitleText": "出镜人物"
+      }
+    },
+    {
+      "path": "pages/drama/preview",
+      "style": {
+        "navigationBarTitleText": "预览",
+        "navigationBarBackgroundColor": "#0f1115",
+        "navigationBarTextStyle": "white"
+      }
     },
     {
       "path": "pages/clone/diagnose",
-      "style": { "navigationBarTitleText": "原片结构" }
+      "style": {
+        "navigationBarTitleText": "原片结构"
+      }
     },
     {
       "path": "pages/clone/progress",
-      "style": { "navigationBarTitleText": "出片中" }
+      "style": {
+        "navigationBarTitleText": "出片中"
+      }
     },
     {
       "path": "pages/clone/result",
@@ -34,11 +162,15 @@
     },
     {
       "path": "pages/history/history",
-      "style": { "navigationBarTitleText": "历史" }
+      "style": {
+        "navigationBarTitleText": "历史"
+      }
     },
     {
       "path": "pages/mine/mine",
-      "style": { "navigationBarTitleText": "我的" }
+      "style": {
+        "navigationBarTitleText": "我的"
+      }
     }
   ],
   "tabBar": {
@@ -47,9 +179,18 @@
     "backgroundColor": "#ffffff",
     "borderStyle": "white",
     "list": [
-      { "pagePath": "pages/index/index", "text": "解析" },
-      { "pagePath": "pages/history/history", "text": "历史" },
-      { "pagePath": "pages/mine/mine", "text": "我的" }
+      {
+        "pagePath": "pages/index/index",
+        "text": "解析"
+      },
+      {
+        "pagePath": "pages/history/history",
+        "text": "历史"
+      },
+      {
+        "pagePath": "pages/mine/mine",
+        "text": "我的"
+      }
     ]
   },
   "globalStyle": {
