@@ -934,21 +934,27 @@ def options():
 
     # 出片型号：单次时长 / 参考图上限**逐档列出**——2.5 和 2.0 不是一套尺，
     # 界面上要让使用者看见差别（2.5：30s / 30 张；2.0：15s / 9 张）。
+    # 🩸 2026-11-09 接 H3：两组都吐，`provider` 让界面能分组。
+    # H3 四档各不一样（Max 5s 起、Lite 不收 adaptive、参考图上限都是 9），
+    # 一律用 `model_specs.volc()` 取 —— 它内部按名字分派到 minimax 的规格。
     film_models = []
-    for mid, label in model_specs.MODELS["volc"]:
-        spec = model_specs.volc(mid)
-        film_models.append(
-            {
-                "id": mid,
-                "label": label,
-                "max_sec": int(float(spec.get("max_sec") or 15)),
-                "max_refs": int(spec.get("max_ref_images") or drama_film.MAX_REFS),
-                # 清晰度档位**按型号列**（2.5：480p/720p/1080p；2.0：多一个 4k；
-                # fast/mini 只到 720p）—— 界面只显示这个型号真吃得下的档
-                "resolutions": list(spec.get("resolutions") or ()),
-                "default_resolution": str(spec.get("default_resolution") or "720p"),
-            }
-        )
+    for provider in ("volc", "minimax"):
+        for mid, label in model_specs.MODELS[provider]:
+            spec = model_specs.volc(mid)
+            film_models.append(
+                {
+                    "id": mid,
+                    "label": label,
+                    "provider": provider,
+                    "max_sec": int(float(spec.get("max_sec") or 15)),
+                    "min_sec": int(float(spec.get("min_sec") or 4)),
+                    "max_refs": int(spec.get("max_ref_images") or drama_film.MAX_REFS),
+                    # 清晰度档位**按型号列**（2.5：480p/720p/1080p；2.0：多一个 4k；
+                    # fast/mini 只到 720p；H3：480P/768P/2K 分档）
+                    "resolutions": list(spec.get("resolutions") or ()),
+                    "default_resolution": str(spec.get("default_resolution") or "720p"),
+                }
+            )
     return ok(
         {
             "categories": list(CATEGORIES),
@@ -3070,6 +3076,59 @@ def delete_cast(pid: str, name: str):
 
 FILM_DIR = DATA / "films"
 
+#: 两家分辨率的写法不一样，得对上号：Seedance 用小写 p（720p/1080p），
+#: H3 用大写 P + K（768P/2K）。全局默认是 `720p`，型号换成 H3 时若不收口，
+#: `minimax.generate_video` 会**静默**退回 768P —— 而规划时存进项目的还是 720p，
+#: 出片重算指纹必然对不上，白白拦一次。
+_RES_EQUIV = {"720p": "768P", "1080p": "2K"}
+
+
+def _norm_resolution(mid: str, resolution: str) -> str:
+    """把界面给的档位收口到**这个型号真有**的那几档（不认识就落它的默认档）。"""
+    from app.services import model_specs
+
+    spec = model_specs.volc(mid)
+    have = list(spec.get("resolutions") or ())
+    res = (resolution or "").strip()
+    if not have:
+        return res
+    if res in have:
+        return res
+    alt = _RES_EQUIV.get(res.lower(), "")
+    if alt in have:
+        return alt
+    return str(spec.get("default_resolution") or have[-1])
+
+
+def _h3_render(prompt: str, paths: list, *, out: Path, duration: int,
+               resolution: str, ratio: str, model: str) -> Path:
+    """H3 出片：本地图直传 → `mm_file://` → 建任务/轮询/下载。
+
+    🩸 与 Seedance 的区别就在素材这一段：H3 收**本地文件直传**，
+    不走火山素材库（那条路是给 `ark.omni_video` 换 `asset://` 用的，
+    对 H3 是白占额度 + 多一道审核）。参考图的**顺序即编号**，
+    必须与提示词里的 `@图片N` 逐张对应，这里不排序、不去重、不裁剪。
+    """
+    from app.services import minimax
+
+    minimax.check_limits(
+        n_images=len(paths),
+        image_bytes=max((Path(p).stat().st_size for p in paths
+                         if Path(p).exists()), default=0),
+    )
+    content: list[dict] = [{"type": "text", "text": prompt}]
+    for p in paths:
+        fid = minimax.upload_file(Path(p))
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": f"mm_file://{fid}"},
+            "role": "reference_image",
+        })
+    return minimax.generate_video(
+        content, out=out, duration=int(duration), resolution=resolution,
+        ratio=ratio, model=model,
+    )
+
 
 @router.post("/projects/{pid}/film/plan")
 def film_plan(pid: str, model: str = "", resolution: str = "", ratio: str = "",
@@ -3093,7 +3152,8 @@ def film_plan(pid: str, model: str = "", resolution: str = "", ratio: str = "",
     if not (doc.get("storyboard_json") or {}).get("shots"):
         return fail("先出分镜，才能规划出片")
 
-    allowed = {mid for mid, _ in model_specs.MODELS["volc"]}
+    # 🩸 两家型号都收：只列 `volc` 的话，H3 在界面上能选、点规划就报「不支持」。
+    allowed = {m for prov in ("volc", "minimax") for m, _ in model_specs.MODELS[prov]}
     if model and model not in allowed:
         return fail(f"不支持的出片型号：{model}（可选：{'、'.join(sorted(allowed))}）")
 
@@ -3112,6 +3172,15 @@ def film_plan(pid: str, model: str = "", resolution: str = "", ratio: str = "",
 
     mid = model or settings.ark_video_film_model
     spec = model_specs.volc(mid)
+    # 分辨率按型号收口（H3 只有 768P/2K）：收在这里而不是出片时收，
+    # 是为了让 `plan_hash` 里存的就是**真要发出去**的那一档。
+    resolution = _norm_resolution(mid, resolution)
+    # 续拍接缝要「上一段的真实尾帧」，那张图只有 Seedance 通道会落盘
+    # （`ark.last_frame_path`）。H3 出的片没有尾帧 → 规划这一步就拦下，
+    # 别让人规划完、点了出片才被拒（`film_render` 里还有同一道闸兜底）。
+    if drama_film._is_h3(mid) and chain == "tail":
+        return fail("H3 暂不支持续拍接缝（尾帧只有 Seedance 通道会落盘）——"
+                    "把「接缝」改成「关闭」再规划")
     cap = float(spec.get("max_sec") or 15)
     # 🩸 参考图上限**按型号取**，不许拿一个常数盖住：
     #   2.5 = 图片 0–30 张（`api-create.md:25`）、2.0 系列 = 0–9 张（`:30`）。
@@ -3199,7 +3268,7 @@ def film_render(pid: str, no: int = 0, resolution: str = "",
 
     参考图顺序 = 提示词里的 `@图片N` 编号：按格号升序上传，绝不重排。
     """
-    from app.services import drama_refs, model_specs
+    from app.services import drama_refs, minimax, model_specs
     from app.services.video_edit import _public_url
 
     try:
@@ -3216,11 +3285,22 @@ def film_render(pid: str, no: int = 0, resolution: str = "",
         return fail("出片计划有硬问题，先解决：" + "；".join(plan["errors"][:3]))
     # 二次 dryRun：参数取值必须和 `film_plan` 完全一致，否则指纹天然对不上
     mid = film.get("model") or settings.ark_video_film_model
+    # 🩸 2026-11-09 接 H3 出片：两条通道的素材处理**不一样**，不能共用一套。
+    #   · Seedance：参考图要先进火山素材库换 `asset://`（真人脸直传会被拒），
+    #     换完是**公网 URL**，由 `ark.omni_video` 发；
+    #   · H3：本地文件直传（`minimax.upload_file` → `mm_file://id`），
+    #     **不进火山素材库**——走了反而白占额度，还多一层不必要的审核。
+    # 续拍（chain=tail）H3 暂时不支持：尾帧是 `ark.last_frame_path` 落的，
+    # H3 出的片没有那条尾帧，硬接会让第二段拿到不存在的图。
+    is_h3 = drama_film._is_h3(mid)
     spec = model_specs.volc(mid)
     chain = str(film.get("chain") or "off")
+    if is_h3 and chain == "tail":
+        return fail("H3 暂不支持续拍接缝（尾帧只由 Seedance 通道落盘）；把接缝改成「关闭」再出")
     realism = str(film.get("realism") or "auto")
     # 分辨率沿用规划时那一档（老项目没存过 → 走全局默认，再不行 720p）
-    resolution = resolution or str(film.get("resolution") or "720p")
+    # 收口规则与 `film_plan` 同一处（`_norm_resolution`）—— 两边不一致 = 指纹对不上
+    resolution = _norm_resolution(mid, resolution or str(film.get("resolution") or "720p"))
     # 画面比例同样沿用规划那一档；老项目没这个键 = 9:16（改动前的行为）
     ratio = str(film.get("ratio") or "9:16")
     fresh, err = drama_film.recheck(
@@ -3251,6 +3331,19 @@ def film_render(pid: str, no: int = 0, resolution: str = "",
         return fail(f"没有第 {no} 段")
 
     prod_files = drama_film.product_pics(doc)
+
+    def _add(p: Path, urls: list, paths3: list) -> None:
+        """参考图入列。
+
+        🩸 H3 与 Seedance 的素材通道不同，**顺序必须由调用处决定**、两边逐张对应：
+          · H3 → 收本地路径，出片时 `minimax.upload_file` 直传；
+          · Seedance → 换公网 URL（真人脸先进火山素材库，见 `_ref_url`）。
+        """
+        if is_h3:
+            paths3.append(p)
+        else:
+            urls.append(_ref_url(p, pid))
+
     for seg in picked:
         gi = int(seg.get("no") or 1)
         # 分镜板整张传（不拆格），顺序必须是 @图片1。
@@ -3260,11 +3353,12 @@ def film_render(pid: str, no: int = 0, resolution: str = "",
             or (doc.get("grid") or {}).get("image") or "").strip()
         board_path = GRID_DIR / pid / Path(board_name).name if board_name else None
         urls: list[str] = []
+        paths3: list[Path] = []   # H3 本地直传用；顺序与 urls 一致
         if seg.get("board"):
             if not board_path or not board_path.exists():
                 return fail("分镜板图不见了，先重新出九宫格")
             try:
-                urls.append(_ref_url(board_path, pid))
+                _add(board_path, urls, paths3)
             except drama_refs.RefBlocked as e:
                 return fail(str(e))
         # 商品图排第二（@图片1..K，有板时顺延到 2 起）—— 提示词编号就是这么算的，顺序不许动
@@ -3273,7 +3367,7 @@ def film_render(pid: str, no: int = 0, resolution: str = "",
             if not p.exists():
                 return fail(f"商品图 {name} 不见了，重新上传")
             try:
-                urls.append(_ref_url(p, pid))
+                _add(p, urls, paths3)
             except drama_refs.RefBlocked as e:
                 return fail(str(e))
         # 人物参考图排最后（@图片N..）—— 顺序必须和 `build_prompt` 的编号一致：
@@ -3284,7 +3378,7 @@ def film_render(pid: str, no: int = 0, resolution: str = "",
             if not p.exists():
                 return fail(f"人物参考图「{c['name']}」不见了，重新上传")
             try:
-                urls.append(_ref_url(p, pid))
+                _add(p, urls, paths3)
             except drama_refs.RefBlocked as e:
                 return fail(str(e))
         # B4 每镜参考画面：排在人物参考图之后、续拍尾帧之前（顺序必须与 `build_prompt`
@@ -3298,7 +3392,7 @@ def film_render(pid: str, no: int = 0, resolution: str = "",
                     f"镜头 {m.get('shot_id')} 配的参考画面不在了（{mp.name}），回素材库重新选一张"
                 )
             try:
-                urls.append(_ref_url(mp, pid))
+                _add(mp, urls, paths3)
             except drama_refs.RefBlocked as e:
                 return fail(str(e))
         # 续拍（C9）：把上一段的**真实尾帧**排在最后一张，编号顺延到 prompt 里写的 @图片N。
@@ -3313,7 +3407,7 @@ def film_render(pid: str, no: int = 0, resolution: str = "",
             if not tail_path.exists():
                 return fail(f"第 {gi - 1} 段没有落盘尾帧（平台只保 24 小时），先重跑第 {gi - 1} 段")
             try:
-                urls.append(_ref_url(tail_path, pid))
+                _add(tail_path, urls, paths3)
             except drama_refs.RefBlocked as e:
                 return fail(str(e))
             if len(urls) != tail_ref:
@@ -3323,7 +3417,8 @@ def film_render(pid: str, no: int = 0, resolution: str = "",
         # 我们跟广告分镜：板 1 张、格号在提示词里指（SOURCE.md:341）。
 
         # 素材对应对账：声明里的 @图片N 必须和实际上传逐张对上（错一张 = 锁错图）
-        bad_refs = drama_film.check_refs(seg["prompt"], len(urls))
+        # 两条通道二选一，实际张数 = 两边之和（H3 走 paths3，Seedance 走 urls）
+        bad_refs = drama_film.check_refs(seg["prompt"], len(urls) + len(paths3))
         if bad_refs:
             return fail("素材对应不一致，先别花钱：" + "；".join(bad_refs))
 
@@ -3340,13 +3435,21 @@ def film_render(pid: str, no: int = 0, resolution: str = "",
         doc["film"] = {**doc["film"], "running": running}
         _save(doc)
         try:
-            ark.omni_video(
-                seg["prompt"], out=out, ref_images=urls or None,
-                model=film.get("model") or settings.ark_video_film_model,
-                resolution=resolution, duration=int(round(float(seg["seconds"]))),
-                ratio=ratio, generate_audio=True,
-            )
-        except ark.ArkError as e:
+            if is_h3:
+                # H3：本地图直传（`mm_file://`），不进火山素材库。见 `_h3_render`。
+                _h3_render(
+                    seg["prompt"], paths3, out=out,
+                    duration=int(round(float(seg["seconds"]))),
+                    resolution=resolution, ratio=ratio, model=mid,
+                )
+            else:
+                ark.omni_video(
+                    seg["prompt"], out=out, ref_images=urls or None,
+                    model=film.get("model") or settings.ark_video_film_model,
+                    resolution=resolution, duration=int(round(float(seg["seconds"]))),
+                    ratio=ratio, generate_audio=True,
+                )
+        except (ark.ArkError, minimax.MinimaxError) as e:
             log.warning("[drama] film render 第 %d 段失败: %s", gi, e)
             files[str(gi)] = {"name": None, "error": str(e)}
             running.pop(str(gi), None)
@@ -3541,6 +3644,19 @@ def _repair_spec(doc: dict):
     return mid, float(spec.get("min_sec") or 4), float(spec.get("max_sec") or 15)
 
 
+def _repair_h3_block(mid: str) -> str:
+    """窗口修复能不能用这个型号 —— 返回空串表示能修。
+
+    修复的整个思路是「按时间窗切出首帧 + 尾帧，让模型只重画这一段」，
+    那两张定点帧是 **Seedance 的入参**（`drama_repair.render` → `ark.generate_video`）。
+    H3 没有这个入口（它的参考入口是多模态参考、要吃原片），硬走会拿错型号提交。
+    """
+    if drama_film._is_h3(mid):
+        return ("窗口修复暂不支持 H3（它靠首帧+尾帧锁区间，只有 Seedance 通道有）——"
+                "直接重出这一段，或把出片型号换回 Seedance 再修")
+    return ""
+
+
 @router.post("/projects/{pid}/film/repair/plan")
 def film_repair_plan(pid: str, no: int, start: float = 0, end: float = 0,
                      note: str = "", resolution: str = "720p"):
@@ -3559,6 +3675,9 @@ def film_repair_plan(pid: str, no: int, start: float = 0, end: float = 0,
     if err:
         return fail(err)
     mid, min_sec, max_sec = _repair_spec(doc)
+    blocked = _repair_h3_block(mid)
+    if blocked:
+        return fail(blocked)
     try:
         p = drama_repair.plan(
             src, seg.get("prompt") or "", start=start, end=end, note=note,
@@ -3596,6 +3715,9 @@ def film_repair_render(pid: str, no: int, plan_hash: str, start: float = 0,
     if err:
         return fail(err)
     mid, min_sec, max_sec = _repair_spec(doc)
+    blocked = _repair_h3_block(mid)
+    if blocked:
+        return fail(blocked)
     fresh, err = drama_repair.verify(
         src, seg.get("prompt") or "", plan_hash, start=start, end=end, note=note,
         model=mid, min_sec=min_sec, max_sec=max_sec, resolution=resolution,

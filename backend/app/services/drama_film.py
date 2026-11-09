@@ -715,6 +715,163 @@ def build_prompt(doc: dict, shots: list[dict], *, cast: list[str] | None = None,
     return f"{head}\n{text}" if head else text
 
 
+def _is_h3(model: str) -> bool:
+    """这个型号走不走 H3 通道。
+
+    判据与 `model_specs.volc()` 的路由同一口径（名字里带 minimax 或以 h3 开头），
+    不另立一套 —— 两处不一致会出现「型号按 H3 取规格、提示词却按 Seedance 写」。
+    """
+    m = (model or "").strip().lower()
+    return "minimax" in m or m.startswith("h3")
+
+
+def build_prompt_h3(doc: dict, shots: list[dict], *, cast: list[str] | None = None,
+                    prod_pics: int = 0, model: str = "", board_pic: bool = False,
+                    look: str = "", shot_mats: list[dict] | None = None,
+                    cell_of: dict | None = None,
+                    seg_no: int = 0, seg_total: int = 0) -> str:
+    """H3（多模态参考生成）的提示词 —— **官方三段式**，不是 Seedance 那套时间码。
+
+    出处（工程内 `backend/data/official/h3/`，全部带行号，别改说法）：
+      · `h3-manual:244`：完整提示词 = **参考素材说明 + 核心创意 + 画面过程说明**；
+      · `:248`：参考素材说明要写清素材编号 + 每个素材的用途；
+        原文用途名就是「人物参考（锁定脸/形象）」「物体参考（锁定物体）」；
+      · `:250`：**每个 shot 内部写好景别、内容与人物台词**；有台词必须写明具体内容；
+      · `:251`：画面过程说明「按时间轴或故事线分段写……**以切镜 shot 作为时间戳的分段**」；
+      · `:254`：H3 对切镜点遵从较强 —— 不写切点它会自己编。
+
+    🩸 与 `build_prompt`（Seedance）的差别，**三条，别互相搬运**：
+      1. 参数（比例/时长/分辨率）走接口，不进正文 —— 同 2.5 原则 7；
+         H3 四档各不一样的参数由 `minimax.generate_video` 收口；
+      2. 台词写成「某某说：“…”」（`:250` 的自然语言），**不用** Seedance 2.5 的 `{}` 语法；
+      3. 不写「一次生成整片、严格按时间段硬切」那种整段指令 ——
+         改成逐 shot 段落，切点由每段的时间戳给出。
+
+    `board_pic` / `prod_pics` / `cast` / `shot_mats` 的编号顺序与 `film/render`
+    的上传顺序**必须逐字一致**（板 → 商品 → 人物 → 每镜素材），否则锁错图。
+    """
+    from app.services import drama_looks
+
+    chars = [c for c in ((doc.get("script_json") or {}).get("characters") or [])
+             if isinstance(c, dict) and str(c.get("name") or "").strip()]
+    cell_of = _cell_of_shot(doc) if cell_of is None else cell_of
+    n_prod = max(0, int(prod_pics))
+    base = 1 if board_pic else 0
+    prod_first = 1 + base
+    cast = [str(n).strip() for n in (cast or []) if str(n).strip()]
+
+    # ── 【参考素材说明】────────────────────────────────────────────────
+    # 官方 `:248` 的写法是「编号 + 用途」，与 `h3_compile.handwrite` 同一套冒号式。
+    duties: list[str] = []
+    if board_pic:
+        duties.append(
+            "@图片1：分镜板（整张九宫格分镜图），按从左到右、从上到下读；"
+            "它定义镜头顺序与构图，只借构图与主体位置，不复制板上的文字、编号与格线。")
+    pname = str((doc.get("product") or {}).get("name") or "").strip()
+    prod_what = f"「{pname}」" if pname else "该商品"
+    if n_prod == 1:
+        duties.append(
+            f"@图片{prod_first}：物体参考（锁定物体）——{prod_what}的实拍图，"
+            "外观、材质、颜色、logo 以此为准。")
+    elif n_prod > 1:
+        duties.append(
+            f"@图片{prod_first} 至 @图片{prod_first + n_prod - 1}：物体参考（锁定物体）——"
+            f"{prod_what}的多角度实拍图，外观、材质、颜色、logo 以此为准"
+            "（几张图是同一件商品，不是不同款式）。")
+    if cast:
+        cast_first = prod_first + n_prod
+        for i, n in enumerate(cast):
+            duties.append(f"@图片{cast_first + i}：人物参考（锁定脸/形象）——「{n}」。")
+    for m in (shot_mats or []):
+        duties.append(
+            f"@图片{int(m['ref'])}：场景参考（只借场景、陈设与道具样式）——"
+            f"本段镜头{int(m['no'])}；图里的人物不算角色，人脸与服装只认人物参考图。")
+
+    # ── 【核心创意】────────────────────────────────────────────────────
+    role = str(((doc.get("answers") or {}).get("role")) or "").strip()
+    logline = str(((doc.get("card_json") or {}).get("logline"))
+                  or ((doc.get("card") or "").strip()[:60]) or "").strip()
+    idea = f"一支 UGC 手机实拍感的带货短视频，共 {len(shots)} 个镜头"
+    if logline:
+        idea += f"，故事是：{logline.rstrip('。.；;，, ')}"
+    idea += "。"
+    if role:
+        idea += f"商品在这条片里是{role}。"
+    if chars:
+        idea += "人物：" + "；".join(
+            f"{c.get('name')}（{c.get('appearance') or ''}）" for c in chars) + "。"
+
+    # ── 【画面过程说明】────────────────────────────────────────────────
+    # `:251` 要「景别 / 内容 / 运镜」，`:250` 要「台词写明」。逐镜一段，时间戳即切点。
+    mat_of = {int(m["no"]): int(m["ref"]) for m in (shot_mats or [])}
+    process: list[str] = []
+    cursor = 0.0
+    for i, s in enumerate(shots, 1):
+        d = float(s.get("duration") or 0)
+        a, b = cursor, cursor + d
+        cursor = b
+        try:
+            sid = int(s.get("id") or i)
+        except (TypeError, ValueError):
+            sid = i
+        fr = str(s.get("framing") or "").strip()
+        bits = [f"镜头{i}（{_sec(a)}-{_sec(b)}秒" + (f"，{fr}" if fr else "")]
+        n = cell_of.get(sid)
+        if n:
+            bits.append(f"构图按分镜板第{n}格")
+        ref = mat_of.get(i)
+        if ref:
+            bits.append(f"场景与道具以 @图片{ref} 为准")
+        head = "，".join(bits) + "）："
+        desc = str(s.get("description") or "").strip().rstrip("。")
+        parts = [head + desc + "。"]
+        cam = str(s.get("camera") or "").strip()
+        if cam:
+            parts.append(f"运镜：{cam}。")
+        line = str(s.get("dialogue") or "").strip()
+        if line:
+            # `:250`：有台词必须写明具体内容；写法是「某某说：“…”」
+            # 引号里已经带标点就不要再补一个 —— 否则会出现 `。”。`
+            speaker = str(s.get("speaker") or "").strip()
+            body = line if line[-1] in "。！？…" else line + "。"
+            parts.append(f"{speaker}说：“{body}”" if speaker else f"台词：“{body}”")
+        else:
+            parts.append("这一镜没有台词，只保留环境音与动作声。")
+        process.append("".join(parts))
+    if seg_total > 1 and seg_no > 0:
+        if seg_no >= seg_total:
+            process.insert(0, "本段是整片的最后一段：第一镜紧接上一段最后一镜，"
+                              "同一场景、同一机位方向、同一人物位置与服装，动作从中途接着走。")
+        elif seg_no > 1:
+            process.insert(0, f"本段是整片的第 {seg_no} 段（共 {seg_total} 段）："
+                              "第一镜紧接上一段最后一镜，动作从中途接着走。")
+        else:
+            process.insert(0, f"本段是整片的第 1 段（共 {seg_total} 段）：开场直接入戏，"
+                              "不要黑场、不要片头字卡。")
+
+    # ── 【整体要求补充】────────────────────────────────────────────────
+    # 跨全片规则单列 —— 依据 `:284`/`:285` 两条完整模板都这么分组。
+    overall = [
+        "全局一致性：所有镜头是同一支视频——同一人物、同一发型与同一身衣服、"
+        "同一场景与光线方向；商品外观在所有镜头中保持完全一致。",
+        "台词由点名的那个角色说，口型与语速对齐，语气像日常聊天；"
+        "同一时刻只有一个人在说话，不许两人同时开口。",
+        "画面中不出现任何字幕、文字、编号或水印。",
+        "无背景音乐，只保留台词人声、环境音与动作声。",
+    ]
+
+    blocks = ["【参考素材说明】" + "".join(duties),
+              "【核心创意】" + idea,
+              "【画面过程说明】" + "".join(process),
+              "【整体要求补充】" + "".join(overall)]
+    head = drama_looks.motion_prefix(look)
+    tail = drama_looks.motion_suffix(look)
+    text = "\n".join(b for b in blocks if b)
+    if tail:
+        text = f"{text}\n{tail}"
+    return f"{head}\n{text}" if head else text
+
+
 def plan(doc: dict, *, cap: float = FILM_CAP_SEC, max_refs: int = MAX_REFS,
          model: str = "", resolution: str = "720p", ratio: str = "9:16",
          chain: str = "off", realism: str = "auto") -> dict:
@@ -932,14 +1089,26 @@ def plan(doc: dict, *, cap: float = FILM_CAP_SEC, max_refs: int = MAX_REFS,
             "ref_count": n_refs_used,
             # 续拍尾帧的图片编号（0 = 本段不接上一段）
             "tail_ref": tail_ref,
-            "prompt": build_prompt(doc, group, prod_pics=n_prod, model=model,
-                                   board_pic=bool(board_pic), cell_of=cell_g,
-                                   cast=[c["name"] for c in cast],
-                                   look=drama_looks.look_of_doc(doc),
-                                   tail_ref=tail_ref, genre=genre,
-                                   shot_mats=seg_mats, realism=realism,
-                                   ratio=ratio,
-                                   seg_no=gi, seg_total=len(groups)),
+            "prompt": (
+                # 🩸 2026-11-09 接 H3：同一份分镜，两种提示词骨架 ——
+                # H3 是官方三段式（`h3-manual:244`），Seedance 是时间码整段。
+                # 参数不许互相搬运：H3 不写画幅/时长（走接口），台词不用 `{}` 语法。
+                build_prompt_h3(doc, group, prod_pics=n_prod, model=model,
+                                board_pic=bool(board_pic), cell_of=cell_g,
+                                cast=[c["name"] for c in cast],
+                                look=drama_looks.look_of_doc(doc),
+                                shot_mats=seg_mats,
+                                seg_no=gi, seg_total=len(groups))
+                if _is_h3(model) else
+                build_prompt(doc, group, prod_pics=n_prod, model=model,
+                             board_pic=bool(board_pic), cell_of=cell_g,
+                             cast=[c["name"] for c in cast],
+                             look=drama_looks.look_of_doc(doc),
+                             tail_ref=tail_ref, genre=genre,
+                             shot_mats=seg_mats, realism=realism,
+                             ratio=ratio,
+                             seg_no=gi, seg_total=len(groups))
+            ),
         })
 
     if chain == "tail":
